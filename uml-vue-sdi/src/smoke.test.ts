@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractMermaidBlocks,
+  inferMermaidDiagramKeyword,
+  inferMermaidDiagramTypeFromMarkdown,
   parseUmlSyncMarkdown,
   detectKindFromPath,
   getSyncPanelModel,
@@ -45,6 +47,15 @@ uml_root: custom
   it('extracts mermaid blocks', () => {
     const md = '```mermaid\nclassDiagram\n  class A\n```';
     expect(extractMermaidBlocks(md)).toHaveLength(1);
+  });
+
+  it('infers mermaid diagram keyword from first block', () => {
+    expect(inferMermaidDiagramKeyword('%% note\nclassDiagram\n  class A')).toBe('classDiagram');
+    expect(inferMermaidDiagramKeyword('flowchart LR\n  A-->B')).toBe('flowchart');
+    expect(inferMermaidDiagramKeyword('stateDiagram-v2\n  [*] --> A')).toBe('stateDiagram-v2');
+    const md = '# t\n\n```mermaid\nsequenceDiagram\n  A->>B: hi\n```';
+    expect(inferMermaidDiagramTypeFromMarkdown(md)).toBe('sequenceDiagram');
+    expect(inferMermaidDiagramTypeFromMarkdown('no block')).toBeNull();
   });
 
   it('parses uml.sync front matter (code_impls)', () => {

@@ -13,9 +13,9 @@ alwaysApply: false
 | 模式 | 职责 |
 |------|------|
 | `uml.sync.md` | 声明 `namespace_root`、`uml_root`、`code_impls`（多套：每项唯一 `root` + `code_type`）、`sync_profile`（YAML front matter）+ **同步规则正文（供 AI 阅读）**；规则按 `sync_profile` 分节（`## strict` 等）；根路径可为相对或绝对；旧键 `namespace_dirs` 与旧版 `code_roots` + 顶层 `code_type` 仍可解析 |
-| `*.uml.md` | 存放多张 UML 图（默认 fenced `mermaid`） |
-| `*.class.md` | 类定义契约（推荐 `### ClassName` + 表格） |
-| `*.code.md` | 类以外：全局函数、宏、全局变量等；**放在各 `namespace_root` 下**（与 `*.class.md` 同树），**不**放在 `code_impls` 代码根内 |
+| `*.uml.md` | **一文件一图**（默认 fenced `mermaid`）；多图在 `uml_root` 下用**多个** `*.uml.md` 拆分，禁止单文件堆多张图 |
+| `*.class.md` | **一文件一类**；类定义契约（推荐 `### ClassName` + 表格）；脚手架默认类名 **helloworld** |
+| `*.code.md` | 全局函数、变量、宏等**抽象契约**（表格/条目，**非**具体语言源码）；**放在各 `namespace_root` 下**（与 `*.class.md` 同树），**不**放在 `code_impls` 代码根内 |
 
 ## 同步顺序（默认）
 

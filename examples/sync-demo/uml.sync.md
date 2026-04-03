@@ -16,7 +16,9 @@ sync_profile: strict
 ## strict
 
 1. **类图变更**时，先更新同主题的 `*.uml.md`，再改 `namespace` 下 `*.class.md` 与 `*.code.md`（若涉及），最后改 **`impl_cpp_project`** 下真实源码与头文件。
-2. **`*.code.md` 路径**：放在各 **`namespace_root`** 下（与 `*.class.md` 同树），**不**放在 `code_impls` 代码根内。
-3. **全局函数或宏**仅出现在上述 `*.code.md` 与对应翻译单元（`impl_cpp_project` 等）；不在 `*.class.md` 重复类成员。
-4. **命名空间与代码实现**：`namespace_root` 含 **`namespace`**（类图 / 类表 / 非类片段契约根）；`code_impls` 默认一项为根 **`impl_cpp_project`**、类型 **`cpp`**（真实代码）；UML 图稿在 `uml_root`（`diagrams`）下。
-5. PR 前检查：`diagrams/*.uml.md` 中 Mermaid 块可被渲染；`uml.sync.md` 中路径仍存在于仓库。
+2. **`*.uml.md` 一文件一图**：每个文件**只保存一张图**（通常一个 `mermaid` 块）。多图须在同一 `uml_root` 下用**多个** `*.uml.md` 拆分，禁止在同一文件内堆多张图。
+3. **`*.class.md` 一文件一类**：描述**一个类**的全部契约成员；默认/脚手架示例类名 **`helloworld`**（见 `namespace/helloworld.class.md`）。
+4. **`*.code.md` 抽象契约**：用表格或条目描述**全局函数、全局变量、宏**等非类成员，**不写**具体语言源码；实现映射到各 `code_impls`（示例见 `namespace/globals.code.md`）。
+5. **`*.code.md` 路径**：放在各 **`namespace_root`** 下（与 `*.class.md` 同树），**不**放在 `code_impls` 代码根内。
+6. **命名空间与代码实现**：`namespace_root` 含 **`namespace`**；`code_impls` 默认一项为根 **`impl_cpp_project`**、类型 **`cpp`**；UML 图稿在 `uml_root`（`diagrams`）下。
+7. PR 前检查：各 `diagrams/*.uml.md` 中 Mermaid 可被渲染且**单文件单图**；`uml.sync.md` 中路径仍存在于仓库。

@@ -95,6 +95,8 @@ export interface UiMessages {
   propsKindOther: string;
   propsPath: string;
   propsKind: string;
+  /** *.uml.md：当前画布所依据的首个 Mermaid 块之图类型关键字 */
+  propsDiagramType: string;
   propsDirty: string;
   propsDirtyYes: string;
   propsDirtyNo: string;
@@ -258,7 +260,8 @@ const zh: UiMessages = {
   propsKindCode: '代码片段 (*.code.md)',
   propsKindOther: '其它 / 未知',
   propsPath: '路径',
-  propsKind: '类型',
+    propsKind: '类型',
+    propsDiagramType: '图类型',
   propsDirty: '未保存',
   propsDirtyYes: '是',
   propsDirtyNo: '否',
@@ -426,7 +429,8 @@ const en: UiMessages = {
   propsKindCode: 'Code (*.code.md)',
   propsKindOther: 'Other / unknown',
   propsPath: 'Path',
-  propsKind: 'Kind',
+    propsKind: 'Kind',
+    propsDiagramType: 'Diagram type',
   propsDirty: 'Dirty',
   propsDirtyYes: 'Yes',
   propsDirtyNo: 'No',

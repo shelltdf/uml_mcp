@@ -38,11 +38,12 @@ sync_profile: strict
 
 ## `*.uml.md`
 
-- UTF-8；零个或多个 `##` 节；每节内零个或多个 fenced 块。
+- UTF-8；可有 `##` 节与说明性引用；**每张图**对应**一个** fenced UML 块（默认 **一张图一个文件**；多图须在 `uml_root` 下拆成多个 `*.uml.md`，见 `examples/sync-demo/diagrams/`）。
 - UML 块语言标识：`mermaid`（默认）；若使用纯文本占位，语言可为 `text` 且不参与渲染。
 
 ## `*.class.md`
 
+- **一文件一类**：描述**一个类**的全部契约成员（字段、方法等）；**推荐**脚手架默认类名 **`helloworld`** / **`Helloworld`**（示例见 `examples/sync-demo/namespace/helloworld.class.md`）。
 - 推荐结构：
 
 ```markdown
@@ -58,7 +59,7 @@ sync_profile: strict
 ## `*.code.md`
 
 - **放置位置**：须位于某一 **`namespace_root`** 之下（与 `*.class.md` 同命名空间树），**不**放在各 `code_impls` 的代码根目录内（后者仅放真实源码如 `.cpp` / `.h`）。
-- 分节标题 + fenced code；语言标签与下游工具链一致（如 `cpp`）。
+- **抽象契约**：用分节 + 表格/条目描述**全局函数**、**全局变量**、**宏** 等；**不**要求、也不建议在此书写**具体语言**源码——与实现语言的映射在 `code_impls` 侧完成。若需示例 fenced 块，仅作说明而非唯一形式（见 `examples/sync-demo/namespace/globals.code.md`）。
 
 ## 应用行为（MVP）
 
@@ -70,6 +71,7 @@ sync_profile: strict
 - **主区 ↔ Dock 列宽度**：分割条拖拽调整 `dockWidthPx`（约 160px～主区宽度 58%）；Dock 列可 **最大化**（`dockColumnMaximized`）占更大比例。
 - **Dock View 内**：`div.dock-view__stack` 纵向堆叠；**属性**（`PropertiesDock`）在上、**文本内容**（`TextContentDock`）在下（若仅展开其一则占满）。二者同时可见时，中间为 **横向分割条** `div.dock-inner-splitter`（`cursor: row-resize`，约 5px 高），拖拽调整 `dockInnerPropsShare`（属性区占堆叠高度比例，约 18%～82%）。
 - **实现文件**：状态与指针逻辑在 `uml-vue-sdi/src/App.vue`；停靠窗口组件为 `PropertiesDock.vue`、`TextContentDock.vue`。
+- **属性 · 图类型**：当前标签为 `*.uml.md` 时，在「类型」（文件种类）行下增加 **图类型**：与中央画布一致，取**首个** fenced `mermaid` 代码块中首条非注释行的**首 token**（如 `classDiagram`、`flowchart`、`stateDiagram-v2`）；无块或空块时显示 `—`。选中图中元素或文本选区时，若为 `*.uml.md` 亦显示同一 **图类型** 行（`src/lib/formats.ts`：`inferMermaidDiagramTypeFromMarkdown`）。
 - **`uml.sync.md` 客户区**：中央画布在打开同步契约时展示 **表单式 GUI**（`SyncConfigEditor.vue`）：`uml_root` / `namespace_root` 为文本框（路径仅落盘，不访问文件系统）；`namespace_root` **唯一**、不可追加多条；`code_impls` 通过「添加代码实现」**弹窗**先选 **类型**，目录默认 **`impl_<类型>_project`**（与已有项冲突时自动加 `_2`、`_3`…），切换类型会**重算**默认目录；**确定**前校验相对路径在**当前已打开标签路径**中是否已有文件落在该目录下（绝对路径不校验）；列表以**单行**展示「目录 + 类型」；**⋯** 菜单：**修改**（只读说明）、**删除**；`sync_profile` 为 **`none` \| `strict`**（默认 **strict**）。下方为同步规则正文 Markdown（自适应高度）。修改经 `serializeUmlSyncMarkdown` 写回。
 - 打开内置示例文件列表（或未来 File System Access）。
 - 编辑区为受控文本域；预览调用 Mermaid 将最近一次有效内容渲染为 SVG。

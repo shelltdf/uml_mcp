@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { inferMermaidDiagramTypeFromMarkdown } from '../lib/formats';
 import { getMessages, type LocaleId } from '../i18n/ui';
 import { workspace, type PropertySelection } from '../stores/workspace';
 
@@ -36,6 +37,13 @@ const lineCount = computed(() => {
   if (!tab.value) return 0;
   if (tab.value.content.length === 0) return 1;
   return tab.value.content.split('\n').length;
+});
+
+/** 与中央画布一致：首个 mermaid 块的类型关键字（classDiagram、flowchart 等） */
+const mermaidDiagramType = computed(() => {
+  const t = tab.value;
+  if (!t || t.kind !== 'uml') return null;
+  return inferMermaidDiagramTypeFromMarkdown(t.content);
 });
 
 /** 有选中且属于当前活动标签 → 显示对象属性 */
@@ -94,6 +102,10 @@ function toggleBody() {
           </p>
           <dl class="props-dl">
             <div class="props-row">
+              <dt>{{ m.propsDiagramType }}</dt>
+              <dd class="props-dd--mono">{{ mermaidDiagramType ?? '—' }}</dd>
+            </div>
+            <div class="props-row">
               <dt>{{ m.propsNodeId }}</dt>
               <dd class="props-dd--mono">{{ selection.nodeId }}</dd>
             </div>
@@ -111,6 +123,10 @@ function toggleBody() {
             <span class="props-context__v">{{ m.propsContextObject }} · {{ m.propsTextRange }}</span>
           </p>
           <dl class="props-dl">
+            <div v-if="tab.kind === 'uml'" class="props-row">
+              <dt>{{ m.propsDiagramType }}</dt>
+              <dd class="props-dd--mono">{{ mermaidDiagramType ?? '—' }}</dd>
+            </div>
             <div class="props-row">
               <dt>{{ m.propsSelRange }}</dt>
               <dd class="props-dd--mono">{{ selection.start }} – {{ selection.end }}</dd>
@@ -140,6 +156,10 @@ function toggleBody() {
             <div class="props-row">
               <dt>{{ m.propsKind }}</dt>
               <dd>{{ kindLabel }}</dd>
+            </div>
+            <div v-if="tab.kind === 'uml'" class="props-row">
+              <dt>{{ m.propsDiagramType }}</dt>
+              <dd class="props-dd--mono">{{ mermaidDiagramType ?? '—' }}</dd>
             </div>
             <div class="props-row">
               <dt>{{ m.propsDirty }}</dt>

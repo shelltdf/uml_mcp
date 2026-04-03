@@ -162,6 +162,29 @@ export function extractMermaidBlocks(markdown: string): string[] {
   return out;
 }
 
+/**
+ * 从一段 Mermaid 源码解析**图类型关键字**（首条非注释非空行的首 token，与画布首块一致）。
+ * 例如 `classDiagram`、`flowchart`、`stateDiagram-v2`、`sequenceDiagram`。
+ */
+export function inferMermaidDiagramKeyword(mermaidCode: string): string | null {
+  const lines = mermaidCode.split(/\r?\n/);
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith('%%')) continue;
+    const token = t.split(/\s+/)[0];
+    if (token) return token;
+  }
+  return null;
+}
+
+/** 与画布一致：取 Markdown 中首个 fenced `mermaid` 块的图类型关键字。 */
+export function inferMermaidDiagramTypeFromMarkdown(markdown: string): string | null {
+  const blocks = extractMermaidBlocks(markdown);
+  if (blocks.length === 0) return null;
+  return inferMermaidDiagramKeyword(blocks[0]);
+}
+
 function stripScalar(s: string): string {
   return s.trim().replace(/^["']|["']$/g, '');
 }
