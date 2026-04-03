@@ -42,6 +42,7 @@ seed();
 export const workspace = {
   state,
   activeTab: computed(() => state.tabs.find((t) => t.id === state.activeTabId) ?? null),
+  anyDirty: computed(() => state.tabs.some((t) => t.isDirty)),
 
   selectTab(id: string) {
     if (state.tabs.some((t) => t.id === id)) {

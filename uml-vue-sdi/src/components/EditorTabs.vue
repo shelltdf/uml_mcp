@@ -1,11 +1,25 @@
 <script setup lang="ts">
+import { getMessages, type LocaleId } from '../i18n/ui';
 import { workspace } from '../stores/workspace';
+
+const props = defineProps<{
+  locale: LocaleId;
+}>();
 
 function onInput(e: Event) {
   const tab = workspace.activeTab.value;
   if (!tab) return;
   const v = (e.target as HTMLTextAreaElement).value;
   workspace.updateContent(tab.id, v);
+}
+
+function tryCloseTab(id: string) {
+  const tab = workspace.state.tabs.find((t) => t.id === id);
+  const m = getMessages(props.locale);
+  if (tab?.isDirty && !window.confirm(m.confirmCloseTab)) {
+    return;
+  }
+  workspace.closeTab(id);
 }
 </script>
 
@@ -23,13 +37,8 @@ function onInput(e: Event) {
         @click="workspace.selectTab(t.id)"
       >
         <span class="name">{{ t.path.split('/').pop() }}</span>
-        <span v-if="t.isDirty" class="dot">·</span>
-        <span
-          class="close"
-          title="关闭 — 无全局快捷键"
-          @click.stop="workspace.closeTab(t.id)"
-          >×</span
-        >
+        <span v-if="t.isDirty" class="dot" aria-label="未保存">·</span>
+        <span class="close" title="关闭 — 无全局快捷键" @click.stop="tryCloseTab(t.id)">×</span>
       </button>
     </div>
     <textarea
