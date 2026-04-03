@@ -94,7 +94,7 @@ flowchart LR
 
 ### Helloworld
 
-<!-- class-md-meta: {"inherits":"BaseEntity","associations":["Item","DiscountRule"]} -->
+<!-- class-md-meta: {"inherits":"BaseEntity","associations":["Item","DiscountRule"],"code_files":["impl_cpp_project/include/acme/helloworld.hpp","impl_cpp_project/src/helloworld.cpp"]} -->
 
 | Kind | Name | Type | Note |
 |------|------|------|------|
@@ -125,6 +125,39 @@ flowchart LR
 | Kind | Name | 展开语义（抽象） | Note |
 |------|------|------------------|------|
 | macro | ACME_VERSION_MAJOR | 编译期主版本整型 | 与 \`VERSION_MAJOR\` 一致时可由生成器关联 |
+`,
+  },
+  {
+    path: 'impl_cpp_project/include/acme/helloworld.hpp',
+    content: `#pragma once
+
+#include "acme/base_entity.hpp"
+
+#include <string>
+
+namespace acme {
+
+/// 对应 \`namespace/helloworld.class.md\` 中的 \`Helloworld\`。
+class Helloworld : public BaseEntity {
+ public:
+  std::string exampleField;
+
+  void greet();
+};
+
+}  // namespace acme
+`,
+  },
+  {
+    path: 'impl_cpp_project/src/helloworld.cpp',
+    content: `#include "acme/helloworld.hpp"
+
+namespace acme {
+
+void Helloworld::greet() {
+}
+
+}  // namespace acme
 `,
   },
 ].map((f) => ({ ...f, kind: detectKindFromPath(f.path) }));

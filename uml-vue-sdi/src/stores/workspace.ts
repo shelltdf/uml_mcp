@@ -4,6 +4,7 @@ import type { DiagramTypeId } from '../lib/diagramTemplates';
 import { buildNewUmlMarkdown } from '../lib/diagramTemplates';
 import type { FileKind } from '../lib/formats';
 import { detectKindFromPath } from '../lib/formats';
+import { normalizeWorkspacePath } from '../lib/classImplPaths';
 import { openTextFile, saveTextAs, writeToHandle } from '../lib/fileAccess';
 import type { OpenTextFileIntent } from '../lib/fileAccess';
 
@@ -18,6 +19,12 @@ export interface Tab {
   fileHandle?: FileSystemFileHandle;
   /** 上次成功打开/保存时的快照，用于「还原」 */
   lastPersistedContent: string;
+  /**
+   * 文本停靠区语法高亮：未设置或 `null` 表示按路径自动推断；否则为 `textDockCm` 中的语言 id。
+   */
+  textDockLanguage?: string | null;
+  /** 文本停靠区自动换行（软回行）；默认关闭 */
+  textDockLineWrap?: boolean;
 }
 
 let idSeq = 0;
@@ -68,6 +75,14 @@ function tabById(id: string): Tab | undefined {
   return state.tabs.find((t) => t.id === id);
 }
 
+function tabByWorkspacePath(path: string): Tab | undefined {
+  if (typeof path !== 'string' || !path.trim()) return undefined;
+  const n = normalizeWorkspacePath(path);
+  return state.tabs.find(
+    (t) => t && typeof t.path === 'string' && normalizeWorkspacePath(t.path) === n,
+  );
+}
+
 /** 属性停靠区：当前选中对象；无选中时表示展示「当前文档」属性 */
 export type PropertySelection =
   | { kind: 'none' }
@@ -88,6 +103,13 @@ export const workspace = {
   state,
   activeTab: computed(() => state.tabs.find((t) => t.id === state.activeTabId) ?? null),
   anyDirty: computed(() => state.tabs.some((t) => t.isDirty)),
+
+  /** 安全：按标签 id 取路径（无则空串），避免渲染期读 undefined.path */
+  getTabPathById(id: string): string {
+    if (!id) return '';
+    const tab = tabById(id);
+    return tab?.path ?? '';
+  },
 
   selectTab(id: string) {
     if (state.tabs.some((t) => t.id === id)) {
@@ -111,6 +133,18 @@ export const workspace = {
     tab.content = content;
     tab.kind = detectKindFromPath(tab.path);
     tab.isDirty = true;
+  },
+
+  setTextDockLanguage(tabId: string, lang: string | null | undefined) {
+    const tab = tabById(tabId);
+    if (!tab) return;
+    tab.textDockLanguage = lang ?? undefined;
+  },
+
+  setTextDockLineWrap(tabId: string, wrap: boolean) {
+    const tab = tabById(tabId);
+    if (!tab) return;
+    tab.textDockLineWrap = wrap;
   },
 
   setPathAndKind(tabId: string, path: string) {
@@ -307,6 +341,33 @@ export const workspace = {
    * 相对路径：工作区内是否已有打开文件的路径等于该目录，或位于其下（`dir/file`）。
    * 绝对路径（含盘符或根 `/`）返回 true——无法在浏览器内可靠校验目录是否存在。
    */
+  /** 按工作区相对路径（大小写、斜杠不敏感）查找已打开标签 */
+  findTabByWorkspacePath(path: string): Tab | undefined {
+    return tabByWorkspacePath(path);
+  },
+
+  /** 切换到给定路径的标签（若已打开） */
+  focusTabByWorkspacePath(path: string): boolean {
+    const tab = tabByWorkspacePath(path);
+    if (!tab) return false;
+    state.activeTabId = tab.id;
+    clearPropertySelection();
+    return true;
+  },
+
+  /** 按顺序尝试路径，聚焦第一个已打开的标签 */
+  focusFirstMatchingWorkspacePath(paths: string[]): boolean {
+    for (const p of paths) {
+      const tab = tabByWorkspacePath(p);
+      if (tab) {
+        state.activeTabId = tab.id;
+        clearPropertySelection();
+        return true;
+      }
+    }
+    return false;
+  },
+
   directoryExistsInWorkspace(dir: string): boolean {
     const raw = dir.trim();
     if (!raw) return false;

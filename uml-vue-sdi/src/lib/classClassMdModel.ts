@@ -14,6 +14,11 @@ export interface ClassMdMeta {
   inherits: string | null;
   /** 关联目标类名（只读展示） */
   associations: string[];
+  /**
+   * 可选：工作区相对路径，指向与本类契约对应的实现文件（头/源等），供「查看已同步代码」解析。
+   * 未写时由 uml.sync 的 code_impls + 类名推导默认路径。
+   */
+  code_files?: string[];
 }
 
 export interface ClassMdState {
@@ -38,14 +43,19 @@ export function parseClassMdMetaComment(markdown: string): ClassMdMeta {
   if (end === -1) return defaultMeta();
   try {
     const raw = rest.slice(0, end).trim();
-    const o = JSON.parse(raw) as { inherits?: unknown; associations?: unknown };
+    const o = JSON.parse(raw) as { inherits?: unknown; associations?: unknown; code_files?: unknown };
     const inherits = typeof o.inherits === 'string' && o.inherits.trim() ? o.inherits.trim() : null;
     const associations = Array.isArray(o.associations)
       ? o.associations
           .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
           .map((s) => s.trim())
       : [];
-    return { inherits, associations };
+    const code_files = Array.isArray(o.code_files)
+      ? o.code_files
+          .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+          .map((s) => s.trim().replace(/\\/g, '/'))
+      : undefined;
+    return { inherits, associations, ...(code_files && code_files.length > 0 ? { code_files } : {}) };
   } catch {
     return defaultMeta();
   }
@@ -112,10 +122,14 @@ function rowToMarkdownLine(r: ClassMdRow): string {
 }
 
 export function serializeClassMdMarkdown(previous: string, state: ClassMdState): string {
-  const metaLine = `${META_PREFIX}${JSON.stringify({
+  const metaPayload: Record<string, unknown> = {
     inherits: state.meta.inherits,
     associations: state.meta.associations,
-  })}${META_SUFFIX}`;
+  };
+  if (state.meta.code_files && state.meta.code_files.length > 0) {
+    metaPayload.code_files = state.meta.code_files;
+  }
+  const metaLine = `${META_PREFIX}${JSON.stringify(metaPayload)}${META_SUFFIX}`;
   const tableHeader = '| Kind | Name | Type | Note |\n|------|------|------|------|';
   const tableBody = state.rows.map(rowToMarkdownLine).join('\n');
   const table = `${tableHeader}\n${tableBody}`;

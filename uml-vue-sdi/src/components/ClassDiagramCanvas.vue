@@ -40,9 +40,34 @@ let panStartY = 0;
 let panOriginX = 0;
 let panOriginY = 0;
 
-const selectedClassId = ref<string | null>(null);
+/** 多选：类 id 列表 */
+const selectedIds = ref<string[]>([]);
 const ctx = reactive({ open: false, x: 0, y: 0, classId: '' as string });
-const drag = ref<{ id: string; ox: number; oy: number } | null>(null);
+type DragState = {
+  primaryId: string;
+  ox: number;
+  oy: number;
+  snapshots: Record<string, { x: number; y: number }>;
+};
+const drag = ref<DragState | null>(null);
+
+/** 框选（世界坐标） */
+const marquee = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+
+function isClassSelected(id: string): boolean {
+  return selectedIds.value.includes(id);
+}
+
+const marqueeNorm = computed(() => {
+  const m = marquee.value;
+  if (!m) return null;
+  return {
+    x: Math.min(m.x0, m.x1),
+    y: Math.min(m.y0, m.y1),
+    w: Math.abs(m.x1 - m.x0),
+    h: Math.abs(m.y1 - m.y0),
+  };
+});
 
 const shortcutsOpen = ref(false);
 const visibilityOpen = ref(true);
@@ -80,7 +105,7 @@ watch(
   (md) => {
     if (md === lastSynced.value) return;
     loadFromMarkdown(md);
-    selectedClassId.value = null;
+    selectedIds.value = [];
     ctx.open = false;
   },
 );
@@ -93,6 +118,84 @@ watch(
   },
 );
 
+function onMarqueePointerMove(e: PointerEvent): void {
+  if (!marquee.value) return;
+  const w = clientToWorld(e.clientX, e.clientY);
+  marquee.value = { ...marquee.value, x1: w.x, y1: w.y };
+}
+
+function onMarqueePointerUp(e: PointerEvent): void {
+  window.removeEventListener('pointermove', onMarqueePointerMove);
+  window.removeEventListener('pointerup', onMarqueePointerUp);
+  window.removeEventListener('pointercancel', onMarqueePointerUp);
+  const m = marquee.value;
+  marquee.value = null;
+  if (!m) return;
+  const x0 = Math.min(m.x0, m.x1);
+  const x1 = Math.max(m.x0, m.x1);
+  const y0 = Math.min(m.y0, m.y1);
+  const y1 = Math.max(m.y0, m.y1);
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const additive = e.ctrlKey || e.metaKey;
+  if (dx < 4 && dy < 4) {
+    if (!additive) selectedIds.value = [];
+    return;
+  }
+  const hits: string[] = [];
+  for (const c of state.classes) {
+    const p = positions[c.id];
+    if (!p) continue;
+    const { w: cw, h: ch } = estimateClassSize(c, !!folded[c.id]);
+    const ix0 = p.x;
+    const iy0 = p.y;
+    const ix1 = p.x + cw;
+    const iy1 = p.y + ch;
+    if (ix1 >= x0 && ix0 <= x1 && iy1 >= y0 && iy0 <= y1) hits.push(c.id);
+  }
+  if (additive) {
+    selectedIds.value = [...new Set([...selectedIds.value, ...hits])];
+  } else {
+    selectedIds.value = hits;
+  }
+}
+
+function onSvgBackgroundPointerDown(e: PointerEvent): void {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const w = clientToWorld(e.clientX, e.clientY);
+  marquee.value = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+  window.addEventListener('pointermove', onMarqueePointerMove);
+  window.addEventListener('pointerup', onMarqueePointerUp);
+  window.addEventListener('pointercancel', onMarqueePointerUp);
+}
+
+function uniqueNewClassId(): string {
+  const ids = new Set(state.classes.map((c) => c.id));
+  const base = 'NewClass';
+  if (!ids.has(base)) return base;
+  let i = 2;
+  while (ids.has(`${base}${i}`)) i += 1;
+  return `${base}${i}`;
+}
+
+function addNewClass(): void {
+  const id = uniqueNewClassId();
+  const { w: vw, h: vh } = getViewportSize();
+  const cx = (vw / 2 - panX.value) / scale.value;
+  const cy = (vh / 2 - panY.value) / scale.value;
+  state.classes.push({
+    id,
+    name: id,
+    attributes: ['+string id'],
+    methods: ['+greet()'],
+  });
+  positions[id] = { x: cx - 124, y: cy - 50 };
+  selectedIds.value = [id];
+  ctx.open = false;
+  pushMarkdown();
+}
+
 onMounted(() => {
   loadFromMarkdown(props.markdown);
   window.addEventListener('click', onWindowClick);
@@ -103,6 +206,9 @@ onUnmounted(() => {
   window.removeEventListener('click', onWindowClick);
   window.removeEventListener('pointermove', onGlobalPointerMove);
   window.removeEventListener('pointerup', onGlobalPointerUp);
+  window.removeEventListener('pointermove', onMarqueePointerMove);
+  window.removeEventListener('pointerup', onMarqueePointerUp);
+  window.removeEventListener('pointercancel', onMarqueePointerUp);
 });
 
 function onWindowClick(e: MouseEvent): void {
@@ -313,24 +419,57 @@ function onGlobalPointerUp(e: PointerEvent): void {
 
 function onSvgClassPointerDown(e: PointerEvent, classId: string): void {
   if (e.button !== 0 || inheritDrag.value) return;
-  selectedClassId.value = classId;
+  e.stopPropagation();
+  const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+  if (additive) {
+    if (selectedIds.value.includes(classId)) {
+      selectedIds.value = selectedIds.value.filter((x) => x !== classId);
+    } else {
+      selectedIds.value = [...selectedIds.value, classId];
+    }
+    ctx.open = false;
+    return;
+  }
+  if (!selectedIds.value.includes(classId)) {
+    selectedIds.value = [classId];
+  }
   ctx.open = false;
   const pos = positions[classId];
   if (!pos) return;
   const w = clientToWorld(e.clientX, e.clientY);
-  drag.value = { id: classId, ox: w.x - pos.x, oy: w.y - pos.y };
+  const snapshots: Record<string, { x: number; y: number }> = {};
+  for (const id of selectedIds.value) {
+    const pp = positions[id];
+    if (pp) snapshots[id] = { ...pp };
+  }
+  drag.value = {
+    primaryId: classId,
+    ox: w.x - pos.x,
+    oy: w.y - pos.y,
+    snapshots,
+  };
   (e.currentTarget as SVGElement).setPointerCapture(e.pointerId);
 }
 
 function onSvgClassPointerMove(e: PointerEvent, classId: string): void {
   const d = drag.value;
-  if (!d || d.id !== classId || inheritDrag.value) return;
+  if (!d || d.primaryId !== classId || inheritDrag.value) return;
   const w = clientToWorld(e.clientX, e.clientY);
-  positions[classId] = { x: w.x - d.ox, y: w.y - d.oy };
+  const s0 = d.snapshots[classId];
+  if (!s0) return;
+  const newPx = w.x - d.ox;
+  const newPy = w.y - d.oy;
+  const dx = newPx - s0.x;
+  const dy = newPy - s0.y;
+  for (const id of selectedIds.value) {
+    const snap = d.snapshots[id];
+    if (!snap) continue;
+    positions[id] = { x: snap.x + dx, y: snap.y + dy };
+  }
 }
 
 function onSvgClassPointerUp(e: PointerEvent, classId: string): void {
-  if (drag.value?.id === classId) {
+  if (drag.value?.primaryId === classId) {
     drag.value = null;
     pushMarkdown();
   }
@@ -344,7 +483,7 @@ function onSvgClassPointerUp(e: PointerEvent, classId: string): void {
 function onClassContextMenu(e: MouseEvent, classId: string): void {
   e.preventDefault();
   e.stopPropagation();
-  selectedClassId.value = classId;
+  selectedIds.value = [classId];
   ctx.open = true;
   ctx.x = e.clientX;
   ctx.y = e.clientY;
@@ -460,7 +599,7 @@ function deleteClass(classId: string): void {
   state.links = state.links.filter((l) => l.from !== classId && l.to !== classId);
   delete positions[classId];
   delete folded[classId];
-  selectedClassId.value = null;
+  selectedIds.value = selectedIds.value.filter((x) => x !== classId);
   ctx.open = false;
   pushMarkdown();
 }
@@ -471,6 +610,11 @@ function deleteClass(classId: string): void {
     <div
       ref="viewportRef"
       class="cde-viewport"
+      :class="{
+        'cde-viewport--panning': isPanning,
+        'cde-viewport--marquee': !!marquee,
+        'cde-viewport--dragging': !!drag,
+      }"
       :title="`${m.cdeFit} · ${m.cdeOrigin} · ${m.cdeResetZoom} — 无全局快捷键`"
       @wheel.prevent="onWheel"
       @pointerdown="onViewportPointerDown"
@@ -501,6 +645,29 @@ function deleteClass(classId: string): void {
             </marker>
           </defs>
 
+          <rect
+            class="cde-svg-bg"
+            x="0"
+            y="0"
+            width="4800"
+            height="3600"
+            fill="transparent"
+            @pointerdown="onSvgBackgroundPointerDown"
+          />
+          <rect
+            v-if="marqueeNorm"
+            class="cde-marquee-rect"
+            :x="marqueeNorm.x"
+            :y="marqueeNorm.y"
+            :width="marqueeNorm.w"
+            :height="marqueeNorm.h"
+            fill="rgba(37, 99, 235, 0.12)"
+            stroke="#2563eb"
+            stroke-width="1"
+            stroke-dasharray="4 3"
+            pointer-events="none"
+          />
+
           <template v-for="ep in edgePaths" :key="ep.id">
             <path
               :d="ep.d"
@@ -526,7 +693,7 @@ function deleteClass(classId: string): void {
               :cx="124"
               :cy="-10"
               r="8"
-              :fill="selectedClassId === c.id ? '#2563eb' : '#94a3b8'"
+              :fill="isClassSelected(c.id) ? '#2563eb' : '#94a3b8'"
               stroke="#334155"
               stroke-width="1"
               class="cde-inherit-handle"
@@ -535,13 +702,14 @@ function deleteClass(classId: string): void {
               <title>{{ m.cdsInheritHandleHint }}</title>
             </circle>
             <rect
+              class="cde-class-body"
               x="0"
               y="0"
               width="248"
               :height="estimateClassSize(c, !!folded[c.id]).h"
               :fill="classHue(idx)"
-              :stroke="classHueStroke(idx)"
-              stroke-width="2"
+              :stroke="isClassSelected(c.id) ? '#2563eb' : classHueStroke(idx)"
+              :stroke-width="isClassSelected(c.id) ? 3 : 2"
               rx="4"
               style="pointer-events: visiblePainted"
             />
@@ -553,6 +721,7 @@ function deleteClass(classId: string): void {
               fill="rgba(255,255,255,0.35)"
               stroke="#64748b"
               rx="2"
+              class="cde-fold-hit"
               @pointerdown.stop
               @click.stop="toggleFold(c.id)"
             />
@@ -619,18 +788,41 @@ function deleteClass(classId: string): void {
         </svg>
       </div>
 
-      <div class="cde-panel cde-panel--shortcuts" :class="{ 'cde-panel--collapsed': !shortcutsOpen }">
-        <button
-          type="button"
-          class="cde-panel__toggle"
-          :aria-expanded="shortcutsOpen"
-          :title="`${m.cdeShortcutsPanel} — 无全局快捷键`"
-          @click="shortcutsOpen = !shortcutsOpen"
-        >
-          {{ m.cdeShortcutsPanel }}
-          <span class="cde-panel__glyph">{{ shortcutsOpen ? '▴' : '▾' }}</span>
-        </button>
-        <pre v-show="shortcutsOpen" class="cde-panel__body">{{ m.cdeShortcutsBody }}</pre>
+      <div class="cde-left-stack">
+        <div class="cde-panel cde-panel--shortcuts" :class="{ 'cde-panel--collapsed': !shortcutsOpen }">
+          <button
+            type="button"
+            class="cde-panel__toggle"
+            :aria-expanded="shortcutsOpen"
+            :title="`${m.cdeShortcutsPanel} — 无全局快捷键`"
+            @click="shortcutsOpen = !shortcutsOpen"
+          >
+            {{ m.cdeShortcutsPanel }}
+            <span class="cde-panel__glyph">{{ shortcutsOpen ? '▴' : '▾' }}</span>
+          </button>
+          <pre v-show="shortcutsOpen" class="cde-panel__body">{{ m.cdeShortcutsBody }}</pre>
+        </div>
+
+        <div class="cde-canvas-toolbar" role="toolbar" :aria-label="m.cdeToolbarAria">
+          <button
+            type="button"
+            class="cde-canvas-toolbar__btn"
+            :aria-label="m.cdeNewClass"
+            :title="`${m.cdeNewClassHint} — 无全局快捷键`"
+            @click="addNewClass"
+          >
+            <svg class="cde-canvas-toolbar__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.75" />
+              <path
+                d="M12 8v8M8 12h8"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div class="cde-panel cde-panel--visibility" :class="{ 'cde-panel--collapsed': !visibilityOpen }">
@@ -720,6 +912,8 @@ function deleteClass(classId: string): void {
   display: flex;
   flex-direction: column;
   background: var(--canvas-bg, #eceff4);
+  user-select: none;
+  -webkit-user-select: none;
 }
 :root[data-theme='dark'] .cde {
   --canvas-bg: #1a1b1f;
@@ -730,11 +924,17 @@ function deleteClass(classId: string): void {
   min-height: 0;
   position: relative;
   overflow: hidden;
-  cursor: grab;
+  cursor: default;
   touch-action: none;
 }
-.cde-viewport:active {
+.cde-viewport--panning {
   cursor: grabbing;
+}
+.cde-viewport--marquee .cde-svg .cde-svg-bg {
+  cursor: crosshair;
+}
+.cde-viewport--dragging .cde-class-body {
+  cursor: move;
 }
 
 .cde-world {
@@ -771,13 +971,72 @@ function deleteClass(classId: string): void {
   display: block;
 }
 
+.cde-svg-bg {
+  cursor: default;
+}
+
+.cde-class-body {
+  cursor: move;
+}
+
+.cde-fold-hit {
+  cursor: pointer;
+}
+
 .cde-inherit-handle {
   cursor: crosshair;
 }
 
-.cde-panel {
+.cde-left-stack {
   position: absolute;
   z-index: 8;
+  left: 12px;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(280px, 42vw);
+  pointer-events: none;
+}
+.cde-left-stack > * {
+  pointer-events: auto;
+}
+
+.cde-canvas-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-bg, #fafafa) 94%, transparent);
+  border: 1px solid var(--border, #ccc);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.cde-canvas-toolbar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text, #0f172a);
+  background: var(--editor-bg, #fff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.cde-canvas-toolbar__btn:hover {
+  background: color-mix(in srgb, var(--editor-bg, #fff) 88%, #2563eb);
+  color: #1d4ed8;
+}
+.cde-canvas-toolbar__icon {
+  display: block;
+}
+
+.cde-panel {
   max-width: min(280px, 42vw);
   border-radius: 6px;
   background: color-mix(in srgb, var(--panel-bg, #fafafa) 94%, transparent);
@@ -786,12 +1045,13 @@ function deleteClass(classId: string): void {
   font-size: 0.72rem;
 }
 .cde-panel--shortcuts {
-  left: 12px;
-  top: 12px;
+  position: relative;
 }
 .cde-panel--visibility {
+  position: absolute;
   right: 12px;
   top: 12px;
+  z-index: 8;
 }
 .cde-panel__toggle {
   width: 100%;

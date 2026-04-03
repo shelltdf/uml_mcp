@@ -92,6 +92,7 @@ export interface UiMessages {
   propsKindUml: string;
   propsKindClass: string;
   propsKindCode: string;
+  propsKindSource: string;
   propsKindOther: string;
   propsPath: string;
   propsKind: string;
@@ -115,6 +116,43 @@ export interface UiMessages {
   dockPanelShow: string;
   dockPanelHide: string;
   dockNoActiveFile: string;
+  /** 文本停靠区：语法高亮语言 */
+  /** 文本停靠区：自动换行（软回行） */
+  textDockLineWrap: string;
+  textDockSyntaxLang: string;
+  textDockLangAuto: string;
+  textDockLangPlain: string;
+  textDockLangMarkdown: string;
+  textDockLangJavaScript: string;
+  textDockLangTypeScript: string;
+  textDockLangTSX: string;
+  textDockLangJSX: string;
+  textDockLangJSON: string;
+  textDockLangYAML: string;
+  textDockLangCpp: string;
+  textDockLangPython: string;
+  textDockLangXML: string;
+  textDockLangCSS: string;
+  textDockLangHTML: string;
+  textDockLangVue: string;
+  textDockMetaInferred: string;
+  textDockEncUtf8: string;
+  textDockEncUtf8Bom: string;
+  textDockLeCrlf: string;
+  textDockLeLf: string;
+  textDockLeCr: string;
+  textDockLeMixed: string;
+  textDockLeNone: string;
+  textDockLeMixedDetail: string;
+  textDockIndentTab: string;
+  textDockIndentSpace2: string;
+  textDockIndentSpace4: string;
+  textDockIndentMixed: string;
+  textDockIndentUnknown: string;
+  textDockEndianNa: string;
+  textDockMetaEOL: string;
+  textDockMetaIndent: string;
+  textDockMetaEndian: string;
   mdiWorkspaceLabel: string;
   mdiTabStripLabel: string;
   dirtyTabHint: string;
@@ -129,7 +167,19 @@ export interface UiMessages {
   classMdReadonlyAssoc: string;
   /** *.class.md 成员表编辑提示 */
   classMdTableHint: string;
+  /** *.class.md 成员编辑区标题 */
+  classMdMembersTitle: string;
   classMdAddRow: string;
+  /** 类定义：打开与契约对应的实现文件 */
+  classMdViewSyncedCode: string;
+  classMdSyncedModalTitle: string;
+  classMdSyncedOpenInTab: string;
+  classMdSyncedMissing: string;
+  classMdSyncedNoPaths: string;
+  classMdSyncedClose: string;
+  /** 源码文件画布（*.hpp / *.cpp 等） */
+  sourceCanvasAria: string;
+  sourceCanvasHint: string;
   canvasKindCodeTitle: string;
   canvasKindCodeHint: string;
   codeCanvasViewportTitle: string;
@@ -171,6 +221,10 @@ export interface UiMessages {
   toolbarRevert: string;
   /** 可编辑类图画布 */
   cdeNewClass: string;
+  /** 新建类按钮详细提示（悬停） */
+  cdeNewClassHint: string;
+  /** classDiagram 画布左侧工具栏（无障碍） */
+  cdeToolbarAria: string;
   cdeFit: string;
   cdeOrigin: string;
   cdeResetZoom: string;
@@ -309,6 +363,7 @@ const zh: UiMessages = {
   propsKindUml: 'UML 图 (*.uml.md)',
   propsKindClass: '类定义 (*.class.md)',
   propsKindCode: '代码片段 (*.code.md)',
+  propsKindSource: '源码文件',
   propsKindOther: '其它 / 未知',
   propsPath: '路径',
     propsKind: '类型',
@@ -331,6 +386,41 @@ const zh: UiMessages = {
   dockPanelShow: '在停靠区显示',
   dockPanelHide: '在停靠区隐藏',
   dockNoActiveFile: '无活动文件',
+  textDockLineWrap: '自动回行',
+  textDockSyntaxLang: '语法高亮',
+  textDockLangAuto: '自动（按路径）',
+  textDockLangPlain: '纯文本',
+  textDockLangMarkdown: 'Markdown',
+  textDockLangJavaScript: 'JavaScript',
+  textDockLangTypeScript: 'TypeScript',
+  textDockLangTSX: 'TSX',
+  textDockLangJSX: 'JSX',
+  textDockLangJSON: 'JSON',
+  textDockLangYAML: 'YAML',
+  textDockLangCpp: 'C/C++',
+  textDockLangPython: 'Python',
+  textDockLangXML: 'XML',
+  textDockLangCSS: 'CSS',
+  textDockLangHTML: 'HTML',
+  textDockLangVue: 'Vue',
+  textDockMetaInferred: '推断',
+  textDockEncUtf8: 'UTF-8',
+  textDockEncUtf8Bom: 'UTF-8（BOM）',
+  textDockLeCrlf: 'CRLF',
+  textDockLeLf: 'LF',
+  textDockLeCr: 'CR',
+  textDockLeMixed: '混合',
+  textDockLeNone: '无换行',
+  textDockLeMixedDetail: '混合（CRLF {crlf} · LF {lf} · CR {cr}）',
+  textDockIndentTab: 'Tab',
+  textDockIndentSpace2: '2 空格',
+  textDockIndentSpace4: '4 空格',
+  textDockIndentMixed: '混合',
+  textDockIndentUnknown: '未知',
+  textDockEndianNa: '不适用（UTF-8 文本无字节序）',
+  textDockMetaEOL: '换行',
+  textDockMetaIndent: '缩进',
+  textDockMetaEndian: '字节序',
   mdiWorkspaceLabel: 'MDI 文档工作区',
   mdiTabStripLabel: '已打开文档',
   dirtyTabHint: '未保存',
@@ -342,8 +432,19 @@ const zh: UiMessages = {
     '上方为与类图风格一致的画布：继承与关联仅作只读展示（来自文件内 <!-- class-md-meta -->）。下方表格可编辑成员。',
   classMdReadonlyInherit: '继承（只读）',
   classMdReadonlyAssoc: '关联（只读）',
-  classMdTableHint: '编辑成员（Kind / Name / Type / Note）；继承与关联请在对应 *.uml.md 中维护，并在本文件 meta 注释中同步展示名。',
+  classMdTableHint: '继承与关联请在对应 *.uml.md 中维护，并在本文件 meta 注释中同步展示名。',
+  classMdMembersTitle: '成员编辑',
   classMdAddRow: '添加行',
+  classMdViewSyncedCode: '查看已同步代码',
+  classMdSyncedModalTitle: '实现文件（与类契约对应）',
+  classMdSyncedOpenInTab: '打开此标签',
+  classMdSyncedMissing:
+    '尚未在工作区打开该路径。请使用「文件 → 打开」从磁盘添加，或将仓库内文件纳入工作区。',
+  classMdSyncedNoPaths:
+    '无法解析实现路径：请打开含 YAML 的 uml.sync.md，或在 class-md-meta 中填写 code_files。',
+  classMdSyncedClose: '关闭',
+  sourceCanvasAria: '源码预览',
+  sourceCanvasHint: '只读预览；完整编辑请使用右侧文本停靠区。',
   canvasKindCodeTitle: '代码片段（*.code.md）',
   canvasKindCodeHint:
     '中央为 2D 画布：左侧工具栏可新建函数 / 变量或常量 / 宏；卡片可拖拽布局，点击下方表单编辑字段。右侧停靠区仍可编辑全文。',
@@ -384,6 +485,8 @@ const zh: UiMessages = {
   toolbarSaveAs: '另存',
   toolbarRevert: '还原',
   cdeNewClass: '新建类',
+  cdeNewClassHint: '在视口中心附近添加新类框（名称自动避重）',
+  cdeToolbarAria: '类图画布工具',
   cdeFit: '适应',
   cdeOrigin: '原点',
   cdeResetZoom: '还原',
@@ -408,7 +511,7 @@ const zh: UiMessages = {
   cdsInheritHandleHint: '拖拽到父类框以设置继承（子类顶部圆点连向父类）',
   cdeShortcutsPanel: '快捷键',
   cdeShortcutsBody:
-    '中键拖拽：平移画布\n滚轮：缩放（指针位置为锚点）\n左键拖拽类框：移动布局\n类框左上：折叠/展开\n类顶圆点：拖向父类建立继承',
+    '中键拖拽：平移画布\n滚轮：缩放（指针位置为锚点）\n左键点击类框：选中；Ctrl/⌘+点击：多选切换\n左键拖空白：框选多个类\n左键点击空白：清除选择\n左键拖拽选中类框：移动布局（多选时一齐移动）\n类框左上：折叠/展开\n类顶圆点：拖向父类建立继承',
   cdeVisibilityPanel: '显示',
   cdeShowInherit: '继承关系',
   cdeShowAssoc: '关联关系',
@@ -527,6 +630,7 @@ const en: UiMessages = {
   propsKindUml: 'UML (*.uml.md)',
   propsKindClass: 'Class (*.class.md)',
   propsKindCode: 'Code (*.code.md)',
+  propsKindSource: 'Source file',
   propsKindOther: 'Other / unknown',
   propsPath: 'Path',
     propsKind: 'Kind',
@@ -549,6 +653,41 @@ const en: UiMessages = {
   dockPanelShow: 'Show in dock',
   dockPanelHide: 'Hide from dock',
   dockNoActiveFile: 'No active file',
+  textDockLineWrap: 'Word wrap',
+  textDockSyntaxLang: 'Syntax highlight',
+  textDockLangAuto: 'Auto (from path)',
+  textDockLangPlain: 'Plain text',
+  textDockLangMarkdown: 'Markdown',
+  textDockLangJavaScript: 'JavaScript',
+  textDockLangTypeScript: 'TypeScript',
+  textDockLangTSX: 'TSX',
+  textDockLangJSX: 'JSX',
+  textDockLangJSON: 'JSON',
+  textDockLangYAML: 'YAML',
+  textDockLangCpp: 'C/C++',
+  textDockLangPython: 'Python',
+  textDockLangXML: 'XML',
+  textDockLangCSS: 'CSS',
+  textDockLangHTML: 'HTML',
+  textDockLangVue: 'Vue',
+  textDockMetaInferred: 'inferred',
+  textDockEncUtf8: 'UTF-8',
+  textDockEncUtf8Bom: 'UTF-8 (BOM)',
+  textDockLeCrlf: 'CRLF',
+  textDockLeLf: 'LF',
+  textDockLeCr: 'CR',
+  textDockLeMixed: 'Mixed',
+  textDockLeNone: 'No line breaks',
+  textDockLeMixedDetail: 'Mixed (CRLF {crlf} · LF {lf} · CR {cr})',
+  textDockIndentTab: 'Tab',
+  textDockIndentSpace2: '2 spaces',
+  textDockIndentSpace4: '4 spaces',
+  textDockIndentMixed: 'Mixed',
+  textDockIndentUnknown: 'Unknown',
+  textDockEndianNa: 'N/A (UTF-8 text has no endianness)',
+  textDockMetaEOL: 'EOL',
+  textDockMetaIndent: 'Indent',
+  textDockMetaEndian: 'Endian',
   mdiWorkspaceLabel: 'MDI document workspace',
   mdiTabStripLabel: 'Open documents',
   dirtyTabHint: 'Unsaved',
@@ -561,8 +700,19 @@ const en: UiMessages = {
   classMdReadonlyInherit: 'Inherits (read-only)',
   classMdReadonlyAssoc: 'Association (read-only)',
   classMdTableHint:
-    'Edit members (Kind / Name / Type / Note). Maintain relations in *.uml.md and mirror display names in this file’s meta comment.',
+    'Maintain inheritance/associations in *.uml.md and mirror display names in this file’s meta comment.',
+  classMdMembersTitle: 'Members',
   classMdAddRow: 'Add row',
+  classMdViewSyncedCode: 'View synced implementation',
+  classMdSyncedModalTitle: 'Implementation files (mapped from class)',
+  classMdSyncedOpenInTab: 'Open tab',
+  classMdSyncedMissing:
+    'This path is not open in the workspace. Use File → Open, or add files from your project folder.',
+  classMdSyncedNoPaths:
+    'Could not resolve paths: open uml.sync.md with YAML, or set code_files in class-md-meta.',
+  classMdSyncedClose: 'Close',
+  sourceCanvasAria: 'Source preview',
+  sourceCanvasHint: 'Read-only preview; edit in the Text content dock.',
   canvasKindCodeTitle: 'Code snippets (*.code.md)',
   canvasKindCodeHint:
     '2D canvas: use the left toolbar to add a function, variable/constant, or macro; drag cards and edit fields in the form below. The text dock still edits the full file.',
@@ -603,6 +753,8 @@ const en: UiMessages = {
   toolbarSaveAs: 'Save as',
   toolbarRevert: 'Revert',
   cdeNewClass: 'New class',
+  cdeNewClassHint: 'Add a new class box near the viewport center (unique name)',
+  cdeToolbarAria: 'Class diagram toolbar',
   cdeFit: 'Fit',
   cdeOrigin: 'Origin',
   cdeResetZoom: 'Reset zoom',
@@ -628,7 +780,7 @@ const en: UiMessages = {
   cdsInheritHandleHint: 'Drag onto a parent class box to set inheritance (child top handle to parent)',
   cdeShortcutsPanel: 'Shortcuts',
   cdeShortcutsBody:
-    'Middle-drag: pan\nWheel: zoom (pointer anchor)\nDrag class box: move layout\nTop-left fold: collapse/expand\nTop handle: drag to parent for inheritance',
+    'Middle-drag: pan\nWheel: zoom (pointer anchor)\nClick class: select; Ctrl/⌘+click: toggle in selection\nDrag on empty: marquee select\nClick empty: clear selection\nDrag selected class(es): move (multi-move when several selected)\nTop-left fold: collapse/expand\nTop handle: drag to parent for inheritance',
   cdeVisibilityPanel: 'Visibility',
   cdeShowInherit: 'Inheritance',
   cdeShowAssoc: 'Associations',

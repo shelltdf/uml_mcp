@@ -17,6 +17,8 @@ import {
   serializeClassDiagramBody,
   stripMermaidMemberModifiers,
 } from './lib/classDiagramModel';
+import { resolveClassImplementationPaths } from './lib/classImplPaths';
+import { defaultUmlSyncConfig } from './lib/formats';
 import { parseClassMdMarkdown, serializeClassMdMarkdown } from './lib/classClassMdModel';
 import { buildCodeMdMarkdown, parseCodeMdMarkdown } from './lib/codeMdModel';
 
@@ -34,6 +36,29 @@ describe('formats', () => {
     expect(detectKindFromPath('x.uml.md')).toBe('uml');
     expect(detectKindFromPath('a.class.md')).toBe('class');
     expect(detectKindFromPath('b.code.md')).toBe('code');
+    expect(detectKindFromPath('lib/foo.hpp')).toBe('source');
+    expect(detectKindFromPath('src/x.cpp')).toBe('source');
+  });
+
+  it('resolves class impl paths for cpp from title', () => {
+    const paths = resolveClassImplementationPaths(
+      'namespace/h.class.md',
+      'Helloworld',
+      undefined,
+      defaultUmlSyncConfig(),
+    );
+    expect(paths).toContain('impl_cpp_project/include/acme/helloworld.hpp');
+    expect(paths).toContain('impl_cpp_project/src/helloworld.cpp');
+  });
+
+  it('uses class-md-meta code_files when set', () => {
+    const paths = resolveClassImplementationPaths(
+      'n/a',
+      'X',
+      ['impl_cpp_project/include/acme/x.hpp'],
+      null,
+    );
+    expect(paths).toEqual(['impl_cpp_project/include/acme/x.hpp']);
   });
 
   it('sync panel model always has config fields', () => {

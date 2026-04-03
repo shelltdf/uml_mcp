@@ -162,14 +162,19 @@ export const DIAGRAM_TYPES: DiagramTypeDef[] = [
     id: 'quadrantChart',
     labelZh: '象限图（quadrant）',
     labelEn: 'Quadrant chart',
+    /**
+     * 词法要求：每行一个关键字（title / x-axis / y-axis / quadrant-n），勿换行拆断 `y-axis`；
+     * `-->` 为半角连字符；轴标签若含空格，保持在一行内。
+     * @see https://mermaid.js.org/syntax/quadrantChart.html
+     */
     mermaidBody: `quadrantChart
-    title 优先级
-    x-axis 低影响 --> 高影响
-    y-axis 低紧急 --> 高紧急
-    quadrant-1 立即处理
-    quadrant-2 计划
-    quadrant-3 可忽略
-    quadrant-4 委派`,
+    title Priority
+    x-axis Low impact --> High impact
+    y-axis Low urgency --> High urgency
+    quadrant-1 Do now
+    quadrant-2 Schedule
+    quadrant-3 Ignore
+    quadrant-4 Delegate`,
   },
 ];
 

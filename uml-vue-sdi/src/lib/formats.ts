@@ -1,4 +1,4 @@
-export type FileKind = 'uml' | 'class' | 'code' | 'sync' | 'unknown';
+export type FileKind = 'uml' | 'class' | 'code' | 'sync' | 'source' | 'unknown';
 
 /** 单套代码实现：唯一代码根 + 代码类型（路径可为相对或绝对） */
 export interface CodeImplementation {
@@ -149,6 +149,7 @@ export function detectKindFromPath(path: string): FileKind {
   if (path.endsWith('.uml.md')) return 'uml';
   if (path.endsWith('.class.md')) return 'class';
   if (path.endsWith('.code.md')) return 'code';
+  if (/\.(cpp|cc|cxx|c|hpp|hh|h)\b/i.test(path)) return 'source';
   return 'unknown';
 }
 

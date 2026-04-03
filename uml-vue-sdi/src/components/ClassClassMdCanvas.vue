@@ -8,6 +8,7 @@ import {
   rowToDiagramAttr,
   serializeClassMdMarkdown,
 } from '../lib/classClassMdModel';
+import { getSyncConfigFromTabs, resolveClassImplementationPaths } from '../lib/classImplPaths';
 import { estimateClassSize, type ClassDef } from '../lib/classDiagramModel';
 import { workspace } from '../stores/workspace';
 
@@ -159,7 +160,7 @@ const mainClassDef = computed<ClassDef>(() => {
 });
 
 const ghostInherit = computed<ClassDef | null>(() => {
-  if (!state.meta.inherits) return null;
+  if (!state.meta?.inherits) return null;
   return {
     id: 'ghost-inh',
     name: state.meta.inherits,
@@ -169,7 +170,7 @@ const ghostInherit = computed<ClassDef | null>(() => {
 });
 
 const ghostAssocs = computed<ClassDef[]>(() =>
-  state.meta.associations.map((name, i) => ({
+  (state.meta?.associations ?? []).map((name, i) => ({
     id: `ghost-asc-${i}`,
     name,
     attributes: [' '],
@@ -287,6 +288,37 @@ function removeRow(i: number): void {
 function onCellChange(): void {
   pushMd();
 }
+
+const classMdWorkspacePath = computed(() => workspace.getTabPathById(props.tabId));
+
+const resolvedImplPaths = computed(() => {
+  try {
+    return resolveClassImplementationPaths(
+      classMdWorkspacePath.value,
+      state.title,
+      state.meta?.code_files,
+      getSyncConfigFromTabs(workspace.state.tabs),
+    );
+  } catch {
+    return [] as string[];
+  }
+});
+
+const syncedModalOpen = ref(false);
+const syncedEntries = ref<{ path: string; content: string; inWorkspace: boolean }[]>([]);
+
+function openSyncedCodeModal(): void {
+  const paths = resolvedImplPaths.value;
+  syncedEntries.value = paths.map((p) => {
+    const tab = workspace.findTabByWorkspacePath(p);
+    return { path: p, content: tab?.content ?? '', inWorkspace: !!tab };
+  });
+  syncedModalOpen.value = true;
+}
+
+function focusImplTab(p: string): void {
+  workspace.focusTabByWorkspacePath(p);
+}
 </script>
 
 <template>
@@ -294,6 +326,7 @@ function onCellChange(): void {
     <div
       ref="viewportRef"
       class="ccmd-viewport"
+      :class="{ 'ccmd-viewport--panning': isPanning }"
       :title="m.canvasViewportTitle"
       @wheel.prevent="onWheel"
       @pointerdown="onViewportPointerDown"
@@ -342,8 +375,12 @@ function onCellChange(): void {
               stroke-dasharray="4 3"
               rx="4"
             />
-            <text x="8" y="20" font-size="12" font-weight="700" fill="#334155">{{ escapeXml(ghostInherit.name) }}</text>
-            <text x="8" y="38" font-size="9" fill="#475569">{{ m.classMdReadonlyInherit }}</text>
+            <text x="8" y="20" font-size="12" font-weight="700" fill="#334155" style="pointer-events: none; user-select: none">
+              {{ escapeXml(ghostInherit.name) }}
+            </text>
+            <text x="8" y="38" font-size="9" fill="#475569" style="pointer-events: none; user-select: none">
+              {{ m.classMdReadonlyInherit }}
+            </text>
           </g>
 
           <g
@@ -362,11 +399,16 @@ function onCellChange(): void {
               stroke-dasharray="4 3"
               rx="4"
             />
-            <text x="8" y="20" font-size="12" font-weight="700" fill="#334155">{{ escapeXml(gc.name) }}</text>
-            <text x="8" y="38" font-size="9" fill="#475569">{{ m.classMdReadonlyAssoc }}</text>
+            <text x="8" y="20" font-size="12" font-weight="700" fill="#334155" style="pointer-events: none; user-select: none">
+              {{ escapeXml(gc.name) }}
+            </text>
+            <text x="8" y="38" font-size="9" fill="#475569" style="pointer-events: none; user-select: none">
+              {{ m.classMdReadonlyAssoc }}
+            </text>
           </g>
 
           <g
+            class="ccmd-main-class"
             :transform="`translate(${mainPos.x}, ${mainPos.y})`"
             @pointerdown="onMainPointerDown"
             @pointermove="onMainPointerMove"
@@ -374,6 +416,7 @@ function onCellChange(): void {
             @pointercancel="onMainPointerUp"
           >
             <rect
+              class="ccmd-class-body"
               x="0"
               y="0"
               width="248"
@@ -382,10 +425,26 @@ function onCellChange(): void {
               stroke="hsl(200, 42%, 42%)"
               stroke-width="2"
               rx="4"
-              style="cursor: move"
+              style="pointer-events: visiblePainted; cursor: move"
             />
-            <text x="8" y="20" font-size="12" font-weight="700" fill="#0f172a">{{ escapeXml(mainClassDef.name) }}</text>
-            <rect x="0" y="36" width="248" :height="attrBlockHeight(mainClassDef)" fill="hsl(200, 42%, 96%)" />
+            <text
+              x="8"
+              y="20"
+              font-size="12"
+              font-weight="700"
+              fill="#0f172a"
+              style="pointer-events: none; user-select: none"
+            >
+              {{ escapeXml(mainClassDef.name) }}
+            </text>
+            <rect
+              x="0"
+              y="36"
+              width="248"
+              :height="attrBlockHeight(mainClassDef)"
+              fill="hsl(200, 42%, 96%)"
+              style="pointer-events: none"
+            />
             <text
               v-for="(a, ai) in mainClassDef.attributes"
               :key="'a' + ai"
@@ -394,6 +453,7 @@ function onCellChange(): void {
               font-size="10"
               font-family="ui-monospace, Consolas, monospace"
               fill="#14532d"
+              style="pointer-events: none; user-select: none"
             >
               {{ escapeXml(a) }}
             </text>
@@ -403,6 +463,7 @@ function onCellChange(): void {
               width="248"
               :height="methBlockHeight(mainClassDef)"
               fill="hsl(212, 48%, 95%)"
+              style="pointer-events: none"
             />
             <text
               v-for="(meth, mi) in mainClassDef.methods"
@@ -412,6 +473,7 @@ function onCellChange(): void {
               font-size="10"
               font-family="ui-monospace, Consolas, monospace"
               fill="#1e3a5f"
+              style="pointer-events: none; user-select: none"
             >
               {{ escapeXml(meth) }}
             </text>
@@ -430,30 +492,92 @@ function onCellChange(): void {
     </div>
 
     <div class="ccmd-table-wrap">
-      <p class="ccmd-table-hint">{{ m.classMdTableHint }}</p>
-      <table class="ccmd-table">
-        <thead>
-          <tr>
-            <th>Kind</th>
-            <th>Name</th>
-            <th>Type</th>
-            <th>Note</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(row, ri) in state.rows" :key="ri">
-            <td><input v-model="row.kind" class="ccmd-inp" @change="onCellChange" /></td>
-            <td><input v-model="row.name" class="ccmd-inp" @change="onCellChange" /></td>
-            <td><input v-model="row.type" class="ccmd-inp" @change="onCellChange" /></td>
-            <td><input v-model="row.note" class="ccmd-inp" @change="onCellChange" /></td>
-            <td>
-              <button type="button" class="ccmd-del" @click="removeRow(ri)">{{ m.cdeDelete }}</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <button type="button" class="ccmd-add" @click="addRow">{{ m.classMdAddRow }}</button>
+      <div class="ccmd-members-card">
+        <div class="ccmd-members-card__head">
+          <div class="ccmd-members-card__head-row">
+            <h3 class="ccmd-members-card__title">{{ m.classMdMembersTitle }}</h3>
+            <button
+              type="button"
+              class="ccmd-btn-sync"
+              :disabled="resolvedImplPaths.length === 0"
+              :title="resolvedImplPaths.length === 0 ? m.classMdSyncedNoPaths : m.classMdViewSyncedCode"
+              @click="openSyncedCodeModal"
+            >
+              {{ m.classMdViewSyncedCode }}
+            </button>
+          </div>
+          <p class="ccmd-members-card__hint">{{ m.classMdTableHint }}</p>
+        </div>
+        <div class="ccmd-table-scroll">
+          <table class="ccmd-table">
+            <thead>
+              <tr>
+                <th>{{ m.codeCanvasFieldKind }}</th>
+                <th>{{ m.codeCanvasFieldName }}</th>
+                <th>{{ m.codeCanvasFieldType }}</th>
+                <th>{{ m.codeCanvasFieldNote }}</th>
+                <th class="ccmd-table__col-actions" />
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, ri) in state.rows" :key="ri">
+                <td><input v-model="row.kind" class="ccmd-inp" @change="onCellChange" /></td>
+                <td><input v-model="row.name" class="ccmd-inp" @change="onCellChange" /></td>
+                <td><input v-model="row.type" class="ccmd-inp" @change="onCellChange" /></td>
+                <td><input v-model="row.note" class="ccmd-inp" @change="onCellChange" /></td>
+                <td class="ccmd-table__col-actions">
+                  <button type="button" class="ccmd-del" :title="m.cdeDelete" @click="removeRow(ri)">
+                    {{ m.cdeDelete }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <button type="button" class="ccmd-add" @click="addRow">{{ m.classMdAddRow }}</button>
+      </div>
+    </div>
+
+    <div
+      v-if="syncedModalOpen"
+      class="ccmd-sync-overlay"
+      role="presentation"
+      @click.self="syncedModalOpen = false"
+    >
+      <div
+        class="ccmd-sync-dialog"
+        role="dialog"
+        :aria-label="m.classMdSyncedModalTitle"
+        @click.stop
+      >
+        <div class="ccmd-sync-dialog__head">
+          <h3 class="ccmd-sync-dialog__title">{{ m.classMdSyncedModalTitle }}</h3>
+          <button type="button" class="ccmd-sync-dialog__close" @click="syncedModalOpen = false">
+            {{ m.classMdSyncedClose }}
+          </button>
+        </div>
+        <p v-if="resolvedImplPaths.length === 0" class="ccmd-sync-empty">{{ m.classMdSyncedNoPaths }}</p>
+        <div v-else class="ccmd-sync-grid">
+          <section v-for="(ent, ei) in syncedEntries" :key="ei" class="ccmd-sync-block">
+            <header class="ccmd-sync-block__head">
+              <code class="ccmd-sync-block__path">{{ ent.path }}</code>
+              <button
+                v-if="ent.inWorkspace"
+                type="button"
+                class="ccmd-sync-block__tab"
+                @click="
+                  focusImplTab(ent.path);
+                  syncedModalOpen = false;
+                "
+              >
+                {{ m.classMdSyncedOpenInTab }}
+              </button>
+              <span v-else class="ccmd-sync-block__missing">{{ m.classMdSyncedMissing }}</span>
+            </header>
+            <pre v-if="ent.inWorkspace" class="ccmd-sync-block__pre">{{ ent.content }}</pre>
+          </section>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -465,6 +589,8 @@ function onCellChange(): void {
   display: flex;
   flex-direction: column;
   background: var(--canvas-bg, #eceff4);
+  user-select: none;
+  -webkit-user-select: none;
 }
 :root[data-theme='dark'] .ccmd {
   --canvas-bg: #1a1b1f;
@@ -475,11 +601,14 @@ function onCellChange(): void {
   min-height: 180px;
   position: relative;
   overflow: hidden;
-  cursor: grab;
+  cursor: default;
   touch-action: none;
 }
-.ccmd-viewport:active {
+.ccmd-viewport--panning {
   cursor: grabbing;
+}
+.ccmd-class-body:hover {
+  filter: brightness(1.02);
 }
 
 .ccmd-world {
@@ -552,48 +681,279 @@ function onCellChange(): void {
 
 .ccmd-table-wrap {
   flex: 0 0 auto;
-  max-height: 40vh;
-  overflow: auto;
-  padding: 10px 12px 14px;
-  border-top: 1px solid var(--border, #ccc);
-  background: var(--editor-bg, #fff);
+  max-height: 44vh;
+  overflow: hidden;
+  padding: 12px 14px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--border, #ccc) 80%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--editor-bg, #fff) 96%, #64748b) 0%, var(--editor-bg, #fff) 32%);
 }
 :root[data-theme='dark'] .ccmd-table-wrap {
   --editor-bg: #25262c;
 }
-.ccmd-table-hint {
-  margin: 0 0 8px;
-  font-size: 0.8rem;
-  opacity: 0.85;
+
+.ccmd-members-card {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 14px 16px 16px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border, #ccc) 70%, transparent);
+  background: color-mix(in srgb, var(--editor-bg, #fff) 97%, #94a3b8);
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+}
+:root[data-theme='dark'] .ccmd-members-card {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+.ccmd-members-card__head {
+  margin-bottom: 12px;
+}
+.ccmd-members-card__head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.ccmd-members-card__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text, #0f172a);
+}
+.ccmd-btn-sync {
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, #2563eb 45%, var(--border, #ccc));
+  color: #1d4ed8;
+  background: color-mix(in srgb, var(--editor-bg, #fff) 90%, #93c5fd);
+}
+.ccmd-btn-sync:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+.ccmd-btn-sync:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ccmd-members-card__hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  opacity: 0.88;
+  color: color-mix(in srgb, var(--text, #0f172a) 88%, transparent);
+}
+
+.ccmd-table-scroll {
+  overflow: auto;
+  max-height: min(28vh, 320px);
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border, #ccc) 55%, transparent);
+  background: var(--editor-bg, #fff);
 }
 .ccmd-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 0.8rem;
+}
+.ccmd-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--text, #334155) 85%, transparent);
+  background: color-mix(in srgb, var(--editor-bg, #fff) 92%, #64748b);
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #ccc) 60%, transparent);
+  white-space: nowrap;
+}
+.ccmd-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--editor-bg, #fff) 97%, #94a3b8);
+}
+.ccmd-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--editor-bg, #fff) 93%, #3b82f6);
 }
 .ccmd-table th,
 .ccmd-table td {
-  border: 1px solid var(--border, #ccc);
-  padding: 4px 6px;
-  text-align: left;
+  padding: 6px 8px;
+  vertical-align: middle;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #ccc) 45%, transparent);
+}
+.ccmd-table__col-actions {
+  width: 4.5rem;
+  text-align: center;
+  white-space: nowrap;
 }
 .ccmd-inp {
   width: 100%;
-  min-width: 4rem;
+  min-width: 3.5rem;
   font: inherit;
-  border: none;
-  background: transparent;
+  font-size: 0.82rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--border, #ccc) 65%, transparent);
+  background: color-mix(in srgb, var(--editor-bg, #fff) 96%, #f1f5f9);
   color: inherit;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.ccmd-inp:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 .ccmd-del {
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, #b91c1c 35%, var(--border, #ccc));
+  color: #b91c1c;
+  background: color-mix(in srgb, #fff 92%, #fecaca);
+}
+:root[data-theme='dark'] .ccmd-del {
+  background: color-mix(in srgb, var(--editor-bg, #25262c) 90%, #7f1d1d);
+  color: #fca5a5;
+}
+.ccmd-del:hover {
+  filter: brightness(1.05);
 }
 .ccmd-add {
-  margin-top: 8px;
+  margin-top: 12px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border, #ccc) 55%, #3b82f6);
+  color: #1d4ed8;
+  background: color-mix(in srgb, var(--editor-bg, #fff) 94%, #93c5fd);
+}
+.ccmd-add:hover {
+  filter: brightness(1.03);
+}
+.ccmd-table-wrap .ccmd-inp,
+.ccmd-table-wrap .ccmd-add,
+.ccmd-table-wrap .ccmd-del {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.ccmd-sync-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+}
+.ccmd-sync-dialog {
+  width: min(960px, 100%);
+  max-height: min(88vh, 900px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: var(--editor-bg, #fff);
+  border: 1px solid var(--border, #ccc);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+.ccmd-sync-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #ccc) 70%, transparent);
+  background: color-mix(in srgb, var(--panel-bg, #fafafa) 88%, transparent);
+}
+.ccmd-sync-dialog__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.ccmd-sync-dialog__close {
   font: inherit;
   cursor: pointer;
-  padding: 6px 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #ccc);
+  background: var(--editor-bg, #fff);
+}
+.ccmd-sync-empty {
+  margin: 0;
+  padding: 16px 20px;
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+.ccmd-sync-grid {
+  padding: 12px 16px 18px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ccmd-sync-block {
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border, #ccc) 65%, transparent);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--editor-bg, #fff) 96%, #64748b);
+}
+.ccmd-sync-block__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #ccc) 50%, transparent);
+  font-size: 0.75rem;
+}
+.ccmd-sync-block__path {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.72rem;
+  word-break: break-all;
+}
+.ccmd-sync-block__tab {
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, #2563eb 40%, var(--border, #ccc));
+  color: #1d4ed8;
+  background: color-mix(in srgb, var(--editor-bg, #fff) 92%, #bfdbfe);
+}
+.ccmd-sync-block__missing {
+  color: #b45309;
+  max-width: 36rem;
+  line-height: 1.35;
+}
+:root[data-theme='dark'] .ccmd-sync-block__missing {
+  color: #fbbf24;
+}
+.ccmd-sync-block__pre {
+  margin: 0;
+  max-height: min(40vh, 360px);
+  overflow: auto;
+  padding: 10px 12px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  white-space: pre;
+  tab-size: 2;
 }
 </style>

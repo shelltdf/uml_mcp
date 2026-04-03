@@ -30,6 +30,7 @@ const kindLabel = computed(() => {
   if (k === 'uml') return msg.propsKindUml;
   if (k === 'class') return msg.propsKindClass;
   if (k === 'code') return msg.propsKindCode;
+  if (k === 'source') return msg.propsKindSource;
   return msg.propsKindOther;
 });
 

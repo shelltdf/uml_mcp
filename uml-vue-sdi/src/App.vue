@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import DiagramThumbnail from './components/DiagramThumbnail.vue';
 import EditorTabs from './components/EditorTabs.vue';
 import FileKindCanvas from './components/FileKindCanvas.vue';
+import SourceFileCanvas from './components/SourceFileCanvas.vue';
 import ClassClassMdCanvas from './components/ClassClassMdCanvas.vue';
 import CodeMdCanvas from './components/CodeMdCanvas.vue';
 import MermaidPreview from './components/MermaidPreview.vue';
@@ -22,19 +23,28 @@ const locale = ref<LocaleId>('zh');
 
 const msg = computed(() => getMessages(locale.value));
 
+const systemPrefersDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches);
+const prefersDarkMq = window.matchMedia('(prefers-color-scheme: dark)');
+
 function applyTheme() {
   const root = document.documentElement;
   let dark = false;
   if (theme.value === 'dark') dark = true;
   else if (theme.value === 'light') dark = false;
-  else dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  else dark = systemPrefersDark.value;
   root.dataset.theme = dark ? 'dark' : 'light';
 }
 
 watch(theme, applyTheme, { immediate: true });
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+prefersDarkMq.addEventListener('change', (e) => {
+  systemPrefersDark.value = e.matches;
   if (theme.value === 'system') applyTheme();
 });
+
+/** 供文本停靠区 CodeMirror 与 data-theme 一致 */
+const editorDark = computed(() =>
+  theme.value === 'dark' ? true : theme.value === 'light' ? false : systemPrefersDark.value,
+);
 
 function setTheme(v: 'system' | 'light' | 'dark') {
   theme.value = v;
@@ -733,6 +743,12 @@ onUnmounted(() => {
             :tab-id="activeTab.id"
             :locale="locale"
           />
+          <SourceFileCanvas
+            v-else-if="activeTab && activeTab.kind === 'source'"
+            :content="activeTab.content"
+            :path="activeTab.path"
+            :locale="locale"
+          />
           <FileKindCanvas
             v-else-if="activeTab && activeTab.kind === 'unknown'"
             kind="unknown"
@@ -789,6 +805,7 @@ onUnmounted(() => {
             >
               <TextContentDock
                 :locale="locale"
+                :editor-dark="editorDark"
                 :body-folded="textDockBodyFolded"
                 :maximized="dockColumnMaximized"
                 @update:body-folded="textDockBodyFolded = $event"
@@ -834,15 +851,17 @@ onUnmounted(() => {
     <footer
       class="statusbar"
       :title="
-        anyDirty
-          ? msg.statusDirty + ' — 点击查看 Log — 无全局快捷键'
-          : msg.statusReady + ' — 点击查看 Log — 无全局快捷键'
+        (anyDirty ? msg.statusDirty : msg.statusReady) +
+        ' — v' +
+        APP_VERSION +
+        ' — 点击查看 Log — 无全局快捷键'
       "
       @click="logOpen = !logOpen"
     >
       <span v-if="anyDirty" class="dirty">{{ msg.statusDirty }}</span>
       <span v-else>{{ msg.statusReady }}</span>
       <span v-if="activeTab" class="path">{{ activeTab.path }}</span>
+      <span class="statusbar__ver" :title="'v' + APP_VERSION">v{{ APP_VERSION }}</span>
     </footer>
 
     <div v-if="helpOpen" class="modal-backdrop" role="dialog" aria-modal="true" @click.self="helpOpen = false">
@@ -1344,10 +1363,23 @@ onUnmounted(() => {
   font-weight: 600;
 }
 .path {
+  flex: 1;
+  min-width: 0;
   opacity: 0.85;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.statusbar__ver {
+  flex-shrink: 0;
+  margin-left: auto;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  color: color-mix(in srgb, var(--fg, #333) 75%, transparent);
+}
+:root[data-theme='dark'] .statusbar__ver {
+  color: color-mix(in srgb, var(--fg, #eceff4) 72%, transparent);
 }
 
 .modal-backdrop {
