@@ -1,7 +1,7 @@
 /**
  * Electron 套壳：加载 Vite 构建产物 dist/index.html（base 为相对路径）。
  */
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
 
 function createWindow() {
@@ -18,6 +18,17 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Windows/Linux 默认无菜单时关闭行为易与渲染进程 beforeunload 混淆；提供退出入口并保证可关闭
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        {
+          label: 'File',
+          submenu: [{ role: 'quit', label: 'Exit' }],
+        },
+      ]),
+    );
+  }
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

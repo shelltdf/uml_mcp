@@ -8,9 +8,11 @@ import {
   type ClassPositions,
   type ClassDiagramEdgeVisibility,
   buildClassDiagramMarkdown,
+  classDiagramHeaderHeight,
   diagramBounds,
   estimateClassSize,
   parseOrDefault,
+  slug,
 } from '../lib/classDiagramModel';
 import { workspace } from '../stores/workspace';
 
@@ -22,7 +24,8 @@ const props = defineProps<{
 
 const m = computed(() => getMessages(props.locale));
 const mkId = computed(() => `mk-${props.tabId.replace(/[^a-zA-Z0-9_-]/g, '')}`);
-const markerEndUrl = computed(() => `url(#${mkId.value})`);
+const markerAssocUrl = computed(() => `url(#${mkId.value}-asc)`);
+const markerInheritUrl = computed(() => `url(#${mkId.value}-inh)`);
 
 const viewportRef = ref<HTMLElement | null>(null);
 const state = reactive<ClassDiagramState>({ classes: [], links: [] });
@@ -187,6 +190,7 @@ function addNewClass(): void {
   state.classes.push({
     id,
     name: id,
+    stereotype: null,
     attributes: ['+string id'],
     methods: ['+greet()'],
   });
@@ -218,24 +222,47 @@ function onWindowClick(e: MouseEvent): void {
   }
 }
 
-function classHue(index: number): string {
-  const h = (index * 47) % 360;
-  return `hsl(${h}, 58%, 88%)`;
+function isDarkTheme(): boolean {
+  return document.documentElement.dataset.theme === 'dark';
 }
 
-function classHueStroke(index: number): string {
+/** 按 UML 构造型区分主色（无构造型时用序号色相） */
+function classBodyFill(c: ClassDef, index: number): string {
+  const s = (c.stereotype ?? '').toLowerCase();
+  if (s === 'interface') return isDarkTheme() ? '#1e3a2f' : '#dcfce7';
+  if (s === 'abstract' || s.includes('abstract')) return isDarkTheme() ? '#1e2a3e' : '#dbeafe';
+  if (s === 'enumeration' || s === 'enum') return isDarkTheme() ? '#3b2a4a' : '#fae8ff';
+  if (s === 'final') return isDarkTheme() ? '#3a2a1a' : '#ffedd5';
+  if (s === 'static' || s === 'utility') return isDarkTheme() ? '#2a2d35' : '#e2e8f0';
   const h = (index * 47) % 360;
-  return `hsl(${h}, 42%, 42%)`;
+  return `hsl(${h}, ${isDarkTheme() ? 35 : 58}%, ${isDarkTheme() ? 22 : 88}%)`;
 }
 
-function classAttrFill(index: number): string {
+function classBodyStroke(c: ClassDef, index: number): string {
+  const s = (c.stereotype ?? '').toLowerCase();
+  if (s === 'interface') return isDarkTheme() ? '#4ade80' : '#166534';
+  if (s === 'abstract' || s.includes('abstract')) return isDarkTheme() ? '#60a5fa' : '#1d4ed8';
+  if (s === 'enumeration' || s === 'enum') return isDarkTheme() ? '#c084fc' : '#7e22ce';
+  if (s === 'final') return isDarkTheme() ? '#fb923c' : '#c2410c';
+  if (s === 'static' || s === 'utility') return isDarkTheme() ? '#94a3b8' : '#475569';
   const h = (index * 47) % 360;
-  return `hsl(${h}, 42%, 96%)`;
+  return `hsl(${h}, 42%, ${isDarkTheme() ? 48 : 42}%)`;
 }
 
-function classMethFill(index: number): string {
+function classAttrBg(c: ClassDef, index: number): string {
+  const s = (c.stereotype ?? '').toLowerCase();
+  if (s === 'interface') return isDarkTheme() ? 'rgba(34, 197, 94, 0.12)' : 'hsl(142, 42%, 96%)';
+  if (s === 'abstract' || s.includes('abstract')) return isDarkTheme() ? 'rgba(59, 130, 246, 0.12)' : 'hsl(214, 42%, 96%)';
   const h = (index * 47) % 360;
-  return `hsl(${(h + 12) % 360}, 48%, 95%)`;
+  return `hsl(${h}, ${isDarkTheme() ? 28 : 42}%, ${isDarkTheme() ? 18 : 96}%)`;
+}
+
+function classMethBg(c: ClassDef, index: number): string {
+  const s = (c.stereotype ?? '').toLowerCase();
+  if (s === 'interface') return isDarkTheme() ? 'rgba(16, 185, 129, 0.1)' : 'hsl(150, 38%, 95%)';
+  if (s === 'abstract' || s.includes('abstract')) return isDarkTheme() ? 'rgba(96, 165, 250, 0.1)' : 'hsl(220, 48%, 95%)';
+  const h = (index * 47) % 360;
+  return `hsl(${(h + 12) % 360}, ${isDarkTheme() ? 30 : 48}%, ${isDarkTheme() ? 16 : 95}%)`;
 }
 
 function worldTransform(): Record<string, string> {
@@ -490,11 +517,25 @@ function onClassContextMenu(e: MouseEvent, classId: string): void {
   ctx.classId = classId;
 }
 
-const edgePaths = computed(() => {
-  const out: { id: string; d: string; kind: string }[] = [];
+type EdgePathItem = {
+  id: string;
+  d: string;
+  kind: 'inherit' | 'association' | 'dependency';
+  dash?: string;
+  markerEnd?: string;
+  fromMult?: string;
+  toMult?: string;
+  lx?: number;
+  ly?: number;
+  rx?: number;
+  ry?: number;
+};
+
+const edgePaths = computed((): EdgePathItem[] => {
+  const out: EdgePathItem[] = [];
   for (const l of state.links) {
     if (l.kind === 'inherit' && !edgeVisibility.inherit) continue;
-    if (l.kind === 'association' && !edgeVisibility.association) continue;
+    if ((l.kind === 'association' || l.kind === 'dependency') && !edgeVisibility.association) continue;
     const fc = state.classes.find((x) => x.id === l.from);
     const tc = state.classes.find((x) => x.id === l.to);
     if (!fc || !tc) continue;
@@ -504,20 +545,46 @@ const edgePaths = computed(() => {
     const s1 = estimateClassSize(fc, !!folded[l.from]);
     const s2 = estimateClassSize(tc, !!folded[l.to]);
     let dpath: string;
+    let x1 = 0;
+    let y1 = 0;
+    let x2 = 0;
+    let y2 = 0;
     if (l.kind === 'inherit') {
-      const x1 = p1.x + s1.w / 2;
-      const y1 = p1.y;
-      const x2 = p2.x + s2.w / 2;
-      const y2 = p2.y + s2.h;
+      x1 = p1.x + s1.w / 2;
+      y1 = p1.y;
+      x2 = p2.x + s2.w / 2;
+      y2 = p2.y + s2.h;
       dpath = `M ${x1} ${y1} L ${x2} ${y2}`;
     } else {
-      const x1 = p1.x + s1.w;
-      const y1 = p1.y + s1.h / 2;
-      const x2 = p2.x;
-      const y2 = p2.y + s2.h / 2;
+      x1 = p1.x + s1.w;
+      y1 = p1.y + s1.h / 2;
+      x2 = p2.x;
+      y2 = p2.y + s2.h / 2;
       dpath = `M ${x1} ${y1} L ${x2} ${y2}`;
     }
-    out.push({ id: l.id, d: dpath, kind: l.kind });
+    const dash = l.kind === 'dependency' ? '6 4' : undefined;
+    const markerEnd = l.kind === 'inherit' ? markerInheritUrl.value : markerAssocUrl.value;
+    const fromMult = l.fromMult;
+    const toMult = l.toMult;
+    const t0 = 0.22;
+    const t1 = 0.78;
+    const lx = x1 + (x2 - x1) * t0;
+    const ly = y1 + (y2 - y1) * t0;
+    const rx = x1 + (x2 - x1) * t1;
+    const ry = y1 + (y2 - y1) * t1;
+    out.push({
+      id: l.id,
+      d: dpath,
+      kind: l.kind,
+      dash,
+      markerEnd,
+      fromMult,
+      toMult,
+      lx,
+      ly,
+      rx,
+      ry,
+    });
   }
   return out;
 });
@@ -540,6 +607,12 @@ function memberVisibilityLead(line: string): string | null {
 
 function memberAttrFill(line: string): string {
   const v = memberVisibilityLead(line);
+  if (isDarkTheme()) {
+    if (v === '-') return '#86efac';
+    if (v === '#') return '#4ade80';
+    if (v === '~') return '#bbf7d0';
+    return '#bbf7d0';
+  }
   if (v === '-') return '#0f5132';
   if (v === '#') return '#166534';
   if (v === '~') return '#15803d';
@@ -548,6 +621,12 @@ function memberAttrFill(line: string): string {
 
 function memberMethFill(line: string): string {
   const v = memberVisibilityLead(line);
+  if (isDarkTheme()) {
+    if (v === '-') return '#93c5fd';
+    if (v === '#') return '#60a5fa';
+    if (v === '~') return '#bfdbfe';
+    return '#dbeafe';
+  }
   if (v === '-') return '#1e40af';
   if (v === '#') return '#1d4ed8';
   if (v === '~') return '#1e3a8a';
@@ -558,43 +637,55 @@ function memberFontStyle(line: string): string {
   return memberVisibilityLead(line) === '-' ? 'italic' : 'normal';
 }
 
-function addAttrTo(classId: string): void {
-  const c = state.classes.find((x) => x.id === classId);
-  if (!c) return;
-  c.attributes.push('+string newAttr');
-  ctx.open = false;
-  pushMarkdown();
-}
-
-function addMethodTo(classId: string): void {
-  const c = state.classes.find((x) => x.id === classId);
-  if (!c) return;
-  c.methods.push('+newMethod()');
-  ctx.open = false;
-  pushMarkdown();
-}
-
-function addMemberTo(classId: string): void {
-  addAttrTo(classId);
-}
+const SECTION_LAB = 10;
 
 function attrBlockHeight(c: ClassDef): number {
-  return Math.max(1, c.attributes.length) * 22 + 8;
+  return SECTION_LAB + Math.max(1, c.attributes.length) * 22 + 6;
 }
 
 function methBlockHeight(c: ClassDef): number {
-  return Math.max(1, c.methods.length) * 22 + 8;
+  return SECTION_LAB + Math.max(1, c.methods.length) * 22 + 6;
 }
 
-function attrTextY(i: number): number {
-  return 50 + i * 22;
+function attrBlockTopY(c: ClassDef): number {
+  return classDiagramHeaderHeight(c) + 2;
+}
+
+function methBlockTopY(c: ClassDef): number {
+  return attrBlockTopY(c) + attrBlockHeight(c) + 2;
+}
+
+function attrTextY(c: ClassDef, i: number): number {
+  return attrBlockTopY(c) + SECTION_LAB + 4 + i * 22;
 }
 
 function methTextY(c: ClassDef, i: number): number {
-  return 36 + attrBlockHeight(c) + 14 + i * 22;
+  return methBlockTopY(c) + SECTION_LAB + 4 + i * 22;
+}
+
+function titleNameY(c: ClassDef): number {
+  return c.stereotype ? 30 : 20;
+}
+
+function goToClassDefinition(classId: string): void {
+  const c = state.classes.find((x) => x.id === classId);
+  if (!c) return;
+  const name = c.name.trim();
+  for (const t of workspace.state.tabs) {
+    const base = t.path.split(/[/\\]/).pop() ?? '';
+    if (!/\.class\.md$/i.test(base)) continue;
+    const bn = base.replace(/\.class\.md$/i, '');
+    if (bn === name || slug(bn) === c.id) {
+      workspace.selectTab(t.id);
+      ctx.open = false;
+      return;
+    }
+  }
+  window.alert(m.value.cdeGotoClassNotFound.replace(/\{name\}/g, name));
 }
 
 function deleteClass(classId: string): void {
+  if (!window.confirm(m.value.cdeDeleteClassConfirm)) return;
   state.classes = state.classes.filter((c) => c.id !== classId);
   state.links = state.links.filter((l) => l.from !== classId && l.to !== classId);
   delete positions[classId];
@@ -632,16 +723,34 @@ function deleteClass(classId: string): void {
           @contextmenu.prevent
         >
           <defs>
+            <!-- 泛化：空心三角（指向父类一端） -->
             <marker
-              :id="mkId"
-              markerWidth="10"
-              markerHeight="10"
-              refX="9"
-              refY="3"
+              :id="`${mkId}-inh`"
+              markerWidth="14"
+              markerHeight="14"
+              refX="12"
+              refY="7"
               orient="auto"
-              markerUnits="strokeWidth"
+              markerUnits="userSpaceOnUse"
             >
-              <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+              <path
+                d="M0,1 L0,13 L12,7 z"
+                fill="#f8fafc"
+                stroke="#475569"
+                stroke-width="1.35"
+              />
+            </marker>
+            <!-- 关联：开口箭头 -->
+            <marker
+              :id="`${mkId}-asc`"
+              markerWidth="12"
+              markerHeight="10"
+              refX="10"
+              refY="5"
+              orient="auto"
+              markerUnits="userSpaceOnUse"
+            >
+              <path d="M0,-4 L10,0 L0,4" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linejoin="round" />
             </marker>
           </defs>
 
@@ -674,10 +783,32 @@ function deleteClass(classId: string): void {
               fill="none"
               :stroke="ep.kind === 'inherit' ? '#475569' : '#64748b'"
               :stroke-width="ep.kind === 'inherit' ? 2 : 1.75"
-              :stroke-dasharray="ep.kind === 'inherit' ? '7 5' : undefined"
-              :marker-end="ep.kind === 'association' ? markerEndUrl : 'none'"
+              :stroke-dasharray="ep.dash"
+              :marker-end="ep.markerEnd ?? 'none'"
               pointer-events="none"
             />
+            <text
+              v-if="ep.fromMult"
+              :x="ep.lx"
+              :y="ep.ly"
+              font-size="9"
+              fill="#64748b"
+              text-anchor="middle"
+              style="pointer-events: none; user-select: none"
+            >
+              {{ escapeXml(ep.fromMult) }}
+            </text>
+            <text
+              v-if="ep.toMult"
+              :x="ep.rx"
+              :y="ep.ry"
+              font-size="9"
+              fill="#64748b"
+              text-anchor="middle"
+              style="pointer-events: none; user-select: none"
+            >
+              {{ escapeXml(ep.toMult) }}
+            </text>
           </template>
 
           <g
@@ -707,8 +838,8 @@ function deleteClass(classId: string): void {
               y="0"
               width="248"
               :height="estimateClassSize(c, !!folded[c.id]).h"
-              :fill="classHue(idx)"
-              :stroke="isClassSelected(c.id) ? '#2563eb' : classHueStroke(idx)"
+              :fill="classBodyFill(c, idx)"
+              :stroke="isClassSelected(c.id) ? '#2563eb' : classBodyStroke(c, idx)"
               :stroke-width="isClassSelected(c.id) ? 3 : 2"
               rx="4"
               style="pointer-events: visiblePainted"
@@ -725,24 +856,64 @@ function deleteClass(classId: string): void {
               @pointerdown.stop
               @click.stop="toggleFold(c.id)"
             />
-            <text x="30" y="20" font-size="12" font-weight="700" fill="#0f172a" style="pointer-events: none; user-select: none">
+            <text
+              v-if="c.stereotype"
+              x="124"
+              y="14"
+              text-anchor="middle"
+              font-size="9"
+              :fill="isDarkTheme() ? '#94a3b8' : '#475569'"
+              style="pointer-events: none; user-select: none"
+            >
+              «{{ escapeXml(c.stereotype) }}»
+            </text>
+            <text
+              x="124"
+              :y="titleNameY(c)"
+              text-anchor="middle"
+              font-size="12"
+              font-weight="700"
+              :fill="isDarkTheme() ? '#f1f5f9' : '#0f172a'"
+              style="pointer-events: none; user-select: none"
+            >
               {{ escapeXml(c.name) }}
             </text>
             <template v-if="!folded[c.id]">
+              <line
+                :x1="6"
+                :y1="attrBlockTopY(c) - 1"
+                :x2="242"
+                :y2="attrBlockTopY(c) - 1"
+                :stroke="isDarkTheme() ? 'rgba(148,163,184,0.45)' : 'rgba(71,85,105,0.35)'"
+                stroke-width="1"
+                style="pointer-events: none"
+              />
+              <text
+                :x="10"
+                :y="attrBlockTopY(c) + 8"
+                font-size="8"
+                font-weight="600"
+                :fill="isDarkTheme() ? '#94a3b8' : '#64748b'"
+                style="pointer-events: none; user-select: none"
+              >
+                {{ m.cdeSectionAttrs }}
+              </text>
               <rect
-                x="0"
-                y="36"
-                width="248"
+                x="5"
+                :y="attrBlockTopY(c)"
+                width="238"
                 :height="attrBlockHeight(c)"
-                :fill="classAttrFill(idx)"
-                stroke="none"
+                :fill="classAttrBg(c, idx)"
+                :stroke="isDarkTheme() ? 'rgba(148,163,184,0.35)' : 'rgba(71,85,105,0.25)'"
+                stroke-width="1"
+                rx="2"
                 style="pointer-events: none"
               />
               <text
                 v-for="(a, ai) in c.attributes"
                 :key="'a' + ai"
-                x="8"
-                :y="attrTextY(ai)"
+                x="10"
+                :y="attrTextY(c, ai)"
                 font-size="10"
                 font-family="ui-monospace, Consolas, monospace"
                 :fill="memberAttrFill(a)"
@@ -751,19 +922,40 @@ function deleteClass(classId: string): void {
               >
                 {{ escapeXml(a) }}
               </text>
+              <line
+                :x1="6"
+                :y1="methBlockTopY(c) - 1"
+                :x2="242"
+                :y2="methBlockTopY(c) - 1"
+                :stroke="isDarkTheme() ? 'rgba(148,163,184,0.45)' : 'rgba(71,85,105,0.35)'"
+                stroke-width="1"
+                style="pointer-events: none"
+              />
+              <text
+                :x="10"
+                :y="methBlockTopY(c) + 8"
+                font-size="8"
+                font-weight="600"
+                :fill="isDarkTheme() ? '#94a3b8' : '#64748b'"
+                style="pointer-events: none; user-select: none"
+              >
+                {{ m.cdeSectionMethods }}
+              </text>
               <rect
-                x="0"
-                :y="36 + attrBlockHeight(c)"
-                width="248"
+                x="5"
+                :y="methBlockTopY(c)"
+                width="238"
                 :height="methBlockHeight(c)"
-                :fill="classMethFill(idx)"
-                stroke="none"
+                :fill="classMethBg(c, idx)"
+                :stroke="isDarkTheme() ? 'rgba(148,163,184,0.35)' : 'rgba(71,85,105,0.25)'"
+                stroke-width="1"
+                rx="2"
                 style="pointer-events: none"
               />
               <text
                 v-for="(meth, mi) in c.methods"
                 :key="'m' + mi"
-                x="8"
+                x="10"
                 :y="methTextY(c, mi)"
                 font-size="10"
                 font-family="ui-monospace, Consolas, monospace"
@@ -896,9 +1088,7 @@ function deleteClass(classId: string): void {
         role="menu"
         @click.stop
       >
-        <button type="button" @click="addMemberTo(ctx.classId)">{{ m.cdeCtxMember }}</button>
-        <button type="button" @click="addAttrTo(ctx.classId)">{{ m.cdeCtxAttr }}</button>
-        <button type="button" @click="addMethodTo(ctx.classId)">{{ m.cdeCtxMethod }}</button>
+        <button type="button" @click="goToClassDefinition(ctx.classId)">{{ m.cdeGotoClassDef }}</button>
         <button type="button" class="cde-ctx-danger" @click="deleteClass(ctx.classId)">{{ m.cdeDeleteClass }}</button>
       </div>
     </div>

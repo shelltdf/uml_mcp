@@ -170,6 +170,7 @@ export interface UiMessages {
   /** *.class.md 成员编辑区标题 */
   classMdMembersTitle: string;
   classMdAddRow: string;
+  classMdDeleteRowConfirm: string;
   /** 类定义：打开与契约对应的实现文件 */
   classMdViewSyncedCode: string;
   classMdSyncedModalTitle: string;
@@ -243,6 +244,11 @@ export interface UiMessages {
   cdeAddAttr: string;
   cdeAddMethod: string;
   cdeDeleteClass: string;
+  cdeGotoClassDef: string;
+  cdeGotoClassNotFound: string;
+  cdeDeleteClassConfirm: string;
+  cdeSectionAttrs: string;
+  cdeSectionMethods: string;
   /** classDiagram：类定义编辑模态、面板 */
   cdsEditDefinition: string;
   cdsEditorHint: string;
@@ -435,6 +441,7 @@ const zh: UiMessages = {
   classMdTableHint: '继承与关联请在对应 *.uml.md 中维护，并在本文件 meta 注释中同步展示名。',
   classMdMembersTitle: '成员编辑',
   classMdAddRow: '添加行',
+  classMdDeleteRowConfirm: '删除这一行成员？',
   classMdViewSyncedCode: '查看已同步代码',
   classMdSyncedModalTitle: '实现文件（与类契约对应）',
   classMdSyncedOpenInTab: '打开此标签',
@@ -505,6 +512,11 @@ const zh: UiMessages = {
   cdeAddAttr: '添加属性行',
   cdeAddMethod: '添加方法行',
   cdeDeleteClass: '删除此类',
+  cdeGotoClassDef: '跳转到类定义',
+  cdeGotoClassNotFound: '工作区中未打开 {name}.class.md',
+  cdeDeleteClassConfirm: '确定删除该类及其全部连线？此操作不可撤销。',
+  cdeSectionAttrs: '属性',
+  cdeSectionMethods: '操作',
   cdsEditDefinition: '类定义编辑',
   cdsEditorHint: '在此编辑类名、属性与方法；主画布为只读展示。关闭后更改已写入当前文档。',
   cdsPickClassToEdit: '选择要详细编辑的类：',
@@ -703,6 +715,7 @@ const en: UiMessages = {
     'Maintain inheritance/associations in *.uml.md and mirror display names in this file’s meta comment.',
   classMdMembersTitle: 'Members',
   classMdAddRow: 'Add row',
+  classMdDeleteRowConfirm: 'Remove this member row?',
   classMdViewSyncedCode: 'View synced implementation',
   classMdSyncedModalTitle: 'Implementation files (mapped from class)',
   classMdSyncedOpenInTab: 'Open tab',
@@ -773,6 +786,11 @@ const en: UiMessages = {
   cdeAddAttr: 'Add attribute row',
   cdeAddMethod: 'Add method row',
   cdeDeleteClass: 'Delete class',
+  cdeGotoClassDef: 'Go to class definition',
+  cdeGotoClassNotFound: 'No open tab for {name}.class.md in the workspace',
+  cdeDeleteClassConfirm: 'Delete this class and all attached lines? This cannot be undone.',
+  cdeSectionAttrs: 'Attributes',
+  cdeSectionMethods: 'Operations',
   cdsEditDefinition: 'Class definition editor',
   cdsEditorHint:
     'Edit class names, attributes, and methods here; the main canvas is read-only. Changes are written when you close.',

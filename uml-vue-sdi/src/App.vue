@@ -62,12 +62,18 @@ watch(
   [anyDirty, locale],
   () => {
     const m = getMessages(locale.value);
-    document.title = anyDirty.value ? `${m.docTitle} ·` : m.docTitle;
+    const ver = ` v${APP_VERSION}`;
+    document.title = anyDirty.value ? `${m.docTitle}${ver} ·` : `${m.docTitle}${ver}`;
   },
   { immediate: true },
 );
 
+function isElectronShell(): boolean {
+  return typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
+}
+
 function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (isElectronShell()) return;
   if (anyDirty.value) {
     e.preventDefault();
     e.returnValue = '';
@@ -413,6 +419,7 @@ onUnmounted(() => {
       <div id="title-strip" class="title-strip" role="banner">
         <img class="title-icon" src="/favicon.svg" width="20" height="20" alt="" />
         <span class="app-title">{{ msg.titleStrip }}</span>
+        <span class="app-title__ver" :title="`v${APP_VERSION}`">v{{ APP_VERSION }}</span>
       </div>
       <nav
         id="menu-bar"
@@ -1025,6 +1032,17 @@ onUnmounted(() => {
   font-weight: 600;
   font-size: 0.95rem;
   user-select: none;
+}
+
+.app-title__ver {
+  font-size: 0.78rem;
+  font-weight: 500;
+  opacity: 0.72;
+  user-select: none;
+  color: color-mix(in srgb, var(--text, #0f172a) 75%, transparent);
+}
+:root[data-theme='dark'] .app-title__ver {
+  color: color-mix(in srgb, #e2e8f0 65%, transparent);
 }
 
 .menu-bar {

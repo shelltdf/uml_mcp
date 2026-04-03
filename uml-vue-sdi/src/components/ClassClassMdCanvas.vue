@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import type { LocaleId } from '../i18n/ui';
 import { getMessages } from '../i18n/ui';
 import {
+  type ClassMdRow,
   type ClassMdState,
   parseClassMdMarkdown,
   rowToDiagramAttr,
@@ -218,7 +219,8 @@ const edgePaths = computed(() => {
 });
 
 const mkId = computed(() => `mk-classmd-${props.tabId.replace(/[^a-zA-Z0-9_-]/g, '')}`);
-const markerEndUrl = computed(() => `url(#${mkId.value})`);
+const markerAssocUrl = computed(() => `url(#${mkId.value}-asc)`);
+const markerInheritUrl = computed(() => `url(#${mkId.value}-inh)`);
 
 function escapeXml(s: string): string {
   return s
@@ -275,12 +277,46 @@ function onMainPointerUp(e: PointerEvent): void {
   }
 }
 
+const KIND_OPTIONS = ['field', 'property', 'method', 'function', 'constant', 'macro'] as const;
+
+function kindSelectOptions(row: ClassMdRow): string[] {
+  const k = row.kind.trim();
+  if (k && !(KIND_OPTIONS as readonly string[]).includes(k)) {
+    return [k, ...KIND_OPTIONS];
+  }
+  return [...KIND_OPTIONS];
+}
+
+const TYPE_OPTIONS = [
+  'string',
+  'number',
+  'boolean',
+  'int',
+  'long',
+  'float',
+  'double',
+  'void',
+  'object',
+  'any',
+  'char',
+  'byte',
+] as const;
+
+function typeSelectOptions(row: ClassMdRow): string[] {
+  const t = row.type.trim();
+  if (t && !(TYPE_OPTIONS as readonly string[]).includes(t)) {
+    return [t, ...TYPE_OPTIONS];
+  }
+  return [...TYPE_OPTIONS];
+}
+
 function addRow(): void {
   state.rows.push({ kind: 'field', name: 'newField', type: 'string', note: '' });
   pushMd();
 }
 
 function removeRow(i: number): void {
+  if (!window.confirm(m.value.classMdDeleteRowConfirm)) return;
   state.rows.splice(i, 1);
   pushMd();
 }
@@ -339,15 +375,26 @@ function focusImplTab(p: string): void {
         <svg class="ccmd-svg" xmlns="http://www.w3.org/2000/svg" width="4800" height="3600">
           <defs>
             <marker
-              :id="mkId"
-              markerWidth="10"
-              markerHeight="10"
-              refX="9"
-              refY="3"
+              :id="`${mkId}-inh`"
+              markerWidth="14"
+              markerHeight="14"
+              refX="12"
+              refY="7"
               orient="auto"
-              markerUnits="strokeWidth"
+              markerUnits="userSpaceOnUse"
             >
-              <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+              <path d="M0,1 L0,13 L12,7 z" fill="#f8fafc" stroke="#475569" stroke-width="1.35" />
+            </marker>
+            <marker
+              :id="`${mkId}-asc`"
+              markerWidth="12"
+              markerHeight="10"
+              refX="10"
+              refY="5"
+              orient="auto"
+              markerUnits="userSpaceOnUse"
+            >
+              <path d="M0,-4 L10,0 L0,4" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linejoin="round" />
             </marker>
           </defs>
 
@@ -357,8 +404,7 @@ function focusImplTab(p: string): void {
               fill="none"
               :stroke="ep.kind === 'inherit' ? '#475569' : '#64748b'"
               :stroke-width="ep.kind === 'inherit' ? 2 : 1.75"
-              :stroke-dasharray="ep.kind === 'inherit' ? '7 5' : undefined"
-              :marker-end="ep.kind === 'association' ? markerEndUrl : 'none'"
+              :marker-end="ep.kind === 'inherit' ? markerInheritUrl : markerAssocUrl"
               pointer-events="none"
             />
           </template>
@@ -521,9 +567,17 @@ function focusImplTab(p: string): void {
             </thead>
             <tbody>
               <tr v-for="(row, ri) in state.rows" :key="ri">
-                <td><input v-model="row.kind" class="ccmd-inp" @change="onCellChange" /></td>
+                <td>
+                  <select v-model="row.kind" class="ccmd-sel" @change="onCellChange">
+                    <option v-for="k in kindSelectOptions(row)" :key="k" :value="k">{{ k }}</option>
+                  </select>
+                </td>
                 <td><input v-model="row.name" class="ccmd-inp" @change="onCellChange" /></td>
-                <td><input v-model="row.type" class="ccmd-inp" @change="onCellChange" /></td>
+                <td>
+                  <select v-model="row.type" class="ccmd-sel" @change="onCellChange">
+                    <option v-for="t in typeSelectOptions(row)" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                </td>
                 <td><input v-model="row.note" class="ccmd-inp" @change="onCellChange" /></td>
                 <td class="ccmd-table__col-actions">
                   <button type="button" class="ccmd-del" :title="m.cdeDelete" @click="removeRow(ri)">
@@ -683,7 +737,7 @@ function focusImplTab(p: string): void {
   flex: 0 0 auto;
   max-height: 44vh;
   overflow: hidden;
-  padding: 12px 14px 16px;
+  padding: 6px 8px 8px;
   border-top: 1px solid color-mix(in srgb, var(--border, #ccc) 80%, transparent);
   background: linear-gradient(180deg, color-mix(in srgb, var(--editor-bg, #fff) 96%, #64748b) 0%, var(--editor-bg, #fff) 32%);
 }
@@ -694,8 +748,8 @@ function focusImplTab(p: string): void {
 .ccmd-members-card {
   max-width: 960px;
   margin: 0 auto;
-  padding: 14px 16px 16px;
-  border-radius: 12px;
+  padding: 8px 10px 10px;
+  border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--border, #ccc) 70%, transparent);
   background: color-mix(in srgb, var(--editor-bg, #fff) 97%, #94a3b8);
   box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
@@ -704,7 +758,7 @@ function focusImplTab(p: string): void {
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
 }
 .ccmd-members-card__head {
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 .ccmd-members-card__head-row {
   display: flex;
@@ -716,7 +770,7 @@ function focusImplTab(p: string): void {
 }
 .ccmd-members-card__title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--text, #0f172a);
@@ -750,8 +804,8 @@ function focusImplTab(p: string): void {
 
 .ccmd-table-scroll {
   overflow: auto;
-  max-height: min(28vh, 320px);
-  border-radius: 8px;
+  max-height: min(26vh, 260px);
+  border-radius: 6px;
   border: 1px solid color-mix(in srgb, var(--border, #ccc) 55%, transparent);
   background: var(--editor-bg, #fff);
 }
@@ -759,22 +813,26 @@ function focusImplTab(p: string): void {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 .ccmd-table thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 8px 10px;
+  padding: 4px 6px;
   text-align: left;
   font-weight: 600;
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: color-mix(in srgb, var(--text, #334155) 85%, transparent);
-  background: color-mix(in srgb, var(--editor-bg, #fff) 92%, #64748b);
+  color: color-mix(in srgb, var(--text, #cbd5e1) 92%, transparent);
+  background: color-mix(in srgb, var(--editor-bg, #fff) 88%, #475569);
   border-bottom: 1px solid color-mix(in srgb, var(--border, #ccc) 60%, transparent);
   white-space: nowrap;
+}
+:root[data-theme='light'] .ccmd-table thead th {
+  color: color-mix(in srgb, var(--text, #334155) 85%, transparent);
+  background: color-mix(in srgb, var(--editor-bg, #fff) 92%, #64748b);
 }
 .ccmd-table tbody tr:nth-child(even) td {
   background: color-mix(in srgb, var(--editor-bg, #fff) 97%, #94a3b8);
@@ -784,7 +842,7 @@ function focusImplTab(p: string): void {
 }
 .ccmd-table th,
 .ccmd-table td {
-  padding: 6px 8px;
+  padding: 3px 5px;
   vertical-align: middle;
   border-bottom: 1px solid color-mix(in srgb, var(--border, #ccc) 45%, transparent);
 }
@@ -795,16 +853,34 @@ function focusImplTab(p: string): void {
 }
 .ccmd-inp {
   width: 100%;
-  min-width: 3.5rem;
+  min-width: 3rem;
   font: inherit;
-  font-size: 0.82rem;
-  padding: 6px 8px;
-  border-radius: 6px;
+  font-size: 0.76rem;
+  padding: 3px 5px;
+  border-radius: 4px;
   border: 1px solid color-mix(in srgb, var(--border, #ccc) 65%, transparent);
   background: color-mix(in srgb, var(--editor-bg, #fff) 96%, #f1f5f9);
   color: inherit;
   outline: none;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.ccmd-sel {
+  width: 100%;
+  min-width: 4.5rem;
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 3px 4px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--border, #ccc) 65%, transparent);
+  background: color-mix(in srgb, var(--editor-bg, #fff) 96%, #f1f5f9);
+  color: inherit;
+  outline: none;
+}
+:root[data-theme='dark'] .ccmd-sel,
+:root[data-theme='dark'] .ccmd-inp {
+  background: color-mix(in srgb, var(--editor-bg, #25262c) 94%, #334155);
+  border-color: color-mix(in srgb, var(--border, #64748b) 55%, transparent);
+  color: var(--text, #e2e8f0);
 }
 .ccmd-inp:focus {
   border-color: #3b82f6;

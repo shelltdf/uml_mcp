@@ -5,6 +5,8 @@
 export interface ClassDef {
   id: string;
   name: string;
+  /** Mermaid `class A <<abstract>>` 等，小写存储 */
+  stereotype?: string | null;
   attributes: string[];
   methods: string[];
 }
@@ -15,7 +17,11 @@ export interface ClassLink {
   /** 继承：子类 id；关联：源类 id */
   to: string;
   /** 继承：父类 id；关联：目标类 id */
-  kind: 'inherit' | 'association';
+  kind: 'inherit' | 'association' | 'dependency';
+  /** 关联/依赖在源端显示的基数，如 1、* */
+  fromMult?: string;
+  /** 关联/依赖在目标端显示的基数 */
+  toMult?: string;
 }
 
 export interface ClassDiagramState {
@@ -41,7 +47,7 @@ export interface ParsedClassLayout {
 const LAYOUT_PREFIX = '<!-- uml-class-diagram-layout:';
 const LAYOUT_SUFFIX = ' -->';
 
-function slug(name: string): string {
+export function slug(name: string): string {
   return name.replace(/[^\w\u4e00-\u9fff]/g, '_') || 'Class';
 }
 
@@ -80,6 +86,7 @@ export function emptyDiagram(): ClassDiagramState {
       {
         id: 'NewClass',
         name: 'NewClass',
+        stereotype: null,
         attributes: ['+string id'],
         methods: ['+greet()'],
       },
@@ -149,11 +156,13 @@ export function parseClassDiagramBody(code: string): ClassDiagramState | null {
   const classes: ClassDef[] = [];
   const seen = new Set<string>();
 
-  const classBlockRe = /\bclass\s+(\w+)\s*\{([^}]*)\}/gs;
+  const classBlockRe = /\bclass\s+(\w+)\s*(?:<<([^>]+)>>\s*)?\{([^}]*)\}/gs;
   let m: RegExpExecArray | null;
   while ((m = classBlockRe.exec(text)) !== null) {
     const name = m[1];
-    const body = m[2];
+    const stereoRaw = m[2];
+    const body = m[3];
+    const stereotype = stereoRaw?.trim() ? stereoRaw.trim().toLowerCase() : null;
     const attrs: string[] = [];
     const methods: string[] = [];
     for (const line of body.split(/\r?\n/)) {
@@ -168,17 +177,19 @@ export function parseClassDiagramBody(code: string): ClassDiagramState | null {
     const id = slug(name);
     if (!seen.has(id)) {
       seen.add(id);
-      classes.push({ id, name, attributes: attrs, methods });
+      classes.push({ id, name, stereotype, attributes: attrs, methods });
     }
   }
 
-  const classLineRe = /^\s*class\s+(\w+)\s*$/gm;
+  const classLineRe = /^\s*class\s+(\w+)\s*(?:<<([^>]+)>>\s*)?$/gm;
   while ((m = classLineRe.exec(text)) !== null) {
     const name = m[1];
+    const stereoRaw = m[2];
+    const stereotype = stereoRaw?.trim() ? stereoRaw.trim().toLowerCase() : null;
     const id = slug(name);
     if (seen.has(id)) continue;
     seen.add(id);
-    classes.push({ id, name, attributes: [], methods: [] });
+    classes.push({ id, name, stereotype, attributes: [], methods: [] });
   }
 
   const links: ClassLink[] = [];
@@ -201,45 +212,69 @@ export function parseClassDiagramBody(code: string): ClassDiagramState | null {
     const t = line.trim();
     if (!t || t.startsWith('%%')) continue;
     if (t.includes('<|--')) continue;
-    const arrowIdx = t.indexOf('-->');
-    const depIdx = t.indexOf('..>');
-    let idx: number;
-    let arrowLen: number;
-    if (arrowIdx !== -1 && (depIdx === -1 || arrowIdx < depIdx)) {
-      idx = arrowIdx;
-      arrowLen = 3;
-    } else if (depIdx !== -1) {
-      idx = depIdx;
-      arrowLen = 3;
-    } else {
-      continue;
-    }
-    const left = t.slice(0, idx).trim();
-    let right = t.slice(idx + arrowLen).trim();
-    const colon = right.indexOf(':');
-    if (colon !== -1) right = right.slice(0, colon).trim();
-    const leftFirst = left.match(/^(\w+)/);
-    const rightLast = right.match(/(\w+)\s*$/);
-    if (!leftFirst || !rightLast) continue;
-    const from = leftFirst[1];
-    const to = rightLast[1];
-    if (from === to) continue;
-    linkSeq += 1;
-    links.push({
-      id: `asc-${linkSeq}`,
-      from: slug(from),
-      to: slug(to),
-      kind: 'association',
-    });
+    const parsed = parseAssociationLine(t);
+    if (parsed) links.push(parsed);
   }
 
   return { classes, links };
 }
 
+function parseAssociationLine(t: string): ClassLink | null {
+  let idx = t.indexOf('-->');
+  let arrowLen = 3;
+  let kind: 'association' | 'dependency' = 'association';
+  if (idx === -1) {
+    idx = t.indexOf('..>');
+    if (idx === -1) return null;
+    arrowLen = 3;
+    kind = 'dependency';
+  }
+  const left = t.slice(0, idx).trim();
+  let right = t.slice(idx + arrowLen).trim();
+  const colon = right.indexOf(':');
+  if (colon !== -1) right = right.slice(0, colon).trim();
+
+  let fromName: string;
+  let fromMult: string | undefined;
+  const leftQuoted = left.match(/^(\w+)\s+"([^"]*)"$/);
+  if (leftQuoted) {
+    fromName = leftQuoted[1];
+    fromMult = leftQuoted[2];
+  } else {
+    const leftPlain = left.match(/^(\w+)$/);
+    if (!leftPlain) return null;
+    fromName = leftPlain[1];
+  }
+
+  let toName: string;
+  let toMult: string | undefined;
+  const rightQuoted = right.match(/^"([^"]*)"\s+(\w+)$/);
+  if (rightQuoted) {
+    toMult = rightQuoted[1];
+    toName = rightQuoted[2];
+  } else {
+    const rightPlain = right.match(/^(\w+)$/);
+    if (!rightPlain) return null;
+    toName = rightPlain[1];
+  }
+
+  if (fromName === toName) return null;
+  linkSeq += 1;
+  return {
+    id: `asc-${linkSeq}`,
+    from: slug(fromName),
+    to: slug(toName),
+    kind,
+    ...(fromMult !== undefined ? { fromMult } : {}),
+    ...(toMult !== undefined ? { toMult } : {}),
+  };
+}
+
 export function serializeClassDiagramBody(state: ClassDiagramState): string {
   const lines: string[] = ['classDiagram'];
   for (const c of state.classes) {
-    lines.push(`  class ${c.name} {`);
+    const st = c.stereotype ? ` <<${c.stereotype}>>` : '';
+    lines.push(`  class ${c.name}${st} {`);
     for (const a of c.attributes) {
       lines.push(`    ${a}`);
     }
@@ -253,8 +288,18 @@ export function serializeClassDiagramBody(state: ClassDiagramState): string {
     const b = state.classes.find((x) => x.id === l.to)?.name ?? l.to;
     if (l.kind === 'inherit') {
       lines.push(`  ${b} <|-- ${a}`);
+    } else if (l.kind === 'dependency') {
+      lines.push(`  ${a} ..> ${b}`);
     } else {
-      lines.push(`  ${a} --> ${b}`);
+      let left = a;
+      if (l.fromMult != null && l.fromMult !== '') {
+        left = `${a} "${l.fromMult}"`;
+      }
+      if (l.toMult != null && l.toMult !== '') {
+        lines.push(`  ${left} --> "${l.toMult}" ${b}`);
+      } else {
+        lines.push(`  ${left} --> ${b}`);
+      }
     }
   }
   return `${lines.join('\n')}\n`;
@@ -343,18 +388,25 @@ export function parseOrDefault(markdown: string): {
   };
 }
 
+/** 类名区高度（含可选构造型 «…»） */
+export function classDiagramHeaderHeight(c: ClassDef): number {
+  return c.stereotype ? 44 : 36;
+}
+
 /** 估算类框尺寸（SVG 与旧 HTML 布局一致）；folded 时仅标题条高度 */
 export function estimateClassSize(c: ClassDef, folded = false): { w: number; h: number } {
   const w = 248;
+  const header = classDiagramHeaderHeight(c);
   if (folded) {
-    return { w, h: 36 };
+    return { w, h: header };
   }
-  const header = 36;
+  const label = 10;
   const row = 22;
-  const pad = 8;
-  const attrsH = Math.max(1, c.attributes.length) * row + pad;
-  const methH = Math.max(1, c.methods.length) * row + pad;
-  const h = header + attrsH + methH + 4;
+  const pad = 6;
+  const sep = 2;
+  const attrsH = label + Math.max(1, c.attributes.length) * row + pad;
+  const methH = label + Math.max(1, c.methods.length) * row + pad;
+  const h = header + sep + attrsH + sep + methH + 6;
   return { w, h };
 }
 
