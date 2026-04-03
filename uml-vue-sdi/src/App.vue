@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import DiagramThumbnail from './components/DiagramThumbnail.vue';
 import EditorTabs from './components/EditorTabs.vue';
 import FileKindCanvas from './components/FileKindCanvas.vue';
+import ClassClassMdCanvas from './components/ClassClassMdCanvas.vue';
+import CodeMdCanvas from './components/CodeMdCanvas.vue';
 import MermaidPreview from './components/MermaidPreview.vue';
 import TextContentDock from './components/TextContentDock.vue';
 import PropertiesDock from './components/PropertiesDock.vue';
@@ -713,21 +715,23 @@ onUnmounted(() => {
             v-else-if="activeTab && activeTab.kind === 'uml'"
             :markdown="activeTab.content"
             :kind="activeTab.kind"
+            :tab-id="activeTab.id"
+            :locale="locale"
             :multi-block-hint="msg.canvasMultiMermaidHint"
             :reset-label="msg.canvasResetView"
             :viewport-title="msg.canvasViewportTitle"
           />
-          <FileKindCanvas
+          <ClassClassMdCanvas
             v-else-if="activeTab && activeTab.kind === 'class'"
-            kind="class"
-            :title="msg.canvasKindClassTitle"
-            :hint="msg.canvasKindClassHint"
+            :markdown="activeTab.content"
+            :tab-id="activeTab.id"
+            :locale="locale"
           />
-          <FileKindCanvas
+          <CodeMdCanvas
             v-else-if="activeTab && activeTab.kind === 'code'"
-            kind="code"
-            :title="msg.canvasKindCodeTitle"
-            :hint="msg.canvasKindCodeHint"
+            :markdown="activeTab.content"
+            :tab-id="activeTab.id"
+            :locale="locale"
           />
           <FileKindCanvas
             v-else-if="activeTab && activeTab.kind === 'unknown'"

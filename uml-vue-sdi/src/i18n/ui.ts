@@ -123,8 +123,29 @@ export interface UiMessages {
   canvasEmptyHint: string;
   canvasKindClassTitle: string;
   canvasKindClassHint: string;
+  /** *.class.md 画布：父类占位框说明 */
+  classMdReadonlyInherit: string;
+  /** *.class.md 画布：关联占位框说明 */
+  classMdReadonlyAssoc: string;
+  /** *.class.md 成员表编辑提示 */
+  classMdTableHint: string;
+  classMdAddRow: string;
   canvasKindCodeTitle: string;
   canvasKindCodeHint: string;
+  codeCanvasViewportTitle: string;
+  codeCanvasToolbarAria: string;
+  codeCanvasNewFunction: string;
+  codeCanvasNewVariable: string;
+  codeCanvasNewMacro: string;
+  codeCanvasDelete: string;
+  codeCanvasInspectorHint: string;
+  codeCanvasFieldKind: string;
+  codeCanvasFieldName: string;
+  codeCanvasFieldSignature: string;
+  codeCanvasFieldEffect: string;
+  codeCanvasFieldType: string;
+  codeCanvasFieldExpand: string;
+  codeCanvasFieldNote: string;
   canvasKindUnknownTitle: string;
   canvasKindUnknownHint: string;
   dockCollapse: string;
@@ -148,6 +169,36 @@ export interface UiMessages {
   toolbarSaveAll: string;
   toolbarSaveAs: string;
   toolbarRevert: string;
+  /** 可编辑类图画布 */
+  cdeNewClass: string;
+  cdeFit: string;
+  cdeOrigin: string;
+  cdeResetZoom: string;
+  cdeZoomIn: string;
+  cdeZoomOut: string;
+  cdeCtxMember: string;
+  cdeCtxAttr: string;
+  cdeCtxMethod: string;
+  cdeCtxSubclass: string;
+  cdeCtxManage: string;
+  cdeManageTitle: string;
+  cdeClassName: string;
+  cdeAttrs: string;
+  cdeMethods: string;
+  cdeDelete: string;
+  cdeAddAttr: string;
+  cdeAddMethod: string;
+  cdeDeleteClass: string;
+  /** classDiagram：类定义编辑模态、面板 */
+  cdsEditDefinition: string;
+  cdsEditorHint: string;
+  cdsPickClassToEdit: string;
+  cdsInheritHandleHint: string;
+  cdeShortcutsPanel: string;
+  cdeShortcutsBody: string;
+  cdeVisibilityPanel: string;
+  cdeShowInherit: string;
+  cdeShowAssoc: string;
 }
 
 const zh: UiMessages = {
@@ -287,9 +338,29 @@ const zh: UiMessages = {
   canvasAriaLabel: '画布',
   canvasEmptyHint: '请从「文件」菜单打开或新建文档。',
   canvasKindClassTitle: '类定义（*.class.md）',
-  canvasKindClassHint: '此类文件以标题与表格为主，中央不提供图形预览；请在右侧停靠区编辑源文。',
+  canvasKindClassHint:
+    '上方为与类图风格一致的画布：继承与关联仅作只读展示（来自文件内 <!-- class-md-meta -->）。下方表格可编辑成员。',
+  classMdReadonlyInherit: '继承（只读）',
+  classMdReadonlyAssoc: '关联（只读）',
+  classMdTableHint: '编辑成员（Kind / Name / Type / Note）；继承与关联请在对应 *.uml.md 中维护，并在本文件 meta 注释中同步展示名。',
+  classMdAddRow: '添加行',
   canvasKindCodeTitle: '代码片段（*.code.md）',
-  canvasKindCodeHint: '非类代码与宏等说明；请在右侧停靠区编辑，中央仅作占位说明。',
+  canvasKindCodeHint:
+    '中央为 2D 画布：左侧工具栏可新建函数 / 变量或常量 / 宏；卡片可拖拽布局，点击下方表单编辑字段。右侧停靠区仍可编辑全文。',
+  codeCanvasViewportTitle: '中键平移 · 滚轮缩放 · 拖卡片移动',
+  codeCanvasToolbarAria: '代码画布工具栏',
+  codeCanvasNewFunction: '新建函数',
+  codeCanvasNewVariable: '新建变量',
+  codeCanvasNewMacro: '新建宏',
+  codeCanvasDelete: '删除',
+  codeCanvasInspectorHint: '选中画布上的卡片后，在此编辑对应表格字段（已同步至文档）。',
+  codeCanvasFieldKind: 'Kind',
+  codeCanvasFieldName: 'Name',
+  codeCanvasFieldSignature: '签名（抽象）',
+  codeCanvasFieldEffect: '效果 / 返回值',
+  codeCanvasFieldType: '类型（抽象）',
+  codeCanvasFieldExpand: '展开语义（抽象）',
+  codeCanvasFieldNote: 'Note',
   canvasKindUnknownTitle: '其它文本',
   canvasKindUnknownHint: '未识别的扩展名；可在右侧停靠区编辑纯文本。',
   dockCollapse: '折叠文本停靠区',
@@ -312,6 +383,35 @@ const zh: UiMessages = {
   toolbarSaveAll: '全部保存',
   toolbarSaveAs: '另存',
   toolbarRevert: '还原',
+  cdeNewClass: '新建类',
+  cdeFit: '适应',
+  cdeOrigin: '原点',
+  cdeResetZoom: '还原',
+  cdeZoomIn: '放大',
+  cdeZoomOut: '缩小',
+  cdeCtxMember: '添加成员',
+  cdeCtxAttr: '添加属性',
+  cdeCtxMethod: '添加方法',
+  cdeCtxSubclass: '插入子 class',
+  cdeCtxManage: '管理成员…',
+  cdeManageTitle: '类成员',
+  cdeClassName: '类名',
+  cdeAttrs: '属性',
+  cdeMethods: '方法',
+  cdeDelete: '删除',
+  cdeAddAttr: '添加属性行',
+  cdeAddMethod: '添加方法行',
+  cdeDeleteClass: '删除此类',
+  cdsEditDefinition: '类定义编辑',
+  cdsEditorHint: '在此编辑类名、属性与方法；主画布为只读展示。关闭后更改已写入当前文档。',
+  cdsPickClassToEdit: '选择要详细编辑的类：',
+  cdsInheritHandleHint: '拖拽到父类框以设置继承（子类顶部圆点连向父类）',
+  cdeShortcutsPanel: '快捷键',
+  cdeShortcutsBody:
+    '中键拖拽：平移画布\n滚轮：缩放（指针位置为锚点）\n左键拖拽类框：移动布局\n类框左上：折叠/展开\n类顶圆点：拖向父类建立继承',
+  cdeVisibilityPanel: '显示',
+  cdeShowInherit: '继承关系',
+  cdeShowAssoc: '关联关系',
 };
 
 const en: UiMessages = {
@@ -456,9 +556,30 @@ const en: UiMessages = {
   canvasAriaLabel: 'Canvas',
   canvasEmptyHint: 'Open or create a document from the File menu.',
   canvasKindClassTitle: 'Class definitions (*.class.md)',
-  canvasKindClassHint: 'Structured headings and tables; no diagram preview here—edit source in the right dock.',
+  canvasKindClassHint:
+    'Diagram-style canvas above: inheritance/association are read-only (from <!-- class-md-meta --> in the file). Edit members in the table below.',
+  classMdReadonlyInherit: 'Inherits (read-only)',
+  classMdReadonlyAssoc: 'Association (read-only)',
+  classMdTableHint:
+    'Edit members (Kind / Name / Type / Note). Maintain relations in *.uml.md and mirror display names in this file’s meta comment.',
+  classMdAddRow: 'Add row',
   canvasKindCodeTitle: 'Code snippets (*.code.md)',
-  canvasKindCodeHint: 'Non-class code and macros; edit in the right dock.',
+  canvasKindCodeHint:
+    '2D canvas: use the left toolbar to add a function, variable/constant, or macro; drag cards and edit fields in the form below. The text dock still edits the full file.',
+  codeCanvasViewportTitle: 'Middle-drag pan · Wheel zoom · Drag cards',
+  codeCanvasToolbarAria: 'Code canvas toolbar',
+  codeCanvasNewFunction: 'New function',
+  codeCanvasNewVariable: 'New variable',
+  codeCanvasNewMacro: 'New macro',
+  codeCanvasDelete: 'Delete',
+  codeCanvasInspectorHint: 'Select a card on the canvas to edit its fields (synced to the document).',
+  codeCanvasFieldKind: 'Kind',
+  codeCanvasFieldName: 'Name',
+  codeCanvasFieldSignature: 'Signature (abstract)',
+  codeCanvasFieldEffect: 'Effect / return',
+  codeCanvasFieldType: 'Type (abstract)',
+  codeCanvasFieldExpand: 'Expansion (abstract)',
+  codeCanvasFieldNote: 'Note',
   canvasKindUnknownTitle: 'Plain text',
   canvasKindUnknownHint: 'Unknown extension; edit as plain text in the right dock.',
   dockCollapse: 'Collapse text dock',
@@ -481,6 +602,36 @@ const en: UiMessages = {
   toolbarSaveAll: 'Save all',
   toolbarSaveAs: 'Save as',
   toolbarRevert: 'Revert',
+  cdeNewClass: 'New class',
+  cdeFit: 'Fit',
+  cdeOrigin: 'Origin',
+  cdeResetZoom: 'Reset zoom',
+  cdeZoomIn: 'Zoom in',
+  cdeZoomOut: 'Zoom out',
+  cdeCtxMember: 'Add member',
+  cdeCtxAttr: 'Add attribute',
+  cdeCtxMethod: 'Add method',
+  cdeCtxSubclass: 'Insert subclass',
+  cdeCtxManage: 'Manage members…',
+  cdeManageTitle: 'Class members',
+  cdeClassName: 'Class name',
+  cdeAttrs: 'Attributes',
+  cdeMethods: 'Methods',
+  cdeDelete: 'Delete',
+  cdeAddAttr: 'Add attribute row',
+  cdeAddMethod: 'Add method row',
+  cdeDeleteClass: 'Delete class',
+  cdsEditDefinition: 'Class definition editor',
+  cdsEditorHint:
+    'Edit class names, attributes, and methods here; the main canvas is read-only. Changes are written when you close.',
+  cdsPickClassToEdit: 'Choose a class to edit:',
+  cdsInheritHandleHint: 'Drag onto a parent class box to set inheritance (child top handle to parent)',
+  cdeShortcutsPanel: 'Shortcuts',
+  cdeShortcutsBody:
+    'Middle-drag: pan\nWheel: zoom (pointer anchor)\nDrag class box: move layout\nTop-left fold: collapse/expand\nTop handle: drag to parent for inheritance',
+  cdeVisibilityPanel: 'Visibility',
+  cdeShowInherit: 'Inheritance',
+  cdeShowAssoc: 'Associations',
 };
 
 export function getMessages(locale: LocaleId): UiMessages {

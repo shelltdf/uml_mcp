@@ -1,49 +1,33 @@
 <script setup lang="ts">
 import mermaid from 'mermaid';
-import { computed, ref, watch } from 'vue';
-import { extractMermaidBlocks } from '../lib/formats';
+import { computed, nextTick, ref, watch } from 'vue';
+import type { LocaleId } from '../i18n/ui';
+import ClassDiagramCanvas from './ClassDiagramCanvas.vue';
+import { extractMermaidBlocks, inferMermaidDiagramTypeFromMarkdown } from '../lib/formats';
+import {
+  clearMermaidSelectionInRoot,
+  describeMermaidGroup,
+  findGroupByNodeId,
+  findMermaidInteractiveGroup,
+  setMermaidGroupSelected,
+} from '../lib/mermaidCanvas';
 import { workspace } from '../stores/workspace';
-
-function pickMermaidGraphics(start: Element | null): { id: string; label: string } | null {
-  let el: Element | null = start;
-  for (let depth = 0; depth < 14 && el; depth++) {
-    if (el.tagName === 'g') {
-      const g = el as SVGGElement;
-      const cls = g.getAttribute('class') || '';
-      const id = g.id || '';
-      const hit =
-        /\bnode\b/.test(cls) ||
-        /\bcluster\b/.test(cls) ||
-        /\bedgeLabel\b/.test(cls) ||
-        /\bedge\b/.test(cls) ||
-        /flowchart|classId|state-|sequence|entity|activation|participant|gantt|pie|quadrant/.test(id);
-      if (hit) {
-        const texts = g.querySelectorAll('text');
-        let label = '';
-        if (texts.length) {
-          label = Array.from(texts)
-            .map((x) => x.textContent?.trim() || '')
-            .filter(Boolean)
-            .join(' · ');
-        }
-        return { id: id || label || 'element', label: label || id || '—' };
-      }
-    }
-    el = el.parentElement;
-  }
-  return null;
-}
 
 const props = withDefaults(
   defineProps<{
     markdown: string;
     kind: string;
+    /** 当前标签 id（classDiagram 可编辑画布需要） */
+    tabId?: string;
+    locale?: LocaleId;
     /** 多语言提示：存在多个块时 */
     multiBlockHint?: string;
     resetLabel?: string;
     viewportTitle?: string;
   }>(),
   {
+    tabId: '',
+    locale: 'zh' as LocaleId,
     multiBlockHint: '',
     resetLabel: 'Reset view',
     viewportTitle: 'Middle-drag to pan · Wheel to zoom',
@@ -53,6 +37,7 @@ const props = withDefaults(
 const htmlChunks = ref<string[]>([]);
 const errorText = ref('');
 const viewportRef = ref<HTMLElement | null>(null);
+const sceneRef = ref<HTMLElement | null>(null);
 const scale = ref(1);
 const panX = ref(0);
 const panY = ref(0);
@@ -67,25 +52,58 @@ const allBlocks = computed(() => {
   return extractMermaidBlocks(props.markdown);
 });
 
-/** 一文件一图：画布仅渲染第一个 mermaid 块 */
 const blocks = computed(() => {
   if (allBlocks.value.length === 0) return [];
   return [allBlocks.value[0]];
 });
 
+const isClassDiagram = computed(
+  () => inferMermaidDiagramTypeFromMarkdown(props.markdown) === 'classDiagram',
+);
+
+/** 类图可编辑画布：不走 Mermaid 静态渲染与 SVG 命中 */
+const useClassDiagramEditor = computed(
+  () => props.kind === 'uml' && isClassDiagram.value && !!props.tabId,
+);
+
 const showMultiHint = computed(
   () => props.kind === 'uml' && allBlocks.value.length > 1 && props.multiBlockHint,
 );
 
-mermaid.initialize({
-  startOnLoad: false,
-  securityLevel: 'strict',
-  theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default',
-});
+function initMermaidTheme(): void {
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',
+    theme: dark ? 'dark' : 'base',
+    themeVariables: dark
+      ? {
+          primaryColor: '#2e3440',
+          primaryTextColor: '#eceff4',
+          primaryBorderColor: '#88c0d0',
+          lineColor: '#81a1c1',
+          secondaryColor: '#3b4252',
+          tertiaryColor: '#434c5e',
+        }
+      : {
+          primaryColor: '#ffffff',
+          primaryTextColor: '#1e293b',
+          primaryBorderColor: '#334155',
+          lineColor: '#64748b',
+          secondaryColor: '#f1f5f9',
+          tertiaryColor: '#e2e8f0',
+        },
+  });
+}
 
-async function renderAll() {
+initMermaidTheme();
+
+async function renderAll(): Promise<void> {
   errorText.value = '';
   htmlChunks.value = [];
+  if (useClassDiagramEditor.value) {
+    return;
+  }
   if (props.kind !== 'uml' || blocks.value.length === 0) {
     return;
   }
@@ -105,16 +123,29 @@ async function renderAll() {
   htmlChunks.value = out;
 }
 
-function onCanvasClick(e: MouseEvent) {
+function syncSelectionHighlight(): void {
+  const tab = workspace.activeTab.value;
+  const sel = workspace.propertySelection.value;
+  const root = sceneRef.value;
+  if (!root) return;
+  clearMermaidSelectionInRoot(root);
+  if (!tab || sel.kind !== 'mermaid' || sel.tabId !== tab.id) return;
+  const g = findGroupByNodeId(root, sel.nodeId);
+  if (g) setMermaidGroupSelected(g, true);
+}
+
+function onCanvasClick(e: MouseEvent): void {
+  if (e.button !== 0) return;
   const tab = workspace.activeTab.value;
   if (!tab || tab.kind !== 'uml') return;
-  const picked = pickMermaidGraphics(e.target as Element | null);
-  if (picked) {
+  const g = findMermaidInteractiveGroup(e.target as Element | null);
+  if (g) {
+    const { id, label } = describeMermaidGroup(g);
     workspace.setPropertySelection({
       kind: 'mermaid',
       tabId: tab.id,
-      nodeId: picked.id,
-      label: picked.label,
+      nodeId: id,
+      label,
     });
   } else {
     workspace.clearPropertySelection();
@@ -124,13 +155,22 @@ function onCanvasClick(e: MouseEvent) {
 watch(
   () => [props.markdown, props.kind],
   () => {
+    if (useClassDiagramEditor.value) return;
     workspace.clearPropertySelection();
-    void renderAll();
+    void renderAll().then(() => nextTick(() => syncSelectionHighlight()));
   },
   { immediate: true },
 );
 
-function onWheel(e: WheelEvent) {
+watch(
+  () => [workspace.propertySelection.value, workspace.activeTab.value?.id, htmlChunks.value],
+  () => {
+    if (useClassDiagramEditor.value) return;
+    nextTick(() => syncSelectionHighlight());
+  },
+);
+
+function onWheel(e: WheelEvent): void {
   if (!viewportRef.value) return;
   const el = viewportRef.value;
   const rect = el.getBoundingClientRect();
@@ -147,7 +187,7 @@ function onWheel(e: WheelEvent) {
   scale.value = next;
 }
 
-function onPointerDown(e: PointerEvent) {
+function onPointerDown(e: PointerEvent): void {
   if (e.button !== 1) return;
   e.preventDefault();
   isPanning.value = true;
@@ -163,13 +203,13 @@ function onPointerDown(e: PointerEvent) {
   }
 }
 
-function onPointerMove(e: PointerEvent) {
+function onPointerMove(e: PointerEvent): void {
   if (!isPanning.value) return;
   panX.value = panOriginX + (e.clientX - panStartX);
   panY.value = panOriginY + (e.clientY - panStartY);
 }
 
-function onPointerUp(e: PointerEvent) {
+function onPointerUp(e: PointerEvent): void {
   if (!isPanning.value) return;
   isPanning.value = false;
   const el = viewportRef.value;
@@ -180,7 +220,7 @@ function onPointerUp(e: PointerEvent) {
   }
 }
 
-function resetView() {
+function resetView(): void {
   scale.value = 1;
   panX.value = 0;
   panY.value = 0;
@@ -189,6 +229,8 @@ function resetView() {
 const transformStyle = computed(
   () => `translate(${panX.value}px, ${panY.value}px) scale(${scale.value})`,
 );
+
+const zoomPercent = computed(() => `${Math.round(scale.value * 100)}%`);
 </script>
 
 <template>
@@ -200,35 +242,55 @@ const transformStyle = computed(
       <p class="hint">未找到 <code>```mermaid</code> 代码块。</p>
     </template>
     <template v-else>
+      <ClassDiagramCanvas
+        v-if="isClassDiagram && tabId"
+        :markdown="markdown"
+        :tab-id="tabId"
+        :locale="locale"
+      />
+      <template v-else>
       <p v-if="showMultiHint" class="multi-hint">{{ multiBlockHint }}</p>
       <p v-if="errorText" class="err">{{ errorText }}</p>
       <div class="canvas-chrome">
-        <div class="canvas-meta">
-          <span class="zoom-label">{{ Math.round(scale * 100) }}%</span>
-          <button
-            type="button"
-            class="chrome-btn"
-            :title="`${resetLabel} — 无全局快捷键`"
-            @click="resetView"
-          >
-            {{ resetLabel }}
-          </button>
-        </div>
         <div
           ref="viewportRef"
           class="canvas-viewport"
-          :title="`${viewportTitle} — 无全局快捷键`"
+          :class="{ 'canvas-viewport--class-diagram': isClassDiagram }"
+          :title="viewportTitle"
           @wheel.prevent="onWheel"
           @pointerdown="onPointerDown"
           @pointermove="onPointerMove"
           @pointerup="onPointerUp"
           @pointercancel="onPointerUp"
         >
-          <div class="canvas-inner" :style="{ transform: transformStyle }" @click="onCanvasClick">
-            <div v-for="(h, idx) in htmlChunks" :key="idx" class="svg-wrap" v-html="h" />
+          <div class="canvas-inner" :style="{ transform: transformStyle }">
+            <div class="canvas-grid" aria-hidden="true" />
+            <div
+              ref="sceneRef"
+              class="uml-svg-scene"
+              role="application"
+              aria-label="UML SVG canvas"
+              @click="onCanvasClick"
+            >
+              <div v-for="(h, idx) in htmlChunks" :key="idx" class="svg-wrap" v-html="h" />
+            </div>
+          </div>
+          <div class="canvas-hud">
+            <span class="canvas-hud__zoom" :title="`${viewportTitle} — 无全局快捷键`">{{
+              zoomPercent
+            }}</span>
+            <button
+              type="button"
+              class="canvas-hud__btn"
+              :title="`${resetLabel} — 无全局快捷键`"
+              @click="resetView"
+            >
+              {{ resetLabel }}
+            </button>
           </div>
         </div>
       </div>
+      </template>
     </template>
   </div>
 </template>
@@ -270,24 +332,6 @@ const transformStyle = computed(
   display: flex;
   flex-direction: column;
 }
-.canvas-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  font-size: 0.85rem;
-  border-bottom: 1px solid var(--border, #ccc);
-  background: var(--panel-bg, #fafafa);
-}
-.zoom-label {
-  min-width: 3.5em;
-  font-variant-numeric: tabular-nums;
-}
-.chrome-btn {
-  font: inherit;
-  padding: 4px 10px;
-  cursor: pointer;
-}
 
 .canvas-viewport {
   flex: 1 1 0;
@@ -301,19 +345,132 @@ const transformStyle = computed(
   cursor: grabbing;
 }
 
+/** 世界坐标纸面 + 网格，随平移缩放 */
 .canvas-inner {
+  position: relative;
   transform-origin: 0 0;
-  padding: 24px;
+  padding: 48px;
   display: inline-block;
   min-width: min(100%, 400px);
+  z-index: 0;
+}
+
+.canvas-grid {
+  position: absolute;
+  left: -4000px;
+  top: -4000px;
+  width: 10000px;
+  height: 10000px;
+  pointer-events: none;
+  z-index: 0;
+  background-color: var(--uml-paper-bg, #f8fafc);
+  background-image: linear-gradient(
+      to right,
+      var(--uml-grid-major, rgba(15, 23, 42, 0.07)) 1px,
+      transparent 1px
+    ),
+    linear-gradient(to bottom, var(--uml-grid-major, rgba(15, 23, 42, 0.07)) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+:root[data-theme='dark'] .canvas-grid {
+  --uml-paper-bg: #1c2028;
+  --uml-grid-major: rgba(236, 239, 244, 0.07);
+}
+
+.uml-svg-scene {
+  position: relative;
+  z-index: 1;
 }
 
 .svg-wrap {
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 .svg-wrap :deep(svg) {
   max-width: none;
   height: auto;
   display: block;
+  overflow: visible;
+}
+
+/** 左下角缩放与还原（HUD 不拦截滚轮缩放） */
+.canvas-hud {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--panel-bg, #fafafa) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border, #ccc) 65%, transparent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.canvas-hud__zoom {
+  min-width: 3.25em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.canvas-hud__btn {
+  pointer-events: auto;
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid var(--border, #ccc);
+  background: var(--editor-bg, #fff);
+}
+.canvas-hud__btn:hover {
+  background: var(--menu-hover, rgba(0, 0, 0, 0.06));
+}
+
+/** 类图：更接近通用 UML 类图（线框、分区感） */
+.canvas-viewport--class-diagram .svg-wrap :deep(svg) {
+  font-family: ui-sans-serif, 'Segoe UI', system-ui, sans-serif;
+}
+.canvas-viewport--class-diagram .svg-wrap :deep(svg .node rect),
+.canvas-viewport--class-diagram .svg-wrap :deep(svg .node polygon),
+.canvas-viewport--class-diagram .svg-wrap :deep(svg g.node rect) {
+  stroke: #1e293b;
+  stroke-width: 1.75px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.06));
+}
+.canvas-viewport--class-diagram .svg-wrap :deep(svg .edgePath path.path) {
+  stroke: #475569;
+  stroke-width: 1.35px;
+}
+:root[data-theme='dark'] .canvas-viewport--class-diagram .svg-wrap :deep(svg .node rect),
+:root[data-theme='dark'] .canvas-viewport--class-diagram .svg-wrap :deep(svg .node polygon),
+:root[data-theme='dark'] .canvas-viewport--class-diagram .svg-wrap :deep(svg g.node rect) {
+  stroke: #e5e7eb;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+:root[data-theme='dark'] .canvas-viewport--class-diagram .svg-wrap :deep(svg .edgePath path.path) {
+  stroke: #94a3b8;
+}
+
+/** 选中高亮（由脚本添加 uml-svg-node--selected） */
+.svg-wrap :deep(svg g.uml-svg-node--selected rect),
+.svg-wrap :deep(svg g.uml-svg-node--selected polygon) {
+  stroke: var(--uml-select-stroke, #2563eb) !important;
+  stroke-width: 2.75px !important;
+}
+.svg-wrap :deep(svg g.uml-svg-node--selected path) {
+  stroke: var(--uml-select-stroke, #2563eb) !important;
+}
+:root[data-theme='dark'] .svg-wrap :deep(svg g.uml-svg-node--selected rect),
+:root[data-theme='dark'] .svg-wrap :deep(svg g.uml-svg-node--selected polygon) {
+  --uml-select-stroke: #93c5fd;
+}
+
+.svg-wrap :deep(svg g.node),
+.svg-wrap :deep(svg g.classGroup) {
+  cursor: pointer;
 }
 </style>

@@ -74,7 +74,8 @@ sync_profile: strict
 - **属性 · 图类型**：当前标签为 `*.uml.md` 时，在「类型」（文件种类）行下增加 **图类型**：与中央画布一致，取**首个** fenced `mermaid` 代码块中首条非注释行的**首 token**（如 `classDiagram`、`flowchart`、`stateDiagram-v2`）；无块或空块时显示 `—`。选中图中元素或文本选区时，若为 `*.uml.md` 亦显示同一 **图类型** 行（`src/lib/formats.ts`：`inferMermaidDiagramTypeFromMarkdown`）。
 - **`uml.sync.md` 客户区**：中央画布在打开同步契约时展示 **表单式 GUI**（`SyncConfigEditor.vue`）：`uml_root` / `namespace_root` 为文本框（路径仅落盘，不访问文件系统）；`namespace_root` **唯一**、不可追加多条；`code_impls` 通过「添加代码实现」**弹窗**先选 **类型**，目录默认 **`impl_<类型>_project`**（与已有项冲突时自动加 `_2`、`_3`…），切换类型会**重算**默认目录；**确定**前校验相对路径在**当前已打开标签路径**中是否已有文件落在该目录下（绝对路径不校验）；列表以**单行**展示「目录 + 类型」；**⋯** 菜单：**修改**（只读说明）、**删除**；`sync_profile` 为 **`none` \| `strict`**（默认 **strict**）。下方为同步规则正文 Markdown（自适应高度）。修改经 `serializeUmlSyncMarkdown` 写回。
 - 打开内置示例文件列表（或未来 File System Access）。
-- 编辑区为受控文本域；预览调用 Mermaid 将最近一次有效内容渲染为 SVG。
+- 编辑区为受控文本域；**`*.uml.md` 预览**（`MermaidPreview.vue`）：**非** `classDiagram` 时，Mermaid 将首个 `mermaid` 块渲染为 **SVG**；视口内 **`div.canvas-inner`** 做平移/缩放（中键拖拽、滚轮以指针为锚点缩放）；其下 **`div.canvas-grid`** 为世界坐标 **背景网格**；**`div.uml-svg-scene`** 承载 SVG（`v-html`），左键命中与选中见 `src/lib/mermaidCanvas.ts`；**左下角 HUD**（`div.canvas-hud`）为 **缩放比例 + 还原**；`classDiagram` 时视口加 **`canvas-viewport--class-diagram`** 样式。
+- **`classDiagram` 专用画布**（`ClassDiagramCanvas.vue`，在 `MermaidPreview` 内当首个块为 `classDiagram` 且传入 `tabId` 时启用）：**不再**用 Mermaid 静态渲染；**主画布只读展示**，**SVG** 绘制类框与连线，类内文本 **`pointer-events: none`** 以免误选文字；**类顶圆点**拖拽到父类框以设置 **继承**。**类名/成员编辑**在 **「类定义编辑」** 模态（`Teleport`）中完成；**左侧** 仅 **类定义编辑** 入口；**右键** 仍可增成员/子类/管理（打开模态）。**折叠**（类框左上）与 **显示**（右上：继承/关联边可见）及 **快捷键**（左上，默认折叠）写入布局注释 `<!-- uml-class-diagram-layout:{"v":1,"positions","folded","edgeVisibility"} -->`（`src/lib/classDiagramModel.ts`）。**左下角 HUD**：**适应 / 原点 / 还原** 与 **− / 比例 / +**。**标签**：未保存时标题名后加 **` ·`**（与 `Tab.isDirty` 一致）。
 - 解析失败：预览区显示错误信息字符串，不抛未捕获异常。
 
 ## 错误与边界

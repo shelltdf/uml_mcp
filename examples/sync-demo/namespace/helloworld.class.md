@@ -4,6 +4,8 @@
 
 ### Helloworld
 
+<!-- class-md-meta: {"inherits":"BaseEntity","associations":["Item","DiscountRule"]} -->
+
 | Kind | Name | Type | Note |
 |------|------|------|------|
 | field | exampleField | string | 示例字段 |

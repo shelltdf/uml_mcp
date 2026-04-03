@@ -41,7 +41,7 @@ function basename(path: string) {
         <span v-if="t.isDirty" class="tab__dirty-dot" :title="m.dirtyTabHint" />
         <span v-else class="tab__dirty-placeholder" />
       </span>
-      <span class="tab__name">{{ basename(t.path) }}</span>
+      <span class="tab__name">{{ basename(t.path) }}{{ t.isDirty ? ' ·' : '' }}</span>
       <span class="tab__close" :title="m.closeTabHint + ' — 无全局快捷键'" @click.stop="tryCloseTab(t.id)">×</span>
     </button>
   </div>

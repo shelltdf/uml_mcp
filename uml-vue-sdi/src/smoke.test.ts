@@ -11,6 +11,14 @@ import {
   isUmlSyncPath,
   defaultCodeImplRootForType,
 } from './lib/formats';
+import {
+  isClassMemberMethodLine,
+  parseClassDiagramBody,
+  serializeClassDiagramBody,
+  stripMermaidMemberModifiers,
+} from './lib/classDiagramModel';
+import { parseClassMdMarkdown, serializeClassMdMarkdown } from './lib/classClassMdModel';
+import { buildCodeMdMarkdown, parseCodeMdMarkdown } from './lib/codeMdModel';
 
 describe('formats', () => {
   it('default code impl root follows impl_<type>_project', () => {
@@ -47,6 +55,145 @@ uml_root: custom
   it('extracts mermaid blocks', () => {
     const md = '```mermaid\nclassDiagram\n  class A\n```';
     expect(extractMermaidBlocks(md)).toHaveLength(1);
+  });
+
+  it('class diagram parse/serialize roundtrip', () => {
+    const body = `classDiagram
+  class A {
+    +int x
+    +run()
+  }
+  class B
+  A <|-- B
+`;
+    const st = parseClassDiagramBody(body);
+    expect(st).not.toBeNull();
+    expect(st?.classes.length).toBeGreaterThanOrEqual(2);
+    const again = serializeClassDiagramBody(st!);
+    const st2 = parseClassDiagramBody(again);
+    expect(st2?.classes.map((c) => c.name).sort()).toEqual(st?.classes.map((c) => c.name).sort());
+  });
+
+  it('parses classDiagram association with cardinality and label', () => {
+    const body = `classDiagram
+  class Order {
+    +string id
+  }
+  class Item {
+    +string sku
+  }
+  Order "1" --> "*" Item : contains
+`;
+    const st = parseClassDiagramBody(body);
+    expect(st?.links.length).toBe(1);
+    expect(st?.links[0].kind).toBe('association');
+    expect(st?.links[0].from).toBe('Order');
+    expect(st?.links[0].to).toBe('Item');
+  });
+
+  it('classifies private and static methods after stripping modifiers', () => {
+    expect(stripMermaidMemberModifiers('-$ foo()')).toBe('foo()');
+    expect(isClassMemberMethodLine('-$ foo()')).toBe(true);
+    expect(isClassMemberMethodLine('-String secret')).toBe(false);
+    expect(isClassMemberMethodLine('+$ staticBar()')).toBe(true);
+  });
+
+  it('parses classDiagram private fields and private methods', () => {
+    const body = `classDiagram
+  class A {
+    -String secret
+    +String pub
+    -getSecret()
+    +$ staticM()
+  }
+`;
+    const st = parseClassDiagramBody(body);
+    const c = st?.classes.find((x) => x.name === 'A');
+    expect(c?.attributes.some((x) => x.includes('secret'))).toBe(true);
+    expect(c?.attributes.some((x) => x.includes('pub'))).toBe(true);
+    expect(c?.methods.some((x) => x.includes('getSecret'))).toBe(true);
+    expect(c?.methods.some((x) => x.includes('staticM'))).toBe(true);
+  });
+
+  it('parses classDiagram inheritance', () => {
+    const body = `classDiagram
+  class Animal
+  class Dog
+  Animal <|-- Dog
+`;
+    const st = parseClassDiagramBody(body);
+    expect(st?.links.some((l) => l.kind === 'inherit' && l.from === 'Dog' && l.to === 'Animal')).toBe(
+      true,
+    );
+  });
+
+  it('parses classDiagram dependency ..> as association edge', () => {
+    const body = `classDiagram
+  class Order
+  class Customer
+  Order ..> Customer : placedBy
+`;
+    const st = parseClassDiagramBody(body);
+    expect(st?.links.length).toBe(1);
+    expect(st?.links[0].kind).toBe('association');
+    expect(st?.links[0].from).toBe('Order');
+    expect(st?.links[0].to).toBe('Customer');
+  });
+
+  it('code md parse/serialize roundtrip', () => {
+    const md = `# 全局测试
+
+> 约定段落
+
+## 函数
+
+| Kind | Name | 签名（抽象） | 效果 / 返回值（抽象） | Note |
+|------|------|--------------|----------------------|------|
+| function | a | sig | eff | n |
+
+## 全局变量 / 常量
+
+| Kind | Name | 类型（抽象） | Note |
+|------|------|--------------|------|
+| constant | V | int | nv |
+
+## 宏
+
+| Kind | Name | 展开语义（抽象） | Note |
+|------|------|------------------|------|
+| macro | M | exp | mn |
+`;
+    const { state, layout } = parseCodeMdMarkdown(md);
+    expect(state.functions.length).toBe(1);
+    expect(state.variables.length).toBe(1);
+    expect(state.macros.length).toBe(1);
+    const out = buildCodeMdMarkdown(state, layout);
+    const again = parseCodeMdMarkdown(out);
+    expect(again.state.functions.map((f) => f.name)).toEqual(state.functions.map((f) => f.name));
+    expect(again.state.variables.map((v) => v.name)).toEqual(state.variables.map((v) => v.name));
+    expect(again.state.macros.map((x) => x.name)).toEqual(state.macros.map((x) => x.name));
+  });
+
+  it('class md parse/serialize roundtrip', () => {
+    const md = `# X
+
+### Foo
+
+<!-- class-md-meta: {"inherits":"Base","associations":["Other"]} -->
+
+| Kind | Name | Type | Note |
+|------|------|------|------|
+| field | a | int | |
+`;
+    const s = parseClassMdMarkdown(md);
+    expect(s.title).toBe('Foo');
+    expect(s.meta.inherits).toBe('Base');
+    expect(s.meta.associations).toEqual(['Other']);
+    expect(s.rows.length).toBe(1);
+    const out = serializeClassMdMarkdown(md, s);
+    const s2 = parseClassMdMarkdown(out);
+    expect(s2.rows).toEqual(s.rows);
+    expect(s2.meta.inherits).toBe('Base');
   });
 
   it('infers mermaid diagram keyword from first block', () => {
