@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
-"""启动 Electron 套壳（需已构建 dist/；若缺失则先执行 npm run build）。"""
+"""
+启动 Electron 套壳。**每次启动前先** ``npm run build`` 生成最新 ``dist/``，再运行 electron。
+"""
 import os
 import subprocess
 import sys
 
 from npm_util import npm_cmd
+from project_build import run_npm_build
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
 def main() -> int:
     os.chdir(ROOT)
-    if not os.path.isdir(os.path.join(ROOT, "node_modules")):
-        subprocess.run(npm_cmd("install"), check=True)
-    dist_index = os.path.join(ROOT, "dist", "index.html")
-    if not os.path.isfile(dist_index):
-        subprocess.run(npm_cmd("run", "build"), check=True)
-    r = subprocess.run(npm_cmd("run", "electron"), check=False)
-    return int(r.returncode)
+    print("[run_exe] 正在生成最新 dist/ ...")
+    r = run_npm_build()
+    if r != 0:
+        return r
+    r2 = subprocess.run(npm_cmd("run", "electron"), check=False)
+    return int(r2.returncode)
 
 
 if __name__ == "__main__":

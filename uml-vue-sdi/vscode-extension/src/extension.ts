@@ -3,6 +3,17 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext): void {
+  /** 状态栏最右侧（优先级最低 = 靠右缘） */
+  const statusUml = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, -1_000_000);
+  statusUml.text = '$(symbol-class) UML';
+  statusUml.tooltip = 'UML Markdown Workbench — 打开工作台';
+  statusUml.command = 'umlWorkbench.open';
+  /** 文字为黄色；背景不设置，沿用状态栏默认底色 */
+  statusUml.color = '#e5b80c';
+  statusUml.name = 'umlWorkbench.status';
+  statusUml.show();
+  context.subscriptions.push(statusUml);
+
   const openPanel = (): void => {
     const panel = vscode.window.createWebviewPanel(
       'umlWorkbench',

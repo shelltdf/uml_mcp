@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""默认运行入口：启动 Vite 开发服务器（与 run_web.py 相同）。"""
+"""默认运行入口：先构建最新 dist/，再启动 Vite 开发服务器（与 run_web.py 相同）。"""
 import sys
 
 from run_web import main

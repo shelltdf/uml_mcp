@@ -10,8 +10,11 @@
   "categories": [
     "Other"
   ],
+  "icon": "media/icon.png",
   "activationEvents": [
-    "onCommand:umlWorkbench.open"
+    "onStartupFinished",
+    "onCommand:umlWorkbench.open",
+    "onCommand:umlWorkbench.copyMcpServerPath"
   ],
   "main": "./out/extension.js",
   "contributes": {

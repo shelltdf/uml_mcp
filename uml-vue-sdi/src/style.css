@@ -2,27 +2,41 @@
 html,
 body {
   height: 100%;
+  width: 100%;
   margin: 0;
+  padding: 0;
   overflow: hidden;
 }
 
 #app {
   height: 100%;
+  width: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
+/* 页面级配色与 Vue 中 applyTheme() 写入的 data-theme 一致；勿再用 prefers-color-scheme 单独改 :root，
+   否则在「应用浅色 + 系统深色」时 html 与 .app 背景不一致，边缘会像左右留缝/露黑条。 */
 :root {
   font-family: 'Segoe UI', system-ui, sans-serif;
   line-height: 1.45;
+  color-scheme: light;
   color: #1a1a1a;
   background: #f4f4f5;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #e8e8ea;
-    background: #121214;
-  }
+:root[data-theme='light'] {
+  color-scheme: light;
+  color: #1a1a1a;
+  background: #f4f4f5;
+  scrollbar-color: #b8b8bc #ececee;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  color: #e8e8ea;
+  background: #121214;
+  scrollbar-color: #5a5a62 #2a2a2e;
 }
 
 * {
