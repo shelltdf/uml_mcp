@@ -77,6 +77,15 @@ export interface UiMessages {
   canvasKindUnknownHint: string;
   dockCollapse: string;
   dockExpand: string;
+  dockTitleBarAria: string;
+  dockFoldBody: string;
+  dockUnfoldBody: string;
+  dockMaximize: string;
+  dockRestoreSize: string;
+  dockClose: string;
+  dockButtonBarAria: string;
+  menuWindow: string;
+  menuShowTextDock: string;
   toolbarAriaLabel: string;
   toolbarNew: string;
   toolbarOpen: string;
@@ -114,7 +123,7 @@ const zh: UiMessages = {
   helpBody:
     '使用「菜单 → 帮助」打开本面板；亦可用 F1。\n' +
     '布局：中央为 MDI 工作区（上方标签切换文档，下方为各文件类型的画布）；右侧为「文本内容」停靠区编辑纯文本。\n' +
-    '顶层菜单顺序：文件 → 语言 → 主题 → 帮助。「语言」下可选中文 / 英文（非循环）。\n' +
+    '顶层菜单顺序：文件 → 语言 → 主题 → 窗口 → 帮助。「窗口」可重新显示已关闭的右侧「文本内容」停靠区。「语言」下可选中文 / 英文（非循环）。\n' +
     '「主题」下分项选择跟随系统 / 浅色 / 深色（非循环）。\n' +
     '未保存时标签上显示脏标记，窗口标题会显示「·」，关闭或刷新页面前会提示。',
   logTitle: 'Log',
@@ -166,6 +175,15 @@ const zh: UiMessages = {
   canvasKindUnknownHint: '未识别的扩展名；可在右侧停靠区编辑纯文本。',
   dockCollapse: '折叠文本停靠区',
   dockExpand: '展开文本停靠区',
+  dockTitleBarAria: '文本内容停靠窗口标题',
+  dockFoldBody: '收起源码主体',
+  dockUnfoldBody: '展开源码主体',
+  dockMaximize: '最大化停靠区',
+  dockRestoreSize: '还原停靠区大小',
+  dockClose: '关闭停靠区',
+  dockButtonBarAria: '停靠按钮条',
+  menuWindow: '窗口',
+  menuShowTextDock: '显示「文本内容」停靠区',
   toolbarAriaLabel: '主工具栏',
   toolbarNew: '新建',
   toolbarOpen: '打开',
@@ -203,7 +221,7 @@ const en: UiMessages = {
   helpBody:
     'Open from Help menu or press F1.\n' +
     'Layout: center MDI workspace (tabs above, canvas below by file type); right dock is plain-text editing.\n' +
-    'Menu order: File → Language → Theme → Help. Language: 中文 / English (not cycling).\n' +
+    'Menu order: File → Language → Theme → Window → Help. Use Window to show the closed right “Text content” dock. Language: 中文 / English (not cycling).\n' +
     'Theme: system / light / dark (not cycling).\n' +
     'Unsaved changes show a marker on tabs and a dot in the title; leaving the page may prompt.',
   logTitle: 'Log',
@@ -258,6 +276,15 @@ const en: UiMessages = {
   canvasKindUnknownHint: 'Unknown extension; edit as plain text in the right dock.',
   dockCollapse: 'Collapse text dock',
   dockExpand: 'Expand text dock',
+  dockTitleBarAria: 'Text content dock title',
+  dockFoldBody: 'Hide editor body',
+  dockUnfoldBody: 'Show editor body',
+  dockMaximize: 'Maximize dock',
+  dockRestoreSize: 'Restore dock size',
+  dockClose: 'Close dock',
+  dockButtonBarAria: 'Dock button bar',
+  menuWindow: 'Window',
+  menuShowTextDock: 'Show “Text content” dock',
   toolbarAriaLabel: 'Main toolbar',
   toolbarNew: 'New',
   toolbarOpen: 'Open',

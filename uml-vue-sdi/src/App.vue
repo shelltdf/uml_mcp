@@ -5,6 +5,7 @@ import EditorTabs from './components/EditorTabs.vue';
 import FileKindCanvas from './components/FileKindCanvas.vue';
 import MermaidPreview from './components/MermaidPreview.vue';
 import TextContentDock from './components/TextContentDock.vue';
+import ToolbarIcons from './components/ToolbarIcons.vue';
 import { DIAGRAM_TYPES, NEW_SYNC_CARD, type DiagramTypeId } from './lib/diagramTemplates';
 import { getMessages, LOCALE_OPTIONS, type LocaleId } from './i18n/ui';
 import { getSyncPanelModel } from './lib/formats';
@@ -156,7 +157,86 @@ function runRevert() {
   if (workspace.revertActive()) pushLog('revert');
 }
 
+/** 右侧 Dock Area：与 Dock Button 联动的整栏折叠（仅余外缘条） */
 const textDockCollapsed = ref(false);
+/** 关闭停靠区（Dock View 不显示；仍可通过窗口菜单或 Dock Button 恢复） */
+const textDockClosed = ref(false);
+/** 仅收起源码编辑区，保留标题栏 */
+const textDockBodyFolded = ref(false);
+/** 该侧最大化（加宽停靠列） */
+const textDockMaximized = ref(false);
+/** 停靠区分栏宽度（像素），用于可拖分割条 */
+const dockWidthPx = ref(300);
+const mainMdiRef = ref<HTMLElement | null>(null);
+
+const dockSplitterVisible = computed(
+  () => !textDockClosed.value && !textDockCollapsed.value && !textDockMaximized.value,
+);
+
+const dockAreaStyle = computed(() => {
+  if (textDockClosed.value) {
+    return { flex: '0 0 24px', minWidth: '24px', maxWidth: '24px' };
+  }
+  if (textDockCollapsed.value) {
+    return { flex: '0 0 28px', minWidth: '28px', maxWidth: '28px' };
+  }
+  if (textDockMaximized.value) {
+    return { flex: '1 1 48%', minWidth: 'min(480px, 100%)', maxWidth: '62%' };
+  }
+  return {
+    flex: `0 0 ${dockWidthPx.value}px`,
+    minWidth: '160px',
+    maxWidth: 'min(55vw, 720px)',
+  };
+});
+
+function onDockClose() {
+  textDockClosed.value = true;
+  textDockBodyFolded.value = false;
+}
+
+function onDockStripClick() {
+  if (textDockClosed.value) {
+    textDockClosed.value = false;
+    return;
+  }
+  textDockCollapsed.value = !textDockCollapsed.value;
+}
+
+function showTextDockFromMenu() {
+  textDockClosed.value = false;
+  textDockCollapsed.value = false;
+  closeMenus();
+}
+
+function onSplitterPointerDown(e: PointerEvent) {
+  if (!dockSplitterVisible.value) return;
+  const target = e.currentTarget as HTMLElement;
+  const startX = e.clientX;
+  const startW = dockWidthPx.value;
+  if (!mainMdiRef.value) return;
+  e.preventDefault();
+  target.setPointerCapture(e.pointerId);
+
+  function onMove(ev: PointerEvent) {
+    const m = mainMdiRef.value;
+    if (!m) return;
+    const maxW = m.getBoundingClientRect().width * 0.58;
+    const minW = 160;
+    // 右停靠：Splitter 向右拖 = 停靠区变宽
+    const next = Math.round(startW + (ev.clientX - startX));
+    dockWidthPx.value = Math.max(minW, Math.min(maxW, next));
+  }
+
+  function onUp(ev: PointerEvent) {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    target.releasePointerCapture(ev.pointerId);
+  }
+
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+}
 
 function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'F1') {
@@ -189,14 +269,14 @@ function copyLog() {
   void window.navigator.clipboard.writeText(text);
 }
 
-const openMenu = ref<null | 'file' | 'theme' | 'lang' | 'help'>(null);
+const openMenu = ref<null | 'file' | 'theme' | 'lang' | 'window' | 'help'>(null);
 const chromeRef = ref<HTMLElement | null>(null);
 
 function closeMenus() {
   openMenu.value = null;
 }
 
-function toggleMenu(id: 'file' | 'theme' | 'lang' | 'help') {
+function toggleMenu(id: 'file' | 'theme' | 'lang' | 'window' | 'help') {
   openMenu.value = openMenu.value === id ? null : id;
 }
 
@@ -432,6 +512,32 @@ onUnmounted(() => {
             type="button"
             class="menu-heading"
             role="menuitem"
+            :aria-expanded="openMenu === 'window'"
+            :title="`${msg.menuWindow} — 无全局快捷键`"
+            @click="toggleMenu('window')"
+          >
+            {{ msg.menuWindow }}
+          </button>
+          <ul v-show="openMenu === 'window'" class="menu-dropdown" role="menu" @click.stop>
+            <li>
+              <button
+                type="button"
+                class="menu-entry"
+                role="menuitem"
+                :title="`${msg.menuShowTextDock} — 无全局快捷键`"
+                @click="showTextDockFromMenu"
+              >
+                {{ msg.menuShowTextDock }}
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div class="menu-item">
+          <button
+            type="button"
+            class="menu-heading"
+            role="menuitem"
             :aria-expanded="openMenu === 'help'"
             :title="`${msg.helpMenu} — 无全局快捷键`"
             @click="toggleMenu('help')"
@@ -468,31 +574,37 @@ onUnmounted(() => {
         role="toolbar"
         :aria-label="msg.toolbarAriaLabel"
       >
-        <button type="button" class="tb-btn" :title="`${msg.toolbarNew} — Ctrl+N`" @click="openNewDiagramModal">
-          {{ msg.toolbarNew }}
+        <button type="button" class="tb-btn tb-btn--icon" :title="`${msg.toolbarNew} — Ctrl+N`" @click="openNewDiagramModal">
+          <ToolbarIcons name="file-plus" />
+          <span class="sr-only">{{ msg.toolbarNew }}</span>
         </button>
         <span class="tb-sep" aria-hidden="true" />
-        <button type="button" class="tb-btn" :title="`${msg.toolbarOpen} — Ctrl+O`" @click="runOpenFile">
-          {{ msg.toolbarOpen }}
+        <button type="button" class="tb-btn tb-btn--icon" :title="`${msg.toolbarOpen} — Ctrl+O`" @click="runOpenFile">
+          <ToolbarIcons name="folder-open" />
+          <span class="sr-only">{{ msg.toolbarOpen }}</span>
         </button>
         <span class="tb-sep" aria-hidden="true" />
-        <button type="button" class="tb-btn" :title="`${msg.toolbarSave} — Ctrl+S`" @click="runSaveFile">
-          {{ msg.toolbarSave }}
+        <button type="button" class="tb-btn tb-btn--icon" :title="`${msg.toolbarSave} — Ctrl+S`" @click="runSaveFile">
+          <ToolbarIcons name="save" />
+          <span class="sr-only">{{ msg.toolbarSave }}</span>
         </button>
-        <button type="button" class="tb-btn" :title="`${msg.toolbarSaveAll} — 无全局快捷键`" @click="runSaveAll">
-          {{ msg.toolbarSaveAll }}
+        <button type="button" class="tb-btn tb-btn--icon" :title="`${msg.toolbarSaveAll} — 无全局快捷键`" @click="runSaveAll">
+          <ToolbarIcons name="save-all" />
+          <span class="sr-only">{{ msg.toolbarSaveAll }}</span>
         </button>
-        <button type="button" class="tb-btn" :title="`${msg.toolbarSaveAs} — Ctrl+Shift+S`" @click="runSaveAs">
-          {{ msg.toolbarSaveAs }}
+        <button type="button" class="tb-btn tb-btn--icon" :title="`${msg.toolbarSaveAs} — Ctrl+Shift+S`" @click="runSaveAs">
+          <ToolbarIcons name="save-as" />
+          <span class="sr-only">{{ msg.toolbarSaveAs }}</span>
         </button>
         <span class="tb-sep" aria-hidden="true" />
-        <button type="button" class="tb-btn" :title="`${msg.toolbarRevert} — 无全局快捷键`" @click="runRevert">
-          {{ msg.toolbarRevert }}
+        <button type="button" class="tb-btn tb-btn--icon" :title="`${msg.toolbarRevert} — 无全局快捷键`" @click="runRevert">
+          <ToolbarIcons name="undo" />
+          <span class="sr-only">{{ msg.toolbarRevert }}</span>
         </button>
       </div>
     </header>
 
-    <main class="main main-mdi" :class="{ 'main-mdi--dock-collapsed': textDockCollapsed }">
+    <main ref="mainMdiRef" class="main main-mdi">
       <section class="workspace-mdi pane" :aria-label="msg.mdiWorkspaceLabel">
         <EditorTabs :locale="locale" />
         <div class="canvas-region" :aria-label="msg.canvasAriaLabel">
@@ -541,12 +653,47 @@ onUnmounted(() => {
           <div v-else class="canvas-empty">{{ msg.canvasEmptyHint }}</div>
         </div>
       </section>
-      <aside class="text-dock-aside pane" :aria-label="msg.dockTextContent">
-        <TextContentDock
-          :locale="locale"
-          :collapsed="textDockCollapsed"
-          @update:collapsed="textDockCollapsed = $event"
-        />
+      <div
+        v-show="dockSplitterVisible"
+        class="main-dock-splitter"
+        role="separator"
+        :aria-hidden="true"
+        @pointerdown="onSplitterPointerDown"
+      />
+      <aside class="dock-area dock-area--right pane" :aria-label="msg.dockTextContent" :style="dockAreaStyle">
+        <div class="dock-view" :class="{ 'dock-view--empty': textDockCollapsed || textDockClosed }">
+          <TextContentDock
+            v-if="!textDockClosed && !textDockCollapsed"
+            :locale="locale"
+            :body-folded="textDockBodyFolded"
+            :maximized="textDockMaximized"
+            @update:body-folded="textDockBodyFolded = $event"
+            @toggle-maximize="textDockMaximized = !textDockMaximized"
+            @close="onDockClose"
+          />
+        </div>
+        <div class="dock-button-bar" role="toolbar" :aria-label="msg.dockButtonBarAria">
+          <button
+            type="button"
+            class="dock-btn"
+            :class="{
+              'dock-btn--active': !textDockCollapsed && !textDockClosed,
+              'dock-btn--closed': textDockClosed,
+            }"
+            :aria-pressed="!textDockCollapsed && !textDockClosed"
+            :title="
+              textDockClosed
+                ? `${msg.menuShowTextDock} — 无全局快捷键`
+                : textDockCollapsed
+                  ? `${msg.dockExpand} — 无全局快捷键`
+                  : `${msg.dockCollapse} — 无全局快捷键`
+            "
+            @click="onDockStripClick"
+          >
+            <span class="dock-btn__glyph" aria-hidden="true">¶</span>
+            <span class="dock-btn__label">{{ msg.dockTextContent }}</span>
+          </button>
+        </div>
       </aside>
     </main>
 
@@ -765,6 +912,25 @@ onUnmounted(() => {
   margin: 0 2px;
   opacity: 0.85;
 }
+.tb-btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 7px;
+  min-width: 28px;
+  min-height: 26px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 .menu-item {
   position: relative;
@@ -833,25 +999,20 @@ onUnmounted(() => {
 .main.main-mdi {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 36%);
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
 }
-.main.main-mdi.main-mdi--dock-collapsed {
-  grid-template-columns: minmax(0, 1fr) 28px;
+.main-dock-splitter {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: color-mix(in srgb, var(--border, #ccc) 85%, transparent);
+  align-self: stretch;
+  touch-action: none;
+  z-index: 2;
 }
-@media (max-width: 900px) {
-  .main.main-mdi {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(240px, 1fr) minmax(160px, 38vh);
-  }
-  .main.main-mdi.main-mdi--dock-collapsed {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(240px, 1fr) 28px;
-  }
-  .text-dock-aside {
-    border-left: none !important;
-    border-top: 1px solid var(--border, #ccc);
-  }
+.main-dock-splitter:hover {
+  background: color-mix(in srgb, #1976d2 35%, var(--border, #ccc));
 }
 .pane {
   min-height: 0;
@@ -859,15 +1020,126 @@ onUnmounted(() => {
   flex-direction: column;
 }
 .workspace-mdi {
+  flex: 1 1 0;
   min-width: 0;
-  border-right: 1px solid var(--border, #ccc);
+  border-right: none;
   background: var(--panel-bg, #fafafa);
 }
-.text-dock-aside {
+.dock-area--right {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 0;
+  background: var(--editor-bg, #fff);
+  border-left: 1px solid var(--border, #ccc);
+}
+.dock-view {
+  flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--editor-bg, #fff);
+}
+.dock-view--empty {
+  flex: 0 0 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden;
+}
+.dock-button-bar {
+  flex: 0 0 22px;
+  width: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+  border-left: 1px solid var(--border, #ccc);
+  background: var(--tab-bg, #e8e8ea);
+}
+.dock-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 2px;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  min-height: 2rem;
+}
+.dock-btn:hover,
+.dock-btn:focus-visible {
+  filter: brightness(0.97);
+  outline: none;
+}
+.dock-btn--active {
+  background: color-mix(in srgb, var(--editor-bg, #fff) 55%, var(--tab-bg, #e8e8ea));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border, #999) 40%, transparent);
+}
+.dock-btn--closed {
+  opacity: 0.65;
+}
+.dock-btn__glyph {
+  font-size: 0.7rem;
+  line-height: 1;
+  opacity: 0.8;
+  font-weight: 700;
+}
+.dock-btn__label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+}
+@media (max-width: 900px) {
+  .main.main-mdi {
+    flex-direction: column;
+  }
+  .main-dock-splitter {
+    display: none;
+  }
+  .workspace-mdi {
+    border-bottom: 1px solid var(--border, #ccc);
+    flex: 1 1 minmax(200px, 1fr);
+    min-height: 0;
+  }
+  .dock-area--right {
+    flex: 0 1 minmax(120px, 40vh);
+    flex-direction: column;
+    max-height: 44vh;
+    border-left: none;
+    border-top: 1px solid var(--border, #ccc);
+  }
+  .dock-view--empty {
+    width: 100% !important;
+    height: 0 !important;
+    flex: 0 0 0 !important;
+  }
+  .dock-button-bar {
+    flex: 0 0 26px;
+    width: 100%;
+    height: 26px;
+    flex-direction: row;
+    border-left: none;
+    border-top: 1px solid var(--border, #ccc);
+  }
+  .dock-btn {
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+  }
+  .dock-btn__label {
+    writing-mode: horizontal-tb;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+  }
 }
 .canvas-region {
   flex: 1;

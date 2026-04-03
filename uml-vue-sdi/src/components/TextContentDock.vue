@@ -5,11 +5,16 @@ import { workspace } from '../stores/workspace';
 
 const props = defineProps<{
   locale: LocaleId;
-  collapsed: boolean;
+  /** 仅收起主体（源码区），标题栏保留 */
+  bodyFolded: boolean;
+  /** 当前是否处于「该侧最大化」 */
+  maximized: boolean;
 }>();
 
 const emit = defineEmits<{
-  'update:collapsed': [value: boolean];
+  'update:bodyFolded': [value: boolean];
+  'toggle-maximize': [];
+  close: [];
 }>();
 
 const m = computed(() => getMessages(props.locale));
@@ -21,55 +26,59 @@ function onInput(e: Event) {
   workspace.updateContent(tab.id, v);
 }
 
-function fold() {
-  emit('update:collapsed', true);
-}
-
-function unfold() {
-  emit('update:collapsed', false);
+function toggleBody() {
+  emit('update:bodyFolded', !props.bodyFolded);
 }
 </script>
 
 <template>
-  <div class="text-dock-root" :class="{ 'text-dock-root--collapsed': collapsed }">
-    <template v-if="!collapsed">
-      <div class="text-dock__head">
-        <span class="text-dock__head-title" role="heading" aria-level="2">{{ m.dockTextContent }}</span>
+  <div class="dock-window">
+    <div class="dock-window__title" role="toolbar" :aria-label="m.dockTitleBarAria">
+      <span class="dock-window__title-text" role="heading" aria-level="2">{{ m.dockTextContent }}</span>
+      <div class="dock-window__actions">
         <button
           type="button"
-          class="text-dock__head-btn"
-          :title="`${m.dockCollapse} — 无全局快捷键`"
-          aria-expanded="true"
-          @click="fold"
+          class="dock-win-btn"
+          :title="`${bodyFolded ? m.dockUnfoldBody : m.dockFoldBody} — 无全局快捷键`"
+          :aria-expanded="!bodyFolded"
+          @click="toggleBody"
         >
-          ⟨
+          <span class="dock-win-btn__glyph" aria-hidden="true">{{ bodyFolded ? '▾' : '▴' }}</span>
+        </button>
+        <button
+          type="button"
+          class="dock-win-btn"
+          :title="`${maximized ? m.dockRestoreSize : m.dockMaximize} — 无全局快捷键`"
+          @click="emit('toggle-maximize')"
+        >
+          <span class="dock-win-btn__glyph dock-win-btn__glyph--max" aria-hidden="true">⬚</span>
+        </button>
+        <button
+          type="button"
+          class="dock-win-btn dock-win-btn--close"
+          :title="`${m.dockClose} — 无全局快捷键`"
+          @click="emit('close')"
+        >
+          <span class="dock-win-btn__glyph" aria-hidden="true">×</span>
         </button>
       </div>
+    </div>
+    <template v-if="workspace.activeTab.value">
       <textarea
-        v-if="workspace.activeTab.value"
-        class="text-dock__area"
+        v-show="!bodyFolded"
+        class="dock-window__body text-dock__area"
         spellcheck="false"
         :value="workspace.activeTab.value.content"
         :aria-label="m.dockTextContent"
         @input="onInput"
       />
-      <p v-else class="text-dock__empty">{{ m.dockNoActiveFile }}</p>
     </template>
-    <button
-      v-else
-      type="button"
-      class="text-dock__expand-strip"
-      :title="`${m.dockExpand} — 无全局快捷键`"
-      aria-expanded="false"
-      @click="unfold"
-    >
-      <span class="text-dock__expand-label">{{ m.dockTextContent }}</span>
-    </button>
+    <p v-else-if="!bodyFolded" class="text-dock__empty">{{ m.dockNoActiveFile }}</p>
   </div>
 </template>
 
 <style scoped>
-.text-dock-root {
+.dock-window {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -77,57 +86,71 @@ function unfold() {
   min-width: 0;
   background: var(--editor-bg, #fff);
 }
-.text-dock-root--collapsed {
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: center;
-}
-.text-dock__head {
+.dock-window__title {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 4px 8px;
-  font-size: 0.75rem;
+  gap: 6px;
+  padding: 2px 6px;
+  min-height: 22px;
+  font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   border-bottom: 1px solid var(--border, #ccc);
   background: var(--tab-bg, #e8e8ea);
   user-select: none;
 }
-.text-dock__head-title {
+.dock-window__title-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
-.text-dock__head-btn {
+.dock-window__actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
   flex-shrink: 0;
-  padding: 2px 8px;
+}
+.dock-win-btn {
+  padding: 1px 5px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 3px;
   background: transparent;
   color: inherit;
   font: inherit;
-  cursor: pointer;
   line-height: 1;
+  cursor: pointer;
 }
-.text-dock__head-btn:hover,
-.text-dock__head-btn:focus-visible {
+.dock-win-btn:hover,
+.dock-win-btn:focus-visible {
   background: var(--menu-hover, rgba(0, 0, 0, 0.06));
   outline: none;
+}
+.dock-win-btn--close:hover {
+  background: rgba(220, 50, 50, 0.15);
+}
+.dock-win-btn__glyph {
+  display: inline-block;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.dock-win-btn__glyph--max {
+  font-size: 0.75rem;
+  opacity: 0.9;
 }
 .text-dock__area {
   flex: 1;
   width: 100%;
-  min-height: 80px;
-  padding: 6px 8px;
+  min-height: 60px;
+  padding: 4px 6px;
   border: none;
   resize: none;
-  line-height: 1.4;
+  line-height: 1.35;
   tab-size: 2;
   font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   background: var(--editor-bg, #fff);
   color: inherit;
 }
@@ -136,36 +159,8 @@ function unfold() {
 }
 .text-dock__empty {
   margin: 0;
-  padding: 10px;
-  font-size: 0.82rem;
+  padding: 8px;
+  font-size: 0.78rem;
   opacity: 0.75;
-}
-.text-dock__expand-strip {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  padding: 8px 2px;
-  border: none;
-  border-left: 1px solid var(--border, #ccc);
-  background: var(--tab-bg, #e8e8ea);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.text-dock__expand-strip:hover,
-.text-dock__expand-strip:focus-visible {
-  filter: brightness(0.97);
-  outline: none;
-}
-.text-dock__expand-label {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  opacity: 0.9;
 }
 </style>

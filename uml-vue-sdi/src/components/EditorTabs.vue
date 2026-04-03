@@ -52,8 +52,8 @@ function basename(path: string) {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 2px;
-  padding: 4px 6px 0;
+  gap: 1px;
+  padding: 2px 4px 0;
   background: var(--tab-bg, #e8e8ea);
   border-bottom: 1px solid var(--border, #ccc);
   flex-shrink: 0;
@@ -61,13 +61,14 @@ function basename(path: string) {
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  max-width: 220px;
-  padding: 4px 8px 6px;
-  font-size: 0.8rem;
+  gap: 3px;
+  max-width: 140px;
+  padding: 2px 5px 4px;
+  font-size: 0.7rem;
+  line-height: 1.15;
   border: 1px solid transparent;
   border-bottom: none;
-  border-radius: 6px 6px 0 0;
+  border-radius: 3px 3px 0 0;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -78,26 +79,26 @@ function basename(path: string) {
   border-color: var(--border, #ccc);
   border-bottom-color: var(--editor-bg, #fff);
   margin-bottom: -1px;
-  padding-bottom: 7px;
+  padding-bottom: 5px;
   font-weight: 600;
 }
 .tab__dirty {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 10px;
+  width: 7px;
   flex-shrink: 0;
 }
 .tab__dirty-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #e65100;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 .tab__dirty-placeholder {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 .tab__name {
   overflow: hidden;
@@ -108,8 +109,8 @@ function basename(path: string) {
 .tab__close {
   flex-shrink: 0;
   opacity: 0.55;
-  padding: 0 2px;
-  font-size: 1.1rem;
+  padding: 0 1px;
+  font-size: 0.95rem;
   line-height: 1;
 }
 .tab__close:hover {
