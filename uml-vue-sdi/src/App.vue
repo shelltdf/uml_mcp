@@ -5,10 +5,11 @@ import EditorTabs from './components/EditorTabs.vue';
 import FileKindCanvas from './components/FileKindCanvas.vue';
 import MermaidPreview from './components/MermaidPreview.vue';
 import TextContentDock from './components/TextContentDock.vue';
+import PropertiesDock from './components/PropertiesDock.vue';
 import ToolbarIcons from './components/ToolbarIcons.vue';
 import { DIAGRAM_TYPES, NEW_SYNC_CARD, type DiagramTypeId } from './lib/diagramTemplates';
 import { getMessages, LOCALE_OPTIONS, type LocaleId } from './i18n/ui';
-import { getSyncPanelModel } from './lib/formats';
+import SyncConfigEditor from './components/SyncConfigEditor.vue';
 import { workspace } from './stores/workspace';
 import { APP_VERSION } from './version';
 
@@ -60,13 +61,6 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
     e.returnValue = '';
   }
 }
-
-/** 当前为 uml.sync 标签时，右侧展示完整「同步配置」解析结果 */
-const syncPanel = computed(() => {
-  const tab = workspace.activeTab.value;
-  if (!tab || tab.kind !== 'sync') return null;
-  return getSyncPanelModel(tab.content);
-});
 
 const logLines = ref<string[]>([]);
 function pushLog(line: string) {
@@ -157,55 +151,116 @@ function runRevert() {
   if (workspace.revertActive()) pushLog('revert');
 }
 
-/** 右侧 Dock Area：与 Dock Button 联动的整栏折叠（仅余外缘条） */
-const textDockCollapsed = ref(false);
-/** 关闭停靠区（Dock View 不显示；仍可通过窗口菜单或 Dock Button 恢复） */
+/** Dock Button：是否在 Dock View 中显示该停靠窗口（与标题栏「关闭」不同） */
+const textInView = ref(true);
+const propsInView = ref(true);
+/** 标题栏「关闭」：从 Dock View 移除，仍可通过窗口菜单或 Dock Button 恢复 */
 const textDockClosed = ref(false);
-/** 仅收起源码编辑区，保留标题栏 */
+const propsDockClosed = ref(false);
+/** 仅收起窗口主体，保留标题栏 */
 const textDockBodyFolded = ref(false);
-/** 该侧最大化（加宽停靠列） */
-const textDockMaximized = ref(false);
+const propsDockBodyFolded = ref(false);
+/** 整列停靠区加宽 */
+const dockColumnMaximized = ref(false);
 /** 停靠区分栏宽度（像素），用于可拖分割条 */
 const dockWidthPx = ref(300);
+/** 右侧 Dock 列内：属性 / 文本 两层面板高度比例（属性占堆叠区比例，0.18–0.82） */
+const dockInnerPropsShare = ref(1 / 3);
+const DOCK_INNER_MIN_SHARE = 0.18;
+const dockViewStackRef = ref<HTMLElement | null>(null);
 const mainMdiRef = ref<HTMLElement | null>(null);
 
-const dockSplitterVisible = computed(
-  () => !textDockClosed.value && !textDockCollapsed.value && !textDockMaximized.value,
+const hasVisibleDockPanel = computed(
+  () => (textInView.value && !textDockClosed.value) || (propsInView.value && !propsDockClosed.value),
 );
 
+const dockSplitterVisible = computed(() => hasVisibleDockPanel.value && !dockColumnMaximized.value);
+
+const propsDockVisible = computed(() => propsInView.value && !propsDockClosed.value);
+const textDockVisible = computed(() => textInView.value && !textDockClosed.value);
+/** 两个 Dock 同时展开时显示中间分割条 */
+const dockInnerSplitterVisible = computed(
+  () => propsDockVisible.value && textDockVisible.value && hasVisibleDockPanel.value,
+);
+
+const propsInnerFlexGrow = computed(() =>
+  dockInnerSplitterVisible.value ? Math.round(dockInnerPropsShare.value * 1000) : 1,
+);
+const textInnerFlexGrow = computed(() =>
+  dockInnerSplitterVisible.value ? Math.round((1 - dockInnerPropsShare.value) * 1000) : 1,
+);
+
+/** 与 `.dock-button-bar` 宽度一致，避免仅缘条可见时右侧多出空白列 */
+const DOCK_STRIP_WIDTH_PX = 22;
+
 const dockAreaStyle = computed(() => {
-  if (textDockClosed.value) {
-    return { flex: '0 0 24px', minWidth: '24px', maxWidth: '24px' };
+  if (!hasVisibleDockPanel.value) {
+    const w = `${DOCK_STRIP_WIDTH_PX}px`;
+    return { flex: `0 0 ${w}`, minWidth: w, maxWidth: w };
   }
-  if (textDockCollapsed.value) {
-    return { flex: '0 0 28px', minWidth: '28px', maxWidth: '28px' };
-  }
-  if (textDockMaximized.value) {
+  if (dockColumnMaximized.value) {
     return { flex: '1 1 48%', minWidth: 'min(480px, 100%)', maxWidth: '62%' };
   }
   return {
     flex: `0 0 ${dockWidthPx.value}px`,
-    minWidth: '160px',
+    minWidth: '200px',
     maxWidth: 'min(55vw, 720px)',
   };
 });
 
-function onDockClose() {
+function onDockCloseText() {
   textDockClosed.value = true;
   textDockBodyFolded.value = false;
 }
 
-function onDockStripClick() {
+function onDockCloseProps() {
+  propsDockClosed.value = true;
+  propsDockBodyFolded.value = false;
+}
+
+function onTextDockButton() {
   if (textDockClosed.value) {
     textDockClosed.value = false;
+    textInView.value = true;
     return;
   }
-  textDockCollapsed.value = !textDockCollapsed.value;
+  textInView.value = !textInView.value;
+}
+
+function onPropsDockButton() {
+  if (propsDockClosed.value) {
+    propsDockClosed.value = false;
+    propsInView.value = true;
+    return;
+  }
+  propsInView.value = !propsInView.value;
+}
+
+function dockTextBtnTitle() {
+  const m = msg.value;
+  if (textDockClosed.value) return `${m.menuShowTextDock} — 无全局快捷键`;
+  return textInView.value
+    ? `${m.dockPanelHide}（${m.dockTextShort}）— 无全局快捷键`
+    : `${m.dockPanelShow}（${m.dockTextShort}）— 无全局快捷键`;
+}
+
+function dockPropsBtnTitle() {
+  const m = msg.value;
+  if (propsDockClosed.value) return `${m.menuShowPropsDock} — 无全局快捷键`;
+  return propsInView.value
+    ? `${m.dockPanelHide}（${m.dockPropsShort}）— 无全局快捷键`
+    : `${m.dockPanelShow}（${m.dockPropsShort}）— 无全局快捷键`;
 }
 
 function showTextDockFromMenu() {
   textDockClosed.value = false;
-  textDockCollapsed.value = false;
+  textInView.value = true;
+  closeMenus();
+}
+
+function showPropsDockFromMenu() {
+  propsDockClosed.value = false;
+  propsInView.value = true;
   closeMenus();
 }
 
@@ -226,6 +281,35 @@ function onSplitterPointerDown(e: PointerEvent) {
     // 右停靠：Splitter 向右拖 = 停靠区变宽
     const next = Math.round(startW + (ev.clientX - startX));
     dockWidthPx.value = Math.max(minW, Math.min(maxW, next));
+  }
+
+  function onUp(ev: PointerEvent) {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    target.releasePointerCapture(ev.pointerId);
+  }
+
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+}
+
+function onDockInnerSplitterPointerDown(e: PointerEvent) {
+  if (!dockInnerSplitterVisible.value) return;
+  const stack = dockViewStackRef.value;
+  if (!stack) return;
+  const target = e.currentTarget as HTMLElement;
+  e.preventDefault();
+  target.setPointerCapture(e.pointerId);
+  const startY = e.clientY;
+  const startShare = dockInnerPropsShare.value;
+  const h = Math.max(1, stack.getBoundingClientRect().height);
+
+  function onMove(ev: PointerEvent) {
+    const dy = ev.clientY - startY;
+    // 分割条向下拖：上半（属性）变矮 → 占比减小
+    let next = startShare - dy / h;
+    next = Math.max(DOCK_INNER_MIN_SHARE, Math.min(1 - DOCK_INNER_MIN_SHARE, next));
+    dockInnerPropsShare.value = next;
   }
 
   function onUp(ev: PointerEvent) {
@@ -530,6 +614,17 @@ onUnmounted(() => {
                 {{ msg.menuShowTextDock }}
               </button>
             </li>
+            <li>
+              <button
+                type="button"
+                class="menu-entry"
+                role="menuitem"
+                :title="`${msg.menuShowPropsDock} — 无全局快捷键`"
+                @click="showPropsDockFromMenu"
+              >
+                {{ msg.menuShowPropsDock }}
+              </button>
+            </li>
           </ul>
         </div>
 
@@ -608,22 +703,12 @@ onUnmounted(() => {
       <section class="workspace-mdi pane" :aria-label="msg.mdiWorkspaceLabel">
         <EditorTabs :locale="locale" />
         <div class="canvas-region" :aria-label="msg.canvasAriaLabel">
-          <div v-if="syncPanel && activeTab?.kind === 'sync'" class="sync-panel sync-panel--main">
-            <h3>{{ msg.syncSummary }}</h3>
-            <p v-if="!syncPanel.hasYamlFrontMatter" class="sync-yaml-hint">{{ msg.syncMissingYamlHint }}</p>
-            <ul>
-              <li><strong>{{ msg.umlRoot }}:</strong> {{ syncPanel.config.uml_root }}</li>
-              <li>
-                <strong>{{ msg.namespaces }}:</strong>
-                {{ syncPanel.config.namespace_dirs.join(', ') || '—' }}
-              </li>
-              <li>
-                <strong>{{ msg.codeRoots }}:</strong>
-                {{ syncPanel.config.code_roots.join(', ') || '—' }}
-              </li>
-              <li><strong>{{ msg.syncProfile }}:</strong> {{ syncPanel.config.sync_profile }}</li>
-            </ul>
-          </div>
+          <SyncConfigEditor
+            v-if="activeTab && activeTab.kind === 'sync'"
+            :tab-id="activeTab.id"
+            :content="activeTab.content"
+            :locale="locale"
+          />
           <MermaidPreview
             v-else-if="activeTab && activeTab.kind === 'uml'"
             :markdown="activeTab.content"
@@ -660,38 +745,83 @@ onUnmounted(() => {
         :aria-hidden="true"
         @pointerdown="onSplitterPointerDown"
       />
-      <aside class="dock-area dock-area--right pane" :aria-label="msg.dockTextContent" :style="dockAreaStyle">
-        <div class="dock-view" :class="{ 'dock-view--empty': textDockCollapsed || textDockClosed }">
-          <TextContentDock
-            v-if="!textDockClosed && !textDockCollapsed"
-            :locale="locale"
-            :body-folded="textDockBodyFolded"
-            :maximized="textDockMaximized"
-            @update:body-folded="textDockBodyFolded = $event"
-            @toggle-maximize="textDockMaximized = !textDockMaximized"
-            @close="onDockClose"
-          />
+      <aside class="dock-area dock-area--right pane" :aria-label="msg.dockAreaRightAria" :style="dockAreaStyle">
+        <div class="dock-view" :class="{ 'dock-view--empty': !hasVisibleDockPanel }">
+          <div v-if="hasVisibleDockPanel" ref="dockViewStackRef" class="dock-view__stack">
+            <div
+              v-if="propsInView && !propsDockClosed"
+              class="dock-slot dock-slot--props"
+              :style="
+                dockInnerSplitterVisible
+                  ? { flex: `${propsInnerFlexGrow} 1 0`, minHeight: '72px' }
+                  : { flex: '1 1 auto', minHeight: '0' }
+              "
+            >
+              <PropertiesDock
+                :locale="locale"
+                :body-folded="propsDockBodyFolded"
+                :maximized="dockColumnMaximized"
+                @update:body-folded="propsDockBodyFolded = $event"
+                @toggle-maximize="dockColumnMaximized = !dockColumnMaximized"
+                @close="onDockCloseProps"
+              />
+            </div>
+            <div
+              v-show="dockInnerSplitterVisible"
+              class="dock-inner-splitter"
+              role="separator"
+              aria-orientation="horizontal"
+              :title="`${msg.dockInnerResize} — 无全局快捷键`"
+              @pointerdown="onDockInnerSplitterPointerDown"
+            />
+            <div
+              v-if="textInView && !textDockClosed"
+              class="dock-slot dock-slot--text"
+              :style="
+                dockInnerSplitterVisible
+                  ? { flex: `${textInnerFlexGrow} 1 0`, minHeight: '72px' }
+                  : { flex: '1 1 auto', minHeight: '0' }
+              "
+            >
+              <TextContentDock
+                :locale="locale"
+                :body-folded="textDockBodyFolded"
+                :maximized="dockColumnMaximized"
+                @update:body-folded="textDockBodyFolded = $event"
+                @toggle-maximize="dockColumnMaximized = !dockColumnMaximized"
+                @close="onDockCloseText"
+              />
+            </div>
+          </div>
         </div>
         <div class="dock-button-bar" role="toolbar" :aria-label="msg.dockButtonBarAria">
           <button
             type="button"
             class="dock-btn"
             :class="{
-              'dock-btn--active': !textDockCollapsed && !textDockClosed,
+              'dock-btn--active': propsInView && !propsDockClosed,
+              'dock-btn--closed': propsDockClosed,
+            }"
+            :aria-pressed="propsInView && !propsDockClosed"
+            :title="dockPropsBtnTitle()"
+            @click="onPropsDockButton"
+          >
+            <span class="dock-btn__glyph" aria-hidden="true">i</span>
+            <span class="dock-btn__label">{{ msg.dockPropsShort }}</span>
+          </button>
+          <button
+            type="button"
+            class="dock-btn"
+            :class="{
+              'dock-btn--active': textInView && !textDockClosed,
               'dock-btn--closed': textDockClosed,
             }"
-            :aria-pressed="!textDockCollapsed && !textDockClosed"
-            :title="
-              textDockClosed
-                ? `${msg.menuShowTextDock} — 无全局快捷键`
-                : textDockCollapsed
-                  ? `${msg.dockExpand} — 无全局快捷键`
-                  : `${msg.dockCollapse} — 无全局快捷键`
-            "
-            @click="onDockStripClick"
+            :aria-pressed="textInView && !textDockClosed"
+            :title="dockTextBtnTitle()"
+            @click="onTextDockButton"
           >
-            <span class="dock-btn__glyph" aria-hidden="true">¶</span>
-            <span class="dock-btn__label">{{ msg.dockTextContent }}</span>
+            <span class="dock-btn__glyph" aria-hidden="true">A</span>
+            <span class="dock-btn__label">{{ msg.dockTextShort }}</span>
           </button>
         </div>
       </aside>
@@ -712,12 +842,14 @@ onUnmounted(() => {
     </footer>
 
     <div v-if="helpOpen" class="modal-backdrop" role="dialog" aria-modal="true" @click.self="helpOpen = false">
-      <div class="modal-window">
+      <div class="modal-window modal-window--help">
         <div class="modal-head">
           <h2 class="modal-title">{{ msg.helpPanelTitle }}</h2>
           <button type="button" class="modal-btn" @click="helpOpen = false">{{ msg.modalClose }}</button>
         </div>
         <pre class="modal-body modal-body--pre">{{ msg.helpBody }}</pre>
+        <h3 class="help-glossary-heading">{{ msg.helpGlossaryTitle }}</h3>
+        <pre class="modal-body modal-body--pre help-glossary-pre">{{ msg.helpGlossaryBody }}</pre>
       </div>
     </div>
 
@@ -820,9 +952,11 @@ onUnmounted(() => {
 
 <style scoped>
 .app {
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   color: var(--fg, #1a1a1a);
   background: var(--bg, #f4f4f5);
 }
@@ -997,8 +1131,9 @@ onUnmounted(() => {
 }
 
 .main.main-mdi {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: row;
   align-items: stretch;
@@ -1022,6 +1157,8 @@ onUnmounted(() => {
 .workspace-mdi {
   flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   border-right: none;
   background: var(--panel-bg, #fafafa);
 }
@@ -1030,6 +1167,7 @@ onUnmounted(() => {
   flex-direction: row;
   align-items: stretch;
   min-height: 0;
+  overflow: hidden;
   background: var(--editor-bg, #fff);
   border-left: 1px solid var(--border, #ccc);
 }
@@ -1039,6 +1177,34 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+.dock-view__stack {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dock-slot {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* 双面板时 flex 由内联 style（dockInnerPropsShare）控制 */
+.dock-inner-splitter {
+  flex: 0 0 5px;
+  cursor: row-resize;
+  background: color-mix(in srgb, var(--border, #ccc) 85%, transparent);
+  align-self: stretch;
+  touch-action: none;
+  z-index: 2;
+  flex-shrink: 0;
+}
+.dock-inner-splitter:hover {
+  background: color-mix(in srgb, #1976d2 35%, var(--border, #ccc));
 }
 .dock-view--empty {
   flex: 0 0 0 !important;
@@ -1052,12 +1218,12 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: stretch;
+  justify-content: flex-start;
   border-left: 1px solid var(--border, #ccc);
   background: var(--tab-bg, #e8e8ea);
 }
 .dock-btn {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1070,7 +1236,7 @@ onUnmounted(() => {
   color: inherit;
   cursor: pointer;
   font: inherit;
-  min-height: 2rem;
+  min-height: 1.75rem;
 }
 .dock-btn:hover,
 .dock-btn:focus-visible {
@@ -1109,6 +1275,7 @@ onUnmounted(() => {
     border-bottom: 1px solid var(--border, #ccc);
     flex: 1 1 minmax(200px, 1fr);
     min-height: 0;
+    overflow: hidden;
   }
   .dock-area--right {
     flex: 0 1 minmax(120px, 40vh);
@@ -1142,8 +1309,9 @@ onUnmounted(() => {
   }
 }
 .canvas-region {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--panel-bg, #fafafa);
@@ -1158,46 +1326,6 @@ onUnmounted(() => {
   font-size: 0.85rem;
   opacity: 0.8;
 }
-.sync-panel {
-  padding: 8px 12px;
-  font-size: 0.85rem;
-  border-bottom: 1px solid var(--border, #ddd);
-}
-.sync-panel--main {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
-  border-bottom: none;
-  padding: 10px 12px;
-  font-size: 0.85rem;
-}
-.sync-panel--main h3 {
-  font-size: 0.95rem;
-}
-.sync-yaml-hint {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  font-size: 0.88rem;
-  line-height: 1.45;
-  color: #bf6f00;
-  background: rgba(255, 193, 7, 0.12);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 6px;
-}
-:root[data-theme='dark'] .sync-yaml-hint {
-  color: #ffb74d;
-  background: rgba(255, 193, 7, 0.08);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-.sync-panel h3 {
-  margin: 0 0 6px;
-  font-size: 0.95rem;
-}
-.sync-panel ul {
-  margin: 0;
-  padding-left: 18px;
-}
-
 .statusbar {
   display: flex;
   gap: 8px;
@@ -1365,6 +1493,28 @@ onUnmounted(() => {
   font-size: 0.92rem;
   line-height: 1.5;
   overflow: auto;
+}
+.modal-window--help {
+  width: min(640px, 100%);
+  max-height: min(85vh, 720px);
+}
+.modal-window--help > .modal-body--pre:first-of-type {
+  flex: 0 1 auto;
+  max-height: min(32vh, 260px);
+}
+.help-glossary-heading {
+  margin: 0;
+  padding: 12px 16px 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-top: 1px solid var(--border, #ddd);
+  flex-shrink: 0;
+}
+.help-glossary-pre {
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: min(38vh, 320px);
+  padding-top: 8px !important;
 }
 .modal-body--pre {
   margin: 0;

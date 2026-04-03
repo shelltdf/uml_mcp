@@ -11,20 +11,26 @@ export const SEED_FILES: SeedFile[] = [
   {
     path: 'uml.sync.md',
     content: `---
-namespace_dirs:
-  - include/Acme
-  - src/Acme
+namespace_root: namespace
 uml_root: diagrams
-code_roots:
-  - src
-  - include
+code_impls:
+  - root: impl_cpp_project
+    code_type: cpp
 sync_profile: strict
 ---
 
-# 同步规则
+# 同步规则（供 AI 阅读）
 
-1. **类图变更**时，先更新同主题的 *.uml.md，再改 *.class.md，最后改 include/ / src/ 下头文件与实现。
-2. **全局函数或宏**仅出现在 *.code.md 与对应翻译单元；不在 *.class.md 重复类成员。
+> 读者说明：本节面向 AI / 自动化助手；人类可参阅，但变更顺序与约束以本节为准。
+
+正文按 sync_profile 分类：仅适用与 YAML 中 sync_profile 同名的二级标题小节。当前仅 strict。
+
+## strict
+
+1. **类图变更**时，先更新同主题的 *.uml.md，再改 namespace 下 *.class.md 与 *.code.md（若涉及），最后改 **impl_cpp_project** 下真实源码与头文件。
+2. ***.code.md 路径**：放在各 **namespace_root** 下（与 *.class.md 同树），**不**放在 code_impls 代码根内。
+3. **全局函数或宏**仅出现在上述 *.code.md 与对应翻译单元（impl_cpp_project 等）；不在 *.class.md 重复类成员。
+4. **namespace_root** 默认含 **namespace**（类表 / 非类片段契约）；**code_impls** 默认一项为根 **impl_cpp_project**、类型 **cpp**（真实代码；均为工作区相对路径）。
 `,
   },
   {
@@ -55,7 +61,7 @@ flowchart LR
 `,
   },
   {
-    path: 'models/order.class.md',
+    path: 'namespace/order.class.md',
     content: `# Classes · Order 域
 
 ### Order
@@ -73,7 +79,7 @@ flowchart LR
 `,
   },
   {
-    path: 'src/globals.code.md',
+    path: 'namespace/globals.code.md',
     content: `# 非类代码片段（示例）
 
 ## logging.cpp（全局辅助）

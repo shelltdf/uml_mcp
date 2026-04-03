@@ -26,7 +26,7 @@ flowchart LR
 
 ## 与 `02-physical/uml-vue-sdi` 对应
 
-- UI 组件与 Store 映射见该目标 `mapping.md`。
+- UI 组件与 Store 映射见该目标 `mapping.md`（含 `App.vue` 壳、`SyncConfigEditor`、`TextContentDock`、`PropertiesDock` 等）。
 - 字段级行为以 `spec.md` 为准。
 
 ## 一致性

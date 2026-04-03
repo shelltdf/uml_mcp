@@ -3,8 +3,13 @@
 | 元素 | 路径 |
 |------|------|
 | 应用入口 | `uml-vue-sdi/src/main.ts` |
-| 根组件 / SDI 壳（`#title-strip` 标题条 + `#menu-bar` 菜单栏分行） | `uml-vue-sdi/src/App.vue` |
-| 工作区状态 | `uml-vue-sdi/src/stores/workspace.ts` |
-| 格式与同步配置解析 | `uml-vue-sdi/src/lib/formats.ts` |
+| 根组件 / SDI 壳（标题条、菜单栏、主区、Dock 列、分割条、状态栏、模态与 Log） | `uml-vue-sdi/src/App.vue` |
+| 工作区状态（标签、活动文件、脏标记、`directoryExistsInWorkspace` 等） | `uml-vue-sdi/src/stores/workspace.ts` |
+| 格式与同步配置解析 / 序列化 | `uml-vue-sdi/src/lib/formats.ts` |
+| `uml.sync.md` 表单 GUI | `uml-vue-sdi/src/components/SyncConfigEditor.vue` |
 | Mermaid 预览 | `uml-vue-sdi/src/components/MermaidPreview.vue` |
-| 编辑器 | `uml-vue-sdi/src/components/EditorTabs.vue` |
+| 顶标签栏 | `uml-vue-sdi/src/components/EditorTabs.vue` |
+| 右侧「文本内容」停靠 | `uml-vue-sdi/src/components/TextContentDock.vue` |
+| 右侧「属性」停靠 | `uml-vue-sdi/src/components/PropertiesDock.vue` |
+| 界面文案 i18n | `uml-vue-sdi/src/i18n/ui.ts` |
+| 内置示例种子 | `uml-vue-sdi/src/demo/seedFiles.ts` |

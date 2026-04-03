@@ -2,6 +2,37 @@
 import mermaid from 'mermaid';
 import { computed, ref, watch } from 'vue';
 import { extractMermaidBlocks } from '../lib/formats';
+import { workspace } from '../stores/workspace';
+
+function pickMermaidGraphics(start: Element | null): { id: string; label: string } | null {
+  let el: Element | null = start;
+  for (let depth = 0; depth < 14 && el; depth++) {
+    if (el.tagName === 'g') {
+      const g = el as SVGGElement;
+      const cls = g.getAttribute('class') || '';
+      const id = g.id || '';
+      const hit =
+        /\bnode\b/.test(cls) ||
+        /\bcluster\b/.test(cls) ||
+        /\bedgeLabel\b/.test(cls) ||
+        /\bedge\b/.test(cls) ||
+        /flowchart|classId|state-|sequence|entity|activation|participant|gantt|pie|quadrant/.test(id);
+      if (hit) {
+        const texts = g.querySelectorAll('text');
+        let label = '';
+        if (texts.length) {
+          label = Array.from(texts)
+            .map((x) => x.textContent?.trim() || '')
+            .filter(Boolean)
+            .join(' · ');
+        }
+        return { id: id || label || 'element', label: label || id || '—' };
+      }
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
 
 const props = withDefaults(
   defineProps<{
@@ -74,9 +105,26 @@ async function renderAll() {
   htmlChunks.value = out;
 }
 
+function onCanvasClick(e: MouseEvent) {
+  const tab = workspace.activeTab.value;
+  if (!tab || tab.kind !== 'uml') return;
+  const picked = pickMermaidGraphics(e.target as Element | null);
+  if (picked) {
+    workspace.setPropertySelection({
+      kind: 'mermaid',
+      tabId: tab.id,
+      nodeId: picked.id,
+      label: picked.label,
+    });
+  } else {
+    workspace.clearPropertySelection();
+  }
+}
+
 watch(
   () => [props.markdown, props.kind],
   () => {
+    workspace.clearPropertySelection();
     void renderAll();
   },
   { immediate: true },
@@ -176,7 +224,7 @@ const transformStyle = computed(
           @pointerup="onPointerUp"
           @pointercancel="onPointerUp"
         >
-          <div class="canvas-inner" :style="{ transform: transformStyle }">
+          <div class="canvas-inner" :style="{ transform: transformStyle }" @click="onCanvasClick">
             <div v-for="(h, idx) in htmlChunks" :key="idx" class="svg-wrap" v-html="h" />
           </div>
         </div>
@@ -189,8 +237,9 @@ const transformStyle = computed(
 .preview {
   padding: 0;
   overflow: hidden;
-  height: 100%;
-  min-height: 280px;
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
   background: var(--canvas-bg, #eceff4);
   display: flex;
   flex-direction: column;
@@ -241,8 +290,8 @@ const transformStyle = computed(
 }
 
 .canvas-viewport {
-  flex: 1;
-  min-height: 200px;
+  flex: 1 1 0;
+  min-height: 0;
   overflow: hidden;
   cursor: grab;
   position: relative;

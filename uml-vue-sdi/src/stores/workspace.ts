@@ -1,4 +1,4 @@
-import { computed, reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { SEED_FILES } from '../demo/seedFiles';
 import type { DiagramTypeId } from '../lib/diagramTemplates';
 import { buildNewUmlMarkdown } from '../lib/diagramTemplates';
@@ -68,6 +68,18 @@ function tabById(id: string): Tab | undefined {
   return state.tabs.find((t) => t.id === id);
 }
 
+/** 属性停靠区：当前选中对象；无选中时表示展示「当前文档」属性 */
+export type PropertySelection =
+  | { kind: 'none' }
+  | { kind: 'mermaid'; tabId: string; nodeId: string; label: string }
+  | { kind: 'text'; tabId: string; start: number; end: number; snippet: string };
+
+const propertySelectionRef = ref<PropertySelection>({ kind: 'none' });
+
+function clearPropertySelection() {
+  propertySelectionRef.value = { kind: 'none' };
+}
+
 function persistSnapshot(tab: Tab) {
   tab.lastPersistedContent = tab.content;
 }
@@ -80,8 +92,18 @@ export const workspace = {
   selectTab(id: string) {
     if (state.tabs.some((t) => t.id === id)) {
       state.activeTabId = id;
+      clearPropertySelection();
     }
   },
+
+  /** 供模板/组件订阅：当前属性面板所依据的选择 */
+  propertySelection: computed(() => propertySelectionRef.value),
+
+  setPropertySelection(sel: PropertySelection) {
+    propertySelectionRef.value = sel;
+  },
+
+  clearPropertySelection,
 
   updateContent(id: string, content: string) {
     const tab = tabById(id);
@@ -109,11 +131,13 @@ export const workspace = {
     if (idx === -1) return;
     state.tabs.splice(idx, 1);
     if (state.activeTabId === id) {
+      clearPropertySelection();
       state.activeTabId = state.tabs[Math.max(0, idx - 1)]?.id ?? state.tabs[0]?.id ?? '';
     }
   },
 
   resetDemo() {
+    clearPropertySelection();
     state.tabs = [];
     state.activeTabId = '';
     idSeq = 0;
@@ -277,5 +301,20 @@ export const workspace = {
     tab.isDirty = false;
     tab.kind = detectKindFromPath(tab.path);
     return true;
+  },
+
+  /**
+   * 相对路径：工作区内是否已有打开文件的路径等于该目录，或位于其下（`dir/file`）。
+   * 绝对路径（含盘符或根 `/`）返回 true——无法在浏览器内可靠校验目录是否存在。
+   */
+  directoryExistsInWorkspace(dir: string): boolean {
+    const raw = dir.trim();
+    if (!raw) return false;
+    const norm = raw.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (/^([a-zA-Z]:|\/)/.test(norm)) return true;
+    return state.tabs.some((t) => {
+      const p = t.path.replace(/\\/g, '/');
+      return p === norm || p.startsWith(norm + '/');
+    });
   },
 };

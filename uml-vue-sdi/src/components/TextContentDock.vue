@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { getMessages, type LocaleId } from '../i18n/ui';
 import { workspace } from '../stores/workspace';
 
@@ -19,11 +19,34 @@ const emit = defineEmits<{
 
 const m = computed(() => getMessages(props.locale));
 
+const areaRef = ref<HTMLTextAreaElement | null>(null);
+
+function reportTextSelection() {
+  const tab = workspace.activeTab.value;
+  const ta = areaRef.value;
+  if (!tab || !ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  if (start === end) {
+    workspace.clearPropertySelection();
+  } else {
+    const snippet = tab.content.slice(start, Math.min(end, start + 160));
+    workspace.setPropertySelection({
+      kind: 'text',
+      tabId: tab.id,
+      start,
+      end,
+      snippet,
+    });
+  }
+}
+
 function onInput(e: Event) {
   const tab = workspace.activeTab.value;
   if (!tab) return;
   const v = (e.target as HTMLTextAreaElement).value;
   workspace.updateContent(tab.id, v);
+  requestAnimationFrame(() => reportTextSelection());
 }
 
 function toggleBody() {
@@ -65,12 +88,16 @@ function toggleBody() {
     </div>
     <template v-if="workspace.activeTab.value">
       <textarea
+        ref="areaRef"
         v-show="!bodyFolded"
         class="dock-window__body text-dock__area"
         spellcheck="false"
         :value="workspace.activeTab.value.content"
         :aria-label="m.dockTextContent"
         @input="onInput"
+        @select="reportTextSelection"
+        @keyup="reportTextSelection"
+        @click="reportTextSelection"
       />
     </template>
     <p v-else-if="!bodyFolded" class="text-dock__empty">{{ m.dockNoActiveFile }}</p>

@@ -21,6 +21,7 @@ classDiagram
 
 ## `*.class.md` / `*.code.md`
 
+- **路径**：二者均位于 **`namespace_root`** 之下（同一命名空间目录树内）；**不**将 `*.code.md` 放入 `code_impls` 所指的真实代码根。
 - **class**：每个类一节，`### ClassName`，表格列：成员、类型、说明。
 - **code**：按 `## 文件名或逻辑分组` 分节， fenced 代码块带语言标签。
 

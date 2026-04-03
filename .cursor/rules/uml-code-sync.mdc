@@ -6,22 +6,22 @@ alwaysApply: false
 
 # UML ↔ 代码 同步开发（仓库约定）
 
-当用户编辑或提及 `uml.sync.md`、`*.uml.md`、`*.class.md`、`*.code.md` 时，助手应遵守下列契约（权威细节见 `ai-software-engineering/02-physical/uml-vue-sdi/spec.md` 与 `examples/sync-demo/`）。
+当用户编辑或提及 `uml.sync.md`、`*.uml.md`、`*.class.md`、`*.code.md` 时，助手应遵守下列契约（权威细节见 `ai-software-engineering/02-physical/uml-vue-sdi/spec.md` 与 `examples/sync-demo/`）。未写 YAML 时，产品默认 **命名空间根** 标量为 **`namespace`**，**代码实现** 一项为 **`impl_cpp_project`** / **`cpp`**；**`sync_profile`** 在 GUI 仅为 **`none`** 或 **`strict`**（默认 **strict**）。路径字段仅写入契约，不访问文件系统；**`namespace_root`** 为唯一路径（非列表）；**`code_impls`** 添加后不在 GUI 内改目录与类型（可删后重加）。
 
 ## 文件角色
 
 | 模式 | 职责 |
 |------|------|
-| `uml.sync.md` | 声明 `namespace_dirs`、`uml_root`、`code_roots`、`sync_profile`（YAML front matter）+ **人类可读同步规则**正文 |
+| `uml.sync.md` | 声明 `namespace_root`、`uml_root`、`code_impls`（多套：每项唯一 `root` + `code_type`）、`sync_profile`（YAML front matter）+ **同步规则正文（供 AI 阅读）**；规则按 `sync_profile` 分节（`## strict` 等）；根路径可为相对或绝对；旧键 `namespace_dirs` 与旧版 `code_roots` + 顶层 `code_type` 仍可解析 |
 | `*.uml.md` | 存放多张 UML 图（默认 fenced `mermaid`） |
 | `*.class.md` | 类定义契约（推荐 `### ClassName` + 表格） |
-| `*.code.md` | 类以外：全局函数、宏、全局变量等 |
+| `*.code.md` | 类以外：全局函数、宏、全局变量等；**放在各 `namespace_root` 下**（与 `*.class.md` 同树），**不**放在 `code_impls` 代码根内 |
 
 ## 同步顺序（默认）
 
 1. 改 **类图 / 包图**（`*.uml.md`）以反映设计意图。  
-2. 更新 **`*.class.md`** 与命名空间/目录对齐（参见 `uml.sync.md` 中 `namespace_dirs`）。  
-3. 再修改真实代码（`code_roots` 下），`*.code.md` 记录非类片段若需要。  
+2. 更新 **`*.class.md`** 与命名空间/目录对齐（参见 `uml.sync.md` 中 `namespace_root`）。  
+3. 若涉及非类片段，先更新对应 **`namespace_root`** 下的 `*.code.md`，再修改各 **`code_impls`** 翻译单元中的真实代码。  
 4. 若规则正文要求评审/CI 检查，在回复中提醒对应条目。
 
 ## 与 AI 协作

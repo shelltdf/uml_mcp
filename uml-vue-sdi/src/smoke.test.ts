@@ -4,10 +4,18 @@ import {
   parseUmlSyncMarkdown,
   detectKindFromPath,
   getSyncPanelModel,
+  getSyncEditorState,
+  serializeUmlSyncMarkdown,
   isUmlSyncPath,
+  defaultCodeImplRootForType,
 } from './lib/formats';
 
 describe('formats', () => {
+  it('default code impl root follows impl_<type>_project', () => {
+    expect(defaultCodeImplRootForType('cpp')).toBe('impl_cpp_project');
+    expect(defaultCodeImplRootForType('csharp')).toBe('impl_csharp_project');
+  });
+
   it('detects kinds', () => {
     expect(detectKindFromPath('uml.sync.md')).toBe('sync');
     expect(detectKindFromPath('proj/uml.sync.md')).toBe('sync');
@@ -30,6 +38,8 @@ uml_root: custom
     const noFm = getSyncPanelModel('# hello');
     expect(noFm.hasYamlFrontMatter).toBe(false);
     expect(noFm.config.uml_root).toBe('diagrams');
+    expect(noFm.config.namespace_root).toBe('namespace');
+    expect(noFm.config.code_impls).toEqual([{ root: 'impl_cpp_project', code_type: 'cpp' }]);
   });
 
   it('extracts mermaid blocks', () => {
@@ -37,14 +47,14 @@ uml_root: custom
     expect(extractMermaidBlocks(md)).toHaveLength(1);
   });
 
-  it('parses uml.sync front matter', () => {
+  it('parses uml.sync front matter (code_impls)', () => {
     const raw = `---
-namespace_dirs:
-  - src/A
+namespace_root: .
 uml_root: diagrams
-code_roots:
-  - src
-sync_profile: relaxed
+code_impls:
+  - root: .
+    code_type: csharp
+sync_profile: none
 ---
 
 # body
@@ -52,9 +62,49 @@ sync_profile: relaxed
     const { config, body } = parseUmlSyncMarkdown(raw);
     expect(config).not.toBeNull();
     expect(config?.uml_root).toBe('diagrams');
-    expect(config?.namespace_dirs).toContain('src/A');
-    expect(config?.code_roots).toContain('src');
-    expect(config?.sync_profile).toBe('relaxed');
+    expect(config?.namespace_root).toBe('.');
+    expect(config?.code_impls).toEqual([{ root: '.', code_type: 'csharp' }]);
+    expect(config?.sync_profile).toBe('none');
     expect(body.trim().startsWith('# body')).toBe(true);
+  });
+
+  it('migrates legacy code_roots + code_type to code_impls', () => {
+    const raw = `---
+namespace_root: .
+uml_root: diagrams
+code_roots:
+  - .
+  - src
+code_type: csharp
+sync_profile: strict
+---
+
+# body
+`;
+    const { config } = parseUmlSyncMarkdown(raw);
+    expect(config?.code_impls).toEqual([
+      { root: '.', code_type: 'csharp' },
+      { root: 'src', code_type: 'csharp' },
+    ]);
+  });
+
+  it('serializes and round-trips sync markdown', () => {
+    const st = getSyncEditorState('');
+    const body = '# Title\n\nHello';
+    const md = serializeUmlSyncMarkdown(st.config, body);
+    const again = parseUmlSyncMarkdown(md);
+    expect(again.config?.uml_root).toBe(st.config.uml_root);
+    expect(again.body.trim()).toBe(body.trim());
+  });
+
+  it('migrates legacy namespace_dirs key to namespace_root', () => {
+    const raw = `---
+namespace_dirs:
+  - legacy-ns
+uml_root: diagrams
+---
+`;
+    const { config } = parseUmlSyncMarkdown(raw);
+    expect(config?.namespace_root).toBe('legacy-ns');
   });
 });
