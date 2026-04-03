@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""启动 Vite 开发服务器（默认）。"""
+"""启动 Electron 套壳（需已构建 dist/；若缺失则先执行 npm run build）。"""
 import os
 import subprocess
 import sys
@@ -13,7 +13,10 @@ def main() -> int:
     os.chdir(ROOT)
     if not os.path.isdir(os.path.join(ROOT, "node_modules")):
         subprocess.run(npm_cmd("install"), check=True)
-    r = subprocess.run(npm_cmd("run", "dev"), check=False)
+    dist_index = os.path.join(ROOT, "dist", "index.html")
+    if not os.path.isfile(dist_index):
+        subprocess.run(npm_cmd("run", "build"), check=True)
+    r = subprocess.run(npm_cmd("run", "electron"), check=False)
     return int(r.returncode)
 
 

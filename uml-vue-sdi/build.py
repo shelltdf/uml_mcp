@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""从干净状态构建 uml-vue-sdi（调用 npm ci / npm install + npm run build）。"""
+"""
+同时构建：
+1. Web 静态资源 dist/（Vite）
+2. 同步到 vscode-extension/media/app 并编译、打包 VSIX → out/uml-workbench.vsix
+Electron 套壳无单独编译步骤，直接使用 dist/。
+"""
 import os
 import subprocess
 import sys
@@ -11,12 +16,15 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 
 def main() -> int:
     os.chdir(ROOT)
-    if os.path.isdir(os.path.join(ROOT, "node_modules")):
-        r = subprocess.run(npm_cmd("run", "build"), check=False)
-    else:
+    if not os.path.isdir(os.path.join(ROOT, "node_modules")):
         subprocess.run(npm_cmd("install"), check=True)
-        r = subprocess.run(npm_cmd("run", "build"), check=False)
-    return int(r.returncode)
+    # 1) Vue 应用
+    r = subprocess.run(npm_cmd("run", "build"), check=False)
+    if r.returncode != 0:
+        return int(r.returncode)
+    # 2) 扩展 + VSIX（Node 脚本）
+    r2 = subprocess.run(npm_cmd("run", "build:all"), check=False)
+    return int(r2.returncode)
 
 
 if __name__ == "__main__":

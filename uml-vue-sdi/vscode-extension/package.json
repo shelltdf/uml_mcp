@@ -1,0 +1,42 @@
+{
+  "name": "uml-workbench",
+  "displayName": "UML Markdown Workbench",
+  "description": "UML Markdown 工作台（Webview）+ MCP 服务器脚本（stdio）",
+  "version": "0.1.0",
+  "publisher": "uml-mcp",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:umlWorkbench.open"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "umlWorkbench.open",
+        "title": "UML Workbench: 打开工作台"
+      },
+      {
+        "command": "umlWorkbench.copyMcpServerPath",
+        "title": "UML Workbench: 复制 MCP 启动命令"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}

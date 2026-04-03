@@ -4,6 +4,9 @@ node_modules/
 # Build output
 dist/
 dist-ssr/
+uml-vue-sdi/out/
+uml-vue-sdi/vscode-extension/out/
+uml-vue-sdi/vscode-extension/media/app/
 *.local
 
 # Logs

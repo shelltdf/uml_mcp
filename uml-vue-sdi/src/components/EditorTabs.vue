@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { getMessages, type LocaleId } from '../i18n/ui';
 import { workspace } from '../stores/workspace';
 
@@ -6,111 +7,112 @@ const props = defineProps<{
   locale: LocaleId;
 }>();
 
-function onInput(e: Event) {
-  const tab = workspace.activeTab.value;
-  if (!tab) return;
-  const v = (e.target as HTMLTextAreaElement).value;
-  workspace.updateContent(tab.id, v);
-}
+const m = computed(() => getMessages(props.locale));
 
 function tryCloseTab(id: string) {
   const tab = workspace.state.tabs.find((t) => t.id === id);
-  const m = getMessages(props.locale);
-  if (tab?.isDirty && !window.confirm(m.confirmCloseTab)) {
+  if (tab?.isDirty && !window.confirm(m.value.confirmCloseTab)) {
     return;
   }
   workspace.closeTab(id);
 }
+
+function basename(path: string) {
+  const parts = path.split(/[/\\]/);
+  return parts[parts.length - 1] || path;
+}
 </script>
 
 <template>
-  <div class="editor-root">
-    <div class="tabs" role="tablist">
-      <button
-        v-for="t in workspace.state.tabs"
-        :key="t.id"
-        type="button"
-        role="tab"
-        class="tab"
-        :aria-selected="t.id === workspace.state.activeTabId"
-        :title="t.path + (t.isDirty ? '（未保存）' : '') + ' — 无全局快捷键'"
-        @click="workspace.selectTab(t.id)"
-      >
-        <span class="name">{{ t.path.split('/').pop() }}</span>
-        <span v-if="t.isDirty" class="dot" aria-label="未保存">·</span>
-        <span class="close" title="关闭 — 无全局快捷键" @click.stop="tryCloseTab(t.id)">×</span>
-      </button>
-    </div>
-    <textarea
-      v-if="workspace.activeTab.value"
-      class="area"
-      spellcheck="false"
-      :value="workspace.activeTab.value.content"
-      @input="onInput"
-    />
-    <p v-else class="empty">无打开文件</p>
+  <div class="workspace-tabs" role="tablist" :aria-label="m.mdiTabStripLabel">
+    <button
+      v-for="t in workspace.state.tabs"
+      :key="t.id"
+      type="button"
+      role="tab"
+      class="tab"
+      :class="{ 'tab--active': t.id === workspace.state.activeTabId }"
+      :aria-selected="t.id === workspace.state.activeTabId"
+      :aria-label="basename(t.path) + (t.isDirty ? ', ' + m.dirtyTabHint : '')"
+      :title="basename(t.path) + (t.isDirty ? ' — ' + m.dirtyTabHint : '') + ' — 无全局快捷键'"
+      @click="workspace.selectTab(t.id)"
+    >
+      <span class="tab__dirty" aria-hidden="true">
+        <span v-if="t.isDirty" class="tab__dirty-dot" :title="m.dirtyTabHint" />
+        <span v-else class="tab__dirty-placeholder" />
+      </span>
+      <span class="tab__name">{{ basename(t.path) }}</span>
+      <span class="tab__close" :title="m.closeTabHint + ' — 无全局快捷键'" @click.stop="tryCloseTab(t.id)">×</span>
+    </button>
   </div>
 </template>
 
 <style scoped>
-.editor-root {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
-}
-.tabs {
+.workspace-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 6px 8px;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 4px 6px 0;
   background: var(--tab-bg, #e8e8ea);
   border-bottom: 1px solid var(--border, #ccc);
+  flex-shrink: 0;
 }
 .tab {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
+  max-width: 220px;
+  padding: 4px 8px 6px;
+  font-size: 0.8rem;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
   background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
-.tab[aria-selected='true'] {
-  background: var(--tab-active, #fff);
+.tab--active {
+  background: var(--editor-bg, #fff);
   border-color: var(--border, #ccc);
+  border-bottom-color: var(--editor-bg, #fff);
+  margin-bottom: -1px;
+  padding-bottom: 7px;
+  font-weight: 600;
 }
-.name {
-  max-width: 160px;
+.tab__dirty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  flex-shrink: 0;
+}
+.tab__dirty-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e65100;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+.tab__dirty-placeholder {
+  width: 8px;
+  height: 8px;
+}
+.tab__name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
-.dot {
-  color: #e65100;
-  font-weight: bold;
-}
-.close {
-  opacity: 0.6;
+.tab__close {
+  flex-shrink: 0;
+  opacity: 0.55;
   padding: 0 2px;
+  font-size: 1.1rem;
+  line-height: 1;
 }
-.close:hover {
+.tab__close:hover {
   opacity: 1;
-}
-.area {
-  flex: 1;
-  width: 100%;
-  min-height: 240px;
-  padding: 12px;
-  border: none;
-  resize: none;
-  line-height: 1.4;
-  tab-size: 2;
-  background: var(--editor-bg, #fff);
-  color: inherit;
-}
-.empty {
-  padding: 16px;
-  margin: 0;
 }
 </style>

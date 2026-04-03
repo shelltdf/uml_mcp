@@ -9,8 +9,14 @@ export interface UmlSyncConfig {
 
 const SYNC_FILENAME = 'uml.sync.md';
 
+/** 是否为 uml.sync 契约文件（含未保存的 uml.sync (2).md 等） */
+export function isUmlSyncPath(path: string): boolean {
+  const base = path.split(/[/\\]/).pop() ?? path;
+  return base === SYNC_FILENAME || /^uml\.sync(?:\s+\(\d+\))?\.md$/i.test(base);
+}
+
 export function detectKindFromPath(path: string): FileKind {
-  if (path.endsWith(SYNC_FILENAME) || path.split(/[/\\]/).pop() === SYNC_FILENAME) {
+  if (isUmlSyncPath(path)) {
     return 'sync';
   }
   if (path.endsWith('.uml.md')) return 'uml';
@@ -88,13 +94,35 @@ function parseSimpleYaml(fm: string): UmlSyncConfig | null {
     }
   }
 
-  if (namespace_dirs.length === 0 && code_roots.length === 0 && uml_root === 'diagrams' && sync_profile === 'strict') {
-    return null;
-  }
   return {
     namespace_dirs,
     uml_root,
     code_roots,
     sync_profile,
+  };
+}
+
+/** 是否存在闭合的 YAML 前置块（--- ... ---） */
+export function hasUmlSyncYamlHeader(raw: string): boolean {
+  const trimmed = raw.replace(/^\uFEFF/, '').trimStart();
+  if (!trimmed.startsWith('---')) return false;
+  const end = trimmed.indexOf('\n---', 3);
+  return end !== -1;
+}
+
+/**
+ * 右侧「同步配置」面板用：始终给出可展示字段；无前置块时仍为默认结构并标记 hasYamlFrontMatter。
+ */
+export function getSyncPanelModel(raw: string): { config: UmlSyncConfig; hasYamlFrontMatter: boolean } {
+  const parsed = parseUmlSyncMarkdown(raw);
+  const defaults: UmlSyncConfig = {
+    namespace_dirs: [],
+    uml_root: 'diagrams',
+    code_roots: [],
+    sync_profile: 'strict',
+  };
+  return {
+    config: parsed.config ?? defaults,
+    hasYamlFrontMatter: hasUmlSyncYamlHeader(raw),
   };
 }

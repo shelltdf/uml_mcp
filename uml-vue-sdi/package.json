@@ -7,14 +7,18 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "electron": "electron electron/main.cjs",
+    "build:all": "node scripts/build-all.mjs"
   },
   "dependencies": {
     "mermaid": "^11.4.1",
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@vscode/vsce": "^3.2.0",
     "@vitejs/plugin-vue": "^5.2.1",
+    "electron": "^34.0.0",
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
     "vitest": "^2.1.8",

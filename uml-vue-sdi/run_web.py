@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""开发态：与 run_web.py 相同，启动 Vite dev server。"""
+"""启动 Vite 开发服务器（Web 版）。"""
 import os
 import subprocess
 import sys
