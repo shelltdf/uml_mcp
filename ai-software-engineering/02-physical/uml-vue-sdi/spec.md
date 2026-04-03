@@ -44,6 +44,7 @@ sync_profile: strict
 ## `*.class.md`
 
 - **一文件一类**：描述**一个类**的全部契约成员（字段、方法等）；**推荐**脚手架默认类名 **`helloworld`** / **`Helloworld`**（示例见 `examples/sync-demo/namespace/helloworld.class.md`）。
+- 可选 **`<!-- class-md-meta: {"inherits":"…","associations":["…"]} -->`**：仅用于画布上**只读展示**父类名与关联类名（继承/关联语义仍以对应 `*.uml.md` 为准）。
 - 推荐结构：
 
 ```markdown
@@ -56,10 +57,14 @@ sync_profile: strict
 | field | x | int | ... |
 ```
 
+- **画布**（`ClassClassMdCanvas.vue`）：与类图风格一致的 **2D 视口**（中键平移、滚轮缩放、左下缩放 HUD）；主类框可拖拽；**继承 / 关联**以虚线占位类框只读展示；成员编辑以**下方表格**为准（与 `src/lib/classClassMdModel.ts` 解析一致）。
+
 ## `*.code.md`
 
 - **放置位置**：须位于某一 **`namespace_root`** 之下（与 `*.class.md` 同命名空间树），**不**放在各 `code_impls` 的代码根目录内（后者仅放真实源码如 `.cpp` / `.h`）。
-- **抽象契约**：用分节 + 表格/条目描述**全局函数**、**全局变量**、**宏** 等；**不**要求、也不建议在此书写**具体语言**源码——与实现语言的映射在 `code_impls` 侧完成。若需示例 fenced 块，仅作说明而非唯一形式（见 `examples/sync-demo/namespace/globals.code.md`）。
+- **抽象契约**：用 **`## 函数` / `## 全局变量 / 常量` / `## 宏`** 三节 + 表格（列与 `examples/sync-demo/namespace/globals.code.md` 一致）；**不**要求在此书写**具体语言**源码——与实现语言的映射在 `code_impls` 侧完成。
+- **布局注释**：`<!-- code-md-layout:{"v":1,"functionPositions":[],"variablePositions":[],"macroPositions":[]} -->`，各数组与对应表格**行顺序**对齐，供画布卡片坐标使用（`src/lib/codeMdModel.ts`）。
+- **画布**（`CodeMdCanvas.vue`）：**2D 视口**；**左侧竖向工具栏**（仅图标）新建函数 / 变量 / 宏；卡片按类别着色，可拖拽、删除，**底部表单**编辑选中项字段并写回 Markdown。
 
 ## 应用行为（MVP）
 
@@ -75,7 +80,7 @@ sync_profile: strict
 - **`uml.sync.md` 客户区**：中央画布在打开同步契约时展示 **表单式 GUI**（`SyncConfigEditor.vue`）：`uml_root` / `namespace_root` 为文本框（路径仅落盘，不访问文件系统）；`namespace_root` **唯一**、不可追加多条；`code_impls` 通过「添加代码实现」**弹窗**先选 **类型**，目录默认 **`impl_<类型>_project`**（与已有项冲突时自动加 `_2`、`_3`…），切换类型会**重算**默认目录；**确定**前校验相对路径在**当前已打开标签路径**中是否已有文件落在该目录下（绝对路径不校验）；列表以**单行**展示「目录 + 类型」；**⋯** 菜单：**修改**（只读说明）、**删除**；`sync_profile` 为 **`none` \| `strict`**（默认 **strict**）。下方为同步规则正文 Markdown（自适应高度）。修改经 `serializeUmlSyncMarkdown` 写回。
 - 打开内置示例文件列表（或未来 File System Access）。
 - 编辑区为受控文本域；**`*.uml.md` 预览**（`MermaidPreview.vue`）：**非** `classDiagram` 时，Mermaid 将首个 `mermaid` 块渲染为 **SVG**；视口内 **`div.canvas-inner`** 做平移/缩放（中键拖拽、滚轮以指针为锚点缩放）；其下 **`div.canvas-grid`** 为世界坐标 **背景网格**；**`div.uml-svg-scene`** 承载 SVG（`v-html`），左键命中与选中见 `src/lib/mermaidCanvas.ts`；**左下角 HUD**（`div.canvas-hud`）为 **缩放比例 + 还原**；`classDiagram` 时视口加 **`canvas-viewport--class-diagram`** 样式。
-- **`classDiagram` 专用画布**（`ClassDiagramCanvas.vue`，在 `MermaidPreview` 内当首个块为 `classDiagram` 且传入 `tabId` 时启用）：**不再**用 Mermaid 静态渲染；**主画布只读展示**，**SVG** 绘制类框与连线，类内文本 **`pointer-events: none`** 以免误选文字；**类顶圆点**拖拽到父类框以设置 **继承**。**类名/成员编辑**在 **「类定义编辑」** 模态（`Teleport`）中完成；**左侧** 仅 **类定义编辑** 入口；**右键** 仍可增成员/子类/管理（打开模态）。**折叠**（类框左上）与 **显示**（右上：继承/关联边可见）及 **快捷键**（左上，默认折叠）写入布局注释 `<!-- uml-class-diagram-layout:{"v":1,"positions","folded","edgeVisibility"} -->`（`src/lib/classDiagramModel.ts`）。**左下角 HUD**：**适应 / 原点 / 还原** 与 **− / 比例 / +**。**标签**：未保存时标题名后加 **` ·`**（与 `Tab.isDirty` 一致）。
+- **`classDiagram` 专用画布**（`ClassDiagramCanvas.vue`，在 `MermaidPreview` 内当首个块为 `classDiagram` 且传入 `tabId` 时启用）：**不再**用 Mermaid 静态渲染；**SVG** 绘制类框与连线（**继承 / 关联**路径绘于类框**下方**，避免被遮挡）；类内文本 **`pointer-events: none`**；**类顶圆点**拖拽到父类框以设置 **继承**。**右键菜单**：添加成员/属性/方法、**删除此类**（已无「插入子 class」「管理成员」模态）。**成员解析**（`classDiagramModel.ts`）：先剥离行首 Mermaid 可见性 / `$`（static）再区分属性与方法，**私有（`-`）/ 保护（`#`）/ 包（`~`）** 成员均显示；私有成员行 **斜体** 与略深颜色。**折叠**（类框左上）与 **显示**（右上：继承/关联边可见）及 **快捷键**（左上，默认折叠）写入布局注释 `<!-- uml-class-diagram-layout:{"v":1,"positions","folded","edgeVisibility"} -->`。**左下角 HUD**：**适应 / 原点 / 还原** 为**仅图标**按钮（`title`/`aria-label` 保留说明），以及 **− / 比例 / +**。**关联线**支持 `-->` 与 `..>`（均解析为关联边）。**标签**：未保存时标题名后加 **` ·`**（与 `Tab.isDirty` 一致）。
 - 解析失败：预览区显示错误信息字符串，不抛未捕获异常。
 
 ## 错误与边界

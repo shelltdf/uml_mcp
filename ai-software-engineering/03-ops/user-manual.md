@@ -30,8 +30,9 @@
 
 ## 文件类型
 
-- `*.uml.md`：编辑 Markdown，右侧/下方预览 Mermaid。
-- `*.class.md` / `*.code.md`：文本编辑；预览区可显示提示「非 UML 预览」。二者均建议放在各 **`namespace_root`** 目录树内；`*.code.md` **不**放在 `code_impls` 所指的真实代码根。
+- `*.uml.md`：中央画布预览；首个 fenced `mermaid` 为 **`classDiagram`** 时使用可编辑类图画布（见 `02-physical/uml-vue-sdi/spec.md`），否则为 Mermaid 渲染的 SVG。
+- `*.class.md`：中央为 **2D 类图风格画布**（只读关系占位）+ **成员表格**；右侧「文本内容」可编辑全文。
+- `*.code.md`：中央为 **2D 代码契约画布**（函数/变量/宏卡片）+ **底部表单**；右侧可编辑全文。二者均建议放在各 **`namespace_root`** 目录树内；`*.code.md` **不**放在 `code_impls` 所指的真实代码根。
 - `uml.sync.md`：查看/编辑同步配置 YAML 与规则正文；画布内为表单（路径仅写入文档；命名空间根为单一路径；代码实现通过弹窗添加；规则正文区随内容增高）。详见 `02-physical/uml-vue-sdi/spec.md`。
 
 ## 悬停快捷键
