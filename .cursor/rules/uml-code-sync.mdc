@@ -1,0 +1,34 @@
+---
+description: UML Markdown 与代码同步开发模式（uml.sync 与三类 *.md 契约）
+globs: "**/*.{md,uml.md,class.md,code.md}", "**/uml.sync.md"
+alwaysApply: false
+---
+
+# UML ↔ 代码 同步开发（仓库约定）
+
+当用户编辑或提及 `uml.sync.md`、`*.uml.md`、`*.class.md`、`*.code.md` 时，助手应遵守下列契约（权威细节见 `ai-software-engineering/02-physical/uml-vue-sdi/spec.md` 与 `examples/sync-demo/`）。
+
+## 文件角色
+
+| 模式 | 职责 |
+|------|------|
+| `uml.sync.md` | 声明 `namespace_dirs`、`uml_root`、`code_roots`、`sync_profile`（YAML front matter）+ **人类可读同步规则**正文 |
+| `*.uml.md` | 存放多张 UML 图（默认 fenced `mermaid`） |
+| `*.class.md` | 类定义契约（推荐 `### ClassName` + 表格） |
+| `*.code.md` | 类以外：全局函数、宏、全局变量等 |
+
+## 同步顺序（默认）
+
+1. 改 **类图 / 包图**（`*.uml.md`）以反映设计意图。  
+2. 更新 **`*.class.md`** 与命名空间/目录对齐（参见 `uml.sync.md` 中 `namespace_dirs`）。  
+3. 再修改真实代码（`code_roots` 下），`*.code.md` 记录非类片段若需要。  
+4. 若规则正文要求评审/CI 检查，在回复中提醒对应条目。
+
+## 与 AI 协作
+
+- **不要**在未读 `uml.sync.md` 的情况下假设目录结构；若缺失则询问或采用示例结构。  
+- 变更格式契约时，**同步**更新：`02-physical/uml-vue-sdi/spec.md`、`examples/sync-demo/`、本规则中有字段表的小节。
+
+## 非目标
+
+- 本规则**不**替代 GUI 专章；窗口布局见 `window-gui-documentation.mdc` 与概念文档。

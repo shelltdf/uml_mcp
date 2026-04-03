@@ -1,0 +1,30 @@
+:root {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  line-height: 1.45;
+  color: #1a1a1a;
+  background: #f4f4f5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #e8e8ea;
+    background: #121214;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+textarea {
+  font: inherit;
+}
