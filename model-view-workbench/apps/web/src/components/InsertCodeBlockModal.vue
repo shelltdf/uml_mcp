@@ -27,8 +27,10 @@ const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
   },
   { title: 'UI 相关（View视图）', kinds: ['mindmap-ui', 'ui-design'] },
   { title: 'Mermaid 相关（View视图）', kinds: mermaidInsertKinds },
-  { title: 'PlantUML（View视图）', kinds: ['uml-class', 'uml-sequence', 'uml-activity'] },
-  { title: '其它（View视图）', kinds: ['uml-diagram'] },
+  {
+    title: 'PlantUML（View视图）',
+    kinds: ['uml-class', 'uml-sequence', 'uml-activity', 'uml-diagram'],
+  },
 ];
 
 function titleFor(kind: InsertCodeBlockKind): string {
