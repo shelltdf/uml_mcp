@@ -22,13 +22,13 @@ const mermaidInsertKinds = getMermaidViewKinds() as InsertCodeBlockKind[];
 /** 插入代码块弹窗分组（顺序即展示顺序） */
 const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
   {
-    title: '数据模型',
+    title: '数据模型（Model模型）',
     kinds: ['mv-model-sql', 'mv-model-kv', 'mv-model-struct'],
   },
-  { title: 'UI 相关', kinds: ['table-readonly', 'mindmap-ui', 'ui-design'] },
-  { title: 'Mermaid 相关', kinds: mermaidInsertKinds },
-  { title: 'PlantUML', kinds: ['uml-class', 'uml-sequence', 'uml-activity'] },
-  { title: '其它', kinds: ['uml-diagram'] },
+  { title: 'UI 相关（View视图）', kinds: ['mindmap-ui', 'ui-design'] },
+  { title: 'Mermaid 相关（View视图）', kinds: mermaidInsertKinds },
+  { title: 'PlantUML（View视图）', kinds: ['uml-class', 'uml-sequence', 'uml-activity'] },
+  { title: '其它（View视图）', kinds: ['uml-diagram'] },
 ];
 
 function titleFor(kind: InsertCodeBlockKind): string {
@@ -40,11 +40,16 @@ function titleFor(kind: InsertCodeBlockKind): string {
 
 /** 插入弹窗卡片文案：此处表示 Model / View 类型，不沿用各编辑器「画布」后缀 */
 function insertCardTitle(kind: InsertCodeBlockKind): string {
+  if (kind === 'mv-model-sql') return 'SQL数据库';
+  if (kind === 'mv-model-kv') return 'KV数据库';
+  if (kind === 'mv-model-struct') return '结构化数据库';
   const raw = titleFor(kind);
-  return raw
+  let s = raw
     .replace(/\s*画布（/, '（')
     .replace(/画布$/, '')
     .trim();
+  if (kind === 'uml-diagram' && !s.endsWith('图')) s = `${s}图`;
+  return s;
 }
 
 function descFor(kind: InsertCodeBlockKind): string {

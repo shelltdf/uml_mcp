@@ -79,7 +79,6 @@ export interface MvModelStructPayload {
  * 新增产品子类型时：在此追加字面量、更新 `blocks.ts` 校验白名单，并实现对应渲染器。
  */
 export const MV_VIEW_KINDS = [
-  'table-readonly',
   /** Mermaid：各图类型独立 kind，payload 均为对应 Mermaid 语法片段（由渲染器解释） */
   'mermaid-architecture',
   'mermaid-block',
@@ -135,11 +134,6 @@ export const MV_VIEW_KIND_METADATA: Record<
   MvViewKind,
   { canvasTitle: string; description: string; payloadPlaceholder: string }
 > = {
-  'table-readonly': {
-    canvasTitle: '只读表视图画布',
-    description: '编辑标题、modelRefs；表格数据请在关联的 mv-model-sql（Model）块画布中修改。',
-    payloadPlaceholder: '（可选；本类型一般无需 payload）',
-  },
   'mermaid-architecture': {
     canvasTitle: 'Mermaid 架构图画布',
     description: '编辑 Mermaid architecture-beta 等源码（写入 payload）。',

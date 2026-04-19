@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, withDefaults } from 'vue';
+import { computed, nextTick, ref, watch, withDefaults } from 'vue';
 import {
   MV_MAP_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
@@ -7,13 +7,10 @@ import {
   MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
   MV_VIEW_KIND_METADATA,
-  findMvModelSqlTable,
   isMermaidViewKind,
   isPlantUmlViewKind,
   parseMarkdownBlocks,
-  parseRefUri,
   replaceBlockInnerById,
-  resolveRefPath,
   type MvMapPayload,
   type MvModelColumnDef,
   type MvModelKvPayload,
@@ -92,7 +89,7 @@ const modelRowFilter = ref('');
 /** DDL / DML 分区折叠（仅 mv-model-sql 画布） */
 const sqlDdlSectionOpen = ref(true);
 const sqlDmlSectionOpen = ref(true);
-/** mv-model-sql 画布内嵌只读平铺表（无需另建 table-readonly 的 mv-view） */
+/** mv-model-sql 画布内嵌只读平铺表：当前子表 + 与 DML 相同 WHERE 筛选 */
 const showModelReadonlyPreview = ref(false);
 const kvDraft = ref<MvModelKvPayload | null>(null);
 /** 与 documents 平行的 JSON 文本，便于逐条编辑 */
@@ -101,12 +98,17 @@ const structJsonText = ref('');
 const viewDraft = ref<MvViewPayload | null>(null);
 const viewModelRefsText = ref('');
 const mapJsonText = ref('');
+/** 子表标签「×」删除：页内确认（部分壳层对 window.confirm 不可靠） */
+const subtableDeleteOpen = ref(false);
+const subtableDeleteIndex = ref<number | null>(null);
 
 watch(
   block,
   (b) => {
     modelSqlDraft.value = null;
     activeTableIndex.value = 0;
+    subtableDeleteOpen.value = false;
+    subtableDeleteIndex.value = null;
     showModelReadonlyPreview.value = false;
     kvDraft.value = null;
     kvDocStrings.value = [];
@@ -137,6 +139,19 @@ watch(
   { immediate: true },
 );
 
+const subtableDeleteTargetId = computed(() => {
+  const d = modelSqlDraft.value;
+  const i = subtableDeleteIndex.value;
+  if (!d || i === null || i < 0 || i >= d.tables.length) return '';
+  return d.tables[i]!.id;
+});
+
+watch(subtableDeleteOpen, async (open) => {
+  if (!open) return;
+  await nextTick();
+  document.querySelector<HTMLElement>('.msc-del-dialog')?.focus();
+});
+
 const canvasSurfaceTitle = computed(() => {
   const b = block.value;
   if (!b) return '';
@@ -161,32 +176,6 @@ const viewPayloadPlaceholder = computed(() => {
   const b = block.value;
   if (!b || b.kind !== 'mv-view' || !viewDraft.value) return '';
   return MV_VIEW_KIND_METADATA[viewDraft.value.kind as MvViewKind].payloadPlaceholder;
-});
-
-/** 解析 modelRefs 项，定位 ``mv-model-sql`` 内一张子表 */
-function resolveSqlTableByRef(ref: string): MvModelSqlTable | null {
-  const r = ref.trim();
-  if (!r) return null;
-  const parsed = parseRefUri(r);
-  if (parsed) {
-    const targetPath = resolveRefPath(props.relPath.replace(/\\/g, '/'), parsed.fileRel);
-    const md = props.workspaceFiles[targetPath];
-    if (!md) return null;
-    const { blocks } = parseMarkdownBlocks(md);
-    return findMvModelSqlTable(blocks, parsed.blockId, parsed.tableId);
-  }
-  const parts = r.split('#').map((s) => s.trim()).filter(Boolean);
-  const { blocks } = parseMarkdownBlocks(props.markdown);
-  if (parts.length >= 2) return findMvModelSqlTable(blocks, parts[0]!, parts[1]);
-  return findMvModelSqlTable(blocks, parts[0]!);
-}
-
-const tableReadonlyBackingModel = computed((): MvModelSqlTable | null => {
-  if (!block.value || block.value.kind !== 'mv-view' || !viewDraft.value) return null;
-  if (viewDraft.value.kind !== 'table-readonly') return null;
-  const id = viewDraft.value.modelRefs[0];
-  if (!id) return null;
-  return resolveSqlTableByRef(id);
 });
 
 const filteredModelRowEntries = computed(() => {
@@ -296,18 +285,43 @@ function addModelSqlTable() {
   modelRowFilter.value = '';
 }
 
-function removeModelSqlTable() {
+function onSubtableTabStripClick(ti: number, ev: MouseEvent) {
+  const el = ev.target as HTMLElement | null;
+  if (el?.closest('.model-subtable-tab-close')) return;
+  selectSqlTable(ti);
+}
+
+function openSubtableDeleteDialog(index: number) {
   const d = modelSqlDraft.value;
-  const i = activeTableIndex.value;
-  if (!d || i < 0 || i >= d.tables.length) return;
+  if (!d || index < 0 || index >= d.tables.length) return;
   if (d.tables.length <= 1) {
-    window.alert('Model 组内至少保留一张表。');
+    window.alert(
+      '【警告】无法删除：Model 组内须至少保留一张子表。\n\n若需移除整组数据模型，请在主文档中删除对应的 mv-model-sql 围栏块。',
+    );
     return;
   }
-  const t = d.tables[i]!;
-  if (!window.confirm(`确定删除子表「${t.id}」？该表上全部行将丢失。`)) return;
+  subtableDeleteIndex.value = index;
+  subtableDeleteOpen.value = true;
+}
+
+function cancelSubtableDelete() {
+  subtableDeleteOpen.value = false;
+  subtableDeleteIndex.value = null;
+}
+
+function confirmSubtableDelete() {
+  const d = modelSqlDraft.value;
+  const i = subtableDeleteIndex.value;
+  subtableDeleteOpen.value = false;
+  subtableDeleteIndex.value = null;
+  if (!d || i === null || i < 0 || i >= d.tables.length) return;
+  if (d.tables.length <= 1) return;
+  const oldActive = activeTableIndex.value;
   d.tables = d.tables.filter((_, j) => j !== i);
-  activeTableIndex.value = Math.min(i, d.tables.length - 1);
+  let newIdx = oldActive;
+  if (i < oldActive) newIdx = oldActive - 1;
+  else if (i === oldActive) newIdx = Math.min(i, d.tables.length - 1);
+  activeTableIndex.value = Math.max(0, newIdx);
   modelRowFilter.value = '';
 }
 
@@ -722,30 +736,52 @@ function closeWin() {
               <input v-model="modelSqlDraft.title" class="wide sql-mono-inp" type="text" placeholder="可选" />
             </label>
           </div>
-          <div class="model-table-tabs" role="tablist" aria-label="子表切换">
-            <button
-              v-for="(tb, ti) in modelSqlDraft.tables"
-              :key="tb.id"
-              type="button"
-              class="model-table-tab"
-              :class="{ 'model-table-tab--active': ti === activeTableIndex }"
-              :title="`编辑子表 ${tb.id} — 无全局快捷键`"
-              @click="selectSqlTable(ti)"
+          <div class="model-subtable-shell">
+            <div class="model-subtable-tabbar" role="tablist" aria-label="子表（标签切换）">
+              <div
+                v-for="(tb, ti) in modelSqlDraft.tables"
+                :key="tb.id"
+                role="tab"
+                :id="'sql-subtab-' + ti"
+                :aria-selected="ti === activeTableIndex"
+                :tabindex="ti === activeTableIndex ? 0 : -1"
+                aria-controls="sql-tabpanel-subtable"
+                class="model-subtable-tab"
+                :class="{ 'model-subtable-tab--active': ti === activeTableIndex }"
+                :title="`子表 ${tb.id}；点击标签切换，× 删除（须确认）— 无全局快捷键`"
+                @click="onSubtableTabStripClick(ti, $event)"
+                @keydown.enter.prevent="selectSqlTable(ti)"
+                @keydown.space.prevent="selectSqlTable(ti)"
+              >
+                <span class="model-subtable-tab-label">{{ tb.id }}</span>
+                <button
+                  v-if="modelSqlDraft.tables.length > 1"
+                  type="button"
+                  class="model-subtable-tab-close"
+                  title="删除此子表（弹出确认）— 无全局快捷键"
+                  :aria-label="`删除子表 ${tb.id}`"
+                  @click.stop="openSubtableDeleteDialog(ti)"
+                >
+                  ×
+                </button>
+              </div>
+              <span class="model-subtable-tabspacer" aria-hidden="true"></span>
+              <button
+                type="button"
+                class="model-subtable-tab model-subtable-tab--action model-subtable-tab--add"
+                title="新增一张子表 — 无全局快捷键"
+                @click="addModelSqlTable"
+              >
+                ＋ 子表
+              </button>
+            </div>
+            <div
+              v-if="modelDraft"
+              id="sql-tabpanel-subtable"
+              class="model-subtable-panel"
+              role="tabpanel"
+              :aria-labelledby="'sql-subtab-' + activeTableIndex"
             >
-              {{ tb.id }}
-            </button>
-            <button type="button" class="model-table-tab model-table-tab--action" title="新增子表 — 无全局快捷键" @click="addModelSqlTable">＋ 子表</button>
-            <button
-              v-if="modelSqlDraft.tables.length > 1"
-              type="button"
-              class="model-table-tab model-table-tab--danger"
-              title="删除当前子表 — 无全局快捷键"
-              @click="removeModelSqlTable"
-            >
-              删当前子表
-            </button>
-          </div>
-          <template v-if="modelDraft">
           <section
             class="model-fold-section"
             :class="{ 'model-fold-section--collapsed': !sqlDdlSectionOpen }"
@@ -938,8 +974,8 @@ function closeWin() {
               class="tb model-readonly-toggle"
               :title="
                 showModelReadonlyPreview
-                  ? '隐藏下方只读平铺表 — 无全局快捷键'
-                  : '在画布内展示只读平铺表（等同只读表视图效果），无需另建 mv-view table-readonly — 无全局快捷键'
+                  ? '隐藏下方只读平铺表（当前子表，与 DML 筛选一致）— 无全局快捷键'
+                  : '在画布内只读展示当前子表行（与上方 DML 同一 WHERE 筛选）— 无全局快捷键'
               "
               @click="showModelReadonlyPreview = !showModelReadonlyPreview"
             >
@@ -994,26 +1030,31 @@ function closeWin() {
           </div>
             </div>
           </section>
-          </template>
+            </div>
+          </div>
 
-          <section v-if="showModelReadonlyPreview" class="model-readonly-preview" aria-label="只读平铺表预览">
-            <h3 class="model-section-title model-section-title--readonly">SELECT * 风格 · 只读（全部子表）</h3>
+          <section
+            v-if="showModelReadonlyPreview && modelDraft"
+            class="model-readonly-preview"
+            aria-label="当前子表只读平铺预览"
+          >
+            <h3 class="model-section-title model-section-title--readonly">SELECT * 风格 · 只读（当前子表）</h3>
             <p class="canvas-hint canvas-hint--compact">
-              各子表全行平铺（与 <code>table-readonly</code> 视图画布一致）；无需另建 <code>mv-view</code>。未保存修改即时反映；落盘为
+              与上方 DML 为同一子表 <code>{{ modelDraft.id }}</code>；行集与 <strong>WHERE 子串</strong> 筛选一致（仅展示
+              {{ filteredModelRowEntries.length }} / {{ modelDraft.rows.length }} 行）。只读单元格，与只读表预览一致；未保存修改即时反映；落盘为
               <code>mv-model-sql</code> JSON。
             </p>
-            <div v-for="tbl in modelSqlDraft.tables" :key="'ro-t-' + tbl.id" class="model-readonly-one-table">
-              <h4 class="model-readonly-table-title"><code>{{ tbl.id }}</code></h4>
+            <div class="model-readonly-one-table">
               <div class="canvas-table-wrap canvas-table-wrap--readonly">
                 <table class="canvas-table canvas-table--sql-rows">
                   <thead>
                     <tr>
-                      <th v-for="c in tbl.columns" :key="'ro-h-' + tbl.id + '-' + c.name">{{ c.name }}</th>
+                      <th v-for="c in modelDraft.columns" :key="'ro-h-' + modelDraft.id + '-' + c.name">{{ c.name }}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="(row, ri) in tbl.rows" :key="'ro-r-' + tbl.id + '-' + ri">
-                      <td v-for="c in tbl.columns" :key="c.name">{{ cellStr(row, c.name) }}</td>
+                    <tr v-for="{ row, index: ri } in filteredModelRowEntries" :key="'ro-r-' + modelDraft.id + '-' + ri">
+                      <td v-for="c in modelDraft.columns" :key="c.name">{{ cellStr(row, c.name) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1083,30 +1124,6 @@ function closeWin() {
             <input v-model="viewModelRefsText" type="text" class="wide" placeholder="同文件 id 或 ref:其它.md#块id" />
           </label>
 
-          <template v-if="viewDraft.kind === 'table-readonly'">
-            <div v-if="tableReadonlyBackingModel" class="canvas-table-wrap canvas-table-wrap--readonly">
-              <p class="canvas-hint">
-                关联子表 <code>{{ tableReadonlyBackingModel.id }}</code>（只读预览；改数据请打开对应 <code>mv-model-sql</code> Model 块画布并选中该子表）
-              </p>
-              <table class="canvas-table">
-                <thead>
-                  <tr>
-                    <th v-for="c in tableReadonlyBackingModel.columns" :key="c.name">{{ c.name }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(row, ri) in tableReadonlyBackingModel.rows" :key="ri">
-                    <td v-for="c in tableReadonlyBackingModel.columns" :key="c.name">{{ cellStr(row, c.name) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p v-else class="canvas-hint canvas-hint--warn">
-              未解析到 modelRefs[0]（<code>{{ viewDraft.modelRefs[0] || '（空）' }}</code>）：请确认同文件 id 正确，或填写
-              <code>ref:相对路径.md#块id</code> 且主窗口已打开对应 .md（跨文件预览需工作区快照）。
-            </p>
-          </template>
-
           <p v-if="isMermaidViewKind(viewDraft.kind)" class="canvas-hint canvas-hint--compact">
             若源码里本 <code>mv-view</code> 围栏之后紧跟标准 mermaid 代码围栏（三个反引号 + <code>mermaid</code>），则其与下方 <code>payload</code> 为<strong>同文镜像</strong>；保存时会一并写回，便于普通 Markdown 预览出图。
           </p>
@@ -1124,7 +1141,7 @@ function closeWin() {
               v-model="viewDraft.payload"
               class="payload-ta"
               spellcheck="false"
-              :rows="viewDraft.kind === 'table-readonly' ? 6 : 16"
+              rows="16"
               :placeholder="viewPayloadPlaceholder"
             />
           </label>
@@ -1141,6 +1158,47 @@ function closeWin() {
     <main v-else class="canvas-body canvas-empty">
       <p>无法解析块 <code>{{ blockId }}</code>，请关闭窗口。</p>
     </main>
+
+    <Teleport to="body">
+      <div
+        v-if="subtableDeleteOpen && modelSqlDraft"
+        class="msc-del-back"
+        role="presentation"
+        tabindex="0"
+        @click.self="cancelSubtableDelete"
+      >
+        <div
+          class="msc-del-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="msc-del-title"
+          aria-describedby="msc-del-desc"
+          tabindex="-1"
+          @keydown.esc.stop="cancelSubtableDelete"
+        >
+          <h2 id="msc-del-title" class="msc-del-title">删除子表</h2>
+          <p id="msc-del-desc" class="msc-del-desc">
+            <strong>【警告】</strong>即将删除子表「<code>{{ subtableDeleteTargetId }}</code>」。
+          </p>
+          <ul class="msc-del-list">
+            <li>该子表上的列定义与全部行数据将从当前编辑内容中移除。</li>
+            <li>其它块中引用「块 id#{{ subtableDeleteTargetId }}」的 modelRefs 在保存后可能失效，需自行修正。</li>
+            <li>此步在本会话内不可撤销（未保存前可关闭画布放弃全部修改）。</li>
+          </ul>
+          <div class="msc-del-actions">
+            <button type="button" class="msc-del-btn" title="放弃删除 — 无全局快捷键" @click="cancelSubtableDelete">取消</button>
+            <button
+              type="button"
+              class="msc-del-btn msc-del-btn--danger"
+              title="确认删除该子表 — 无全局快捷键"
+              @click="confirmSubtableDelete"
+            >
+              确定删除
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1302,35 +1360,130 @@ function closeWin() {
 .model-section-title--data {
   margin-top: 24px;
 }
-.model-table-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
+.model-subtable-shell {
+  max-width: 960px;
   margin: 12px 0 16px;
 }
-.model-table-tab {
-  padding: 6px 12px;
-  font-size: 0.78rem;
+.model-subtable-tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0;
+  padding: 0 4px 0 6px;
+  min-height: 40px;
+  background: linear-gradient(180deg, #eef2f7 0%, #dce3ec 100%);
+  border-radius: 8px 8px 0 0;
+  border: 1px solid #64748b;
+  border-bottom: 2px solid #475569;
+}
+.model-subtable-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 0 3px;
+  padding: 6px 6px 6px 12px;
   font-family: inherit;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #0f172a;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #334155;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 7px 7px 0 0;
+  background: #cbd5e1;
+  cursor: default;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.35);
+  transition:
+    background 0.12s,
+    color 0.12s;
+  user-select: none;
+  outline: none;
+}
+.model-subtable-tab:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+  z-index: 3;
+}
+.model-subtable-tab-label {
+  cursor: pointer;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 0;
+}
+.model-subtable-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  margin: 0 0 0 2px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  font-weight: 700;
+  color: #64748b;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   cursor: pointer;
 }
-.model-table-tab--active {
-  background: #e0f2fe;
-  border-color: #0284c7;
-  font-weight: 600;
-}
-.model-table-tab--action {
-  border-style: dashed;
-}
-.model-table-tab--danger {
+.model-subtable-tab-close:hover {
   color: #b91c1c;
-  border-color: #fecaca;
-  background: #fef2f2;
+  background: rgba(185, 28, 28, 0.12);
+}
+.model-subtable-tab-close:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+.model-subtable-tab:hover:not(.model-subtable-tab--active) {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.model-subtable-tab--active {
+  color: #0c4a6e;
+  font-weight: 700;
+  background: #f8fafc;
+  border-color: #475569;
+  border-bottom-color: #f8fafc;
+  margin-bottom: -2px;
+  padding-bottom: 9px;
+  z-index: 2;
+  box-shadow: 0 -1px 0 #f8fafc;
+}
+.model-subtable-tabspacer {
+  flex: 1 1 12px;
+  min-width: 8px;
+  margin-bottom: 6px;
+  pointer-events: none;
+}
+.model-subtable-tab--action {
+  font-weight: 600;
+  margin-left: 4px;
+}
+.model-subtable-tab--add {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+  border-style: dashed;
+  color: #0f172a;
+}
+.model-subtable-tab--add:hover {
+  background: #f1f5f9;
+}
+.model-subtable-panel {
+  border: 1px solid #64748b;
+  border-top: none;
+  padding: 8px 10px 12px;
+  background: #f8fafc;
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+.model-subtable-panel .model-fold-section:first-of-type {
+  margin-top: 8px;
+}
+.model-subtable-panel .model-fold-section + .model-fold-section {
+  margin-top: 12px;
 }
 .model-readonly-one-table {
   margin-bottom: 16px;
@@ -1669,5 +1822,72 @@ function closeWin() {
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   resize: vertical;
+}
+
+.msc-del-back {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.5);
+  outline: none;
+}
+.msc-del-dialog {
+  width: min(440px, 100%);
+  padding: 18px 20px 16px;
+  border-radius: 10px;
+  border: 1px solid #94a3b8;
+  background: #fff;
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.25);
+  outline: none;
+}
+.msc-del-title {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #991b1b;
+}
+.msc-del-desc {
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #334155;
+}
+.msc-del-list {
+  margin: 0 0 16px;
+  padding-left: 1.2rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #475569;
+}
+.msc-del-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.msc-del-btn {
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #94a3b8;
+  background: #fff;
+  cursor: pointer;
+  color: #334155;
+}
+.msc-del-btn:hover {
+  background: #f1f5f9;
+}
+.msc-del-btn--danger {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+  font-weight: 600;
+}
+.msc-del-btn--danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
 }
 </style>

@@ -49,7 +49,7 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | string | 文件内唯一 |
-| kind | string | **已注册子类型**（见 `@mvwb/core` 导出 `MV_VIEW_KINDS` 与 `MV_VIEW_KIND_METADATA`）：含 `table-readonly`、**全部 `mermaid-*`**（各 Mermaid 图类独立 kind，payload 为对应语法）、`mindmap-ui`、`uml-diagram`（通用 PlantUML）、`uml-class` / `uml-sequence` / `uml-activity`（各专用画布）、`ui-design`（UI 规格画布）等。扩展时追加 `kind`、元数据与画布实现。 |
+| kind | string | **已注册子类型**（见 `@mvwb/core` 导出 `MV_VIEW_KINDS` 与 `MV_VIEW_KIND_METADATA`）：含 **全部 `mermaid-*`**（各 Mermaid 图类独立 kind，payload 为对应语法）、`mindmap-ui`、`uml-diagram`（通用 PlantUML）、`uml-class` / `uml-sequence` / `uml-activity`（各专用画布）、`ui-design`（UI 规格画布）等。扩展时追加 `kind`、元数据与画布实现。 |
 | modelRefs | string[] | **每个 view 应绑定至少一个 Model 子表地址**（可为多项）：同文件 **`Model块id#子表id`**（单子表块可仅写块 id）；跨文件 **`ref:相对路径.md#块id#子表id`** 或 **`ref:相对路径.md#块id`**（见 `parseRefUri` / `resolveRefPath` / `findMvModelSqlTable`）。 |
 | title | string? | 可选视图标题 |
 | payload | string? | **子类型相关**载荷（如 Mermaid / PlantUML 文本、脑图 JSON 快照等，由对应 `kind` 解释） |

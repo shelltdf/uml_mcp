@@ -889,42 +889,7 @@ function newMarkdownFile() {
     i++;
     name = `${base}-${i}.md`;
   }
-  const fence = '```';
-  const initial = [
-    '# 新文档',
-    '',
-    `${fence}mv-model-sql`,
-    JSON.stringify(
-      {
-        id: 'example_model',
-        title: '示例 Model 组',
-        tables: [
-          {
-            id: 'main',
-            title: '主表',
-            columns: [{ name: 'id', type: 'string' }],
-            rows: [{ id: '1' }],
-          },
-        ],
-      },
-      null,
-      2,
-    ),
-    fence,
-    '',
-    `${fence}mv-view`,
-    JSON.stringify(
-      {
-        id: 'example_view',
-        kind: 'table-readonly',
-        modelRefs: ['example_model#main'],
-      },
-      null,
-      2,
-    ),
-    fence,
-    '',
-  ].join('\n');
+  const initial = '# 新文档\n';
   files.value = new Map(files.value).set(name, initial);
   selectedPath.value = name;
   syncBaselineForPath(name, initial);

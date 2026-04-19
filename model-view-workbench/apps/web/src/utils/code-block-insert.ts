@@ -74,10 +74,7 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
   const meta = MV_VIEW_KIND_METADATA[kind];
   const ph = meta.payloadPlaceholder;
   const skipPayload = ph.startsWith('（');
-  const title =
-    kind === 'table-readonly'
-      ? '新只读表视图'
-      : meta.canvasTitle.replace(/画布$/, '').trim() || meta.canvasTitle;
+  const title = meta.canvasTitle.replace(/画布$/, '').trim() || meta.canvasTitle;
 
   const obj: MvViewPayload = {
     id,

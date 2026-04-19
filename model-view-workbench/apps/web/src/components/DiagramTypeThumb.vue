@@ -31,13 +31,6 @@ const markerId = ref(`dtt-arr-${Math.random().toString(36).slice(2, 11)}`);
       <rect x="48" y="26" width="32" height="14" rx="2" fill="#fffbeb" stroke="#d97706" stroke-width="1" />
       <path d="M56 20 L56 24 M26 26 L26 24 M64 26 L64 24" stroke="#b45309" stroke-width="1" fill="none" />
     </g>
-    <!-- table-readonly -->
-    <g v-else-if="variant === 'table-readonly'">
-      <rect x="10" y="12" width="68" height="28" rx="2" fill="#f1f5f9" stroke="#475569" stroke-width="1" />
-      <line x1="10" y1="22" x2="78" y2="22" stroke="#64748b" />
-      <circle cx="18" cy="30" r="2" fill="#94a3b8" />
-      <rect x="24" y="28" width="40" height="4" rx="1" fill="#cbd5e1" />
-    </g>
     <!-- mermaid-*：共用示意（类框 + 连线） -->
     <g v-else-if="variant.startsWith('mermaid-')">
       <rect x="8" y="8" width="32" height="22" rx="2" fill="#dbeafe" stroke="#2563eb" stroke-width="1" />

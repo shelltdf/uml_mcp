@@ -38,14 +38,6 @@
 
 ```mv-view
 {
-  "id": "person_table_view",
-  "kind": "table-readonly",
-  "modelRefs": ["sql_demo#person"]
-}
-```
-
-```mv-view
-{
   "id": "person_class_mermaid",
   "kind": "mermaid-class",
   "modelRefs": ["sql_demo#person"],
