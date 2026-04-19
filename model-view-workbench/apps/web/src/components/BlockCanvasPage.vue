@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
+import CodespaceCanvasEditor from './codespace/CodespaceCanvasEditor.vue';
 import {
   MV_MAP_CANVAS_TITLE,
   MV_MODEL_CODESPACE_CANVAS_TITLE,
@@ -14,6 +15,7 @@ import {
   parseMarkdownBlocks,
   replaceBlockInnerById,
   type MvMapPayload,
+  type MvModelCodespacePayload,
   type MvModelColumnDef,
   type MvModelKvPayload,
   type MvModelSqlPayload,
@@ -97,7 +99,7 @@ const kvDraft = ref<MvModelKvPayload | null>(null);
 /** 与 documents 平行的 JSON 文本，便于逐条编辑 */
 const kvDocStrings = ref<string[]>([]);
 const structJsonText = ref('');
-const codespaceJsonText = ref('');
+const codespaceDraft = ref<MvModelCodespacePayload | null>(null);
 const interfaceJsonText = ref('');
 const viewDraft = ref<MvViewPayload | null>(null);
 const viewModelRefsText = ref('');
@@ -117,7 +119,7 @@ watch(
     kvDraft.value = null;
     kvDocStrings.value = [];
     structJsonText.value = '';
-    codespaceJsonText.value = '';
+    codespaceDraft.value = null;
     interfaceJsonText.value = '';
     viewDraft.value = null;
     viewModelRefsText.value = '';
@@ -136,7 +138,7 @@ watch(
     } else if (b.kind === 'mv-model-struct') {
       structJsonText.value = JSON.stringify(b.payload, null, 2);
     } else if (b.kind === 'mv-model-codespace') {
-      codespaceJsonText.value = JSON.stringify(b.payload, null, 2);
+      codespaceDraft.value = JSON.parse(JSON.stringify(b.payload)) as MvModelCodespacePayload;
     } else if (b.kind === 'mv-model-interface') {
       interfaceJsonText.value = JSON.stringify(b.payload, null, 2);
     } else if (b.kind === 'mv-view') {
@@ -763,14 +765,9 @@ function buildInnerJson(): string | null {
       return null;
     }
   }
-  if (b.kind === 'mv-model-codespace') {
-    try {
-      const parsed = JSON.parse(codespaceJsonText.value) as Record<string, unknown>;
-      const inner = JSON.stringify(parsed, null, 2);
-      return fenceInnerParsesOk('mv-model-codespace', inner) ? inner : null;
-    } catch {
-      return null;
-    }
+  if (b.kind === 'mv-model-codespace' && codespaceDraft.value) {
+    const inner = JSON.stringify(codespaceDraft.value, null, 2);
+    return fenceInnerParsesOk('mv-model-codespace', inner) ? inner : null;
   }
   if (b.kind === 'mv-model-interface') {
     try {
@@ -814,7 +811,7 @@ function save() {
       k === 'mv-model-interface'
     ) {
       window.alert(
-        '无法保存：JSON 无效或不符合当前围栏契约（mv-model-sql：非空 tables、行须满足列声明、**主键列组合在表内唯一**；KV 每条须为 JSON 对象；结构化层次须含合法 root；代码空间须含非空 modules 且模块 id 唯一；接口模型须含非空 endpoints 且端点 id 唯一）。',
+        '无法保存：JSON 无效或不符合当前围栏契约（mv-model-sql：非空 tables、行须满足列声明、**主键列组合在表内唯一**；KV 每条须为 JSON 对象；结构化层次须含合法 root；代码空间须含非空 modules、全局 id 唯一、bases/associations 端点须指向已声明的 classes[].id；接口模型须含非空 endpoints 且端点 id 唯一）。',
       );
     }
     return;
@@ -826,6 +823,10 @@ function save() {
 
 function closeWin() {
   emit('close');
+}
+
+function setCodespaceDraft(v: MvModelCodespacePayload) {
+  codespaceDraft.value = v;
 }
 </script>
 
@@ -1247,14 +1248,13 @@ function closeWin() {
           <textarea v-model="structJsonText" class="payload-ta" spellcheck="false" rows="22" aria-label="mv-model-struct JSON" />
         </template>
 
-        <template v-else-if="block.kind === 'mv-model-codespace'">
-          <h3 class="model-section-title">代码空间模型画布 · 仓库 / 工作区示意</h3>
+        <template v-else-if="block.kind === 'mv-model-codespace' && codespaceDraft">
+          <h3 class="model-section-title">代码空间模型画布 · 树形编辑</h3>
           <p class="canvas-hint canvas-hint--compact">
-            <strong>软件结构示意</strong>：块级 <code>id</code> / <code>title</code>、可选 <code>workspaceRoot</code>，以及非空
-            <code>modules[]</code>；每条模块须含非空 <code>id</code>、<code>name</code>，可选 <code>path</code> / <code>role</code> /
-            <code>notes</code>。模块 <code>id</code> 在块内须唯一。非真实文件系统树，仅用于文档化分层与边界。
+            <strong>软件结构示意</strong>：左侧树选择 <strong>块属性 / 模块 / 命名空间 / 类 / 变量 / 函数 / 宏 / 关联</strong>，右侧编辑字段；保存时由解析器校验（含递归
+            <code>namespaces</code>、Classifier、全局 <code>id</code> 唯一等）。非真实文件系统。展开底部「高级：原始 JSON」可整段粘贴后「应用到树」。
           </p>
-          <textarea v-model="codespaceJsonText" class="payload-ta" spellcheck="false" rows="22" aria-label="mv-model-codespace JSON" />
+          <CodespaceCanvasEditor :model-value="codespaceDraft" @update:model-value="setCodespaceDraft" />
         </template>
 
         <template v-else-if="block.kind === 'mv-model-interface'">
