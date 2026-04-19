@@ -292,6 +292,256 @@ function validateMvModelStruct(
   return { ok: true, data: obj as unknown as MvModelStructPayload };
 }
 
+const CODESPACE_CLASSIFIER_KINDS = new Set(['class', 'interface', 'struct']);
+const CODESPACE_BASE_RELATIONS = new Set(['generalization', 'realization']);
+const CODESPACE_MEMBER_KINDS = new Set(['field', 'method', 'enumLiteral']);
+const CODESPACE_ASSOCIATION_KINDS = new Set([
+  'association',
+  'aggregation',
+  'composition',
+  'dependency',
+]);
+
+interface CodespaceValCtx {
+  seenIds: Set<string>;
+  classifierIds: Set<string>;
+  pendingBases: Array<{ targetId: string; path: string }>;
+  pendingAssocs: Array<{ from: string; to: string; path: string }>;
+}
+
+function codespaceAddUniqueId(
+  ctx: CodespaceValCtx,
+  id: unknown,
+  path: string,
+): { ok: true; id: string } | { ok: false; message: string } {
+  if (typeof id !== 'string' || !id.trim()) {
+    return { ok: false, message: `${path}: id must be a non-empty string` };
+  }
+  const t = id.trim();
+  if (ctx.seenIds.has(t)) {
+    return { ok: false, message: `mv-model-codespace: duplicate id "${t}" (${path})` };
+  }
+  ctx.seenIds.add(t);
+  return { ok: true, id: t };
+}
+
+function validateCodespaceOptionalString(
+  o: Record<string, unknown>,
+  path: string,
+  keys: readonly string[],
+): { ok: true } | { ok: false; message: string } {
+  for (const key of keys) {
+    if (key in o && o[key] !== undefined && typeof o[key] !== 'string') {
+      return { ok: false, message: `${path}.${key} must be a string when present` };
+    }
+  }
+  return { ok: true };
+}
+
+function validateCodespaceNamespaceNode(
+  node: unknown,
+  path: string,
+  ctx: CodespaceValCtx,
+): { ok: true } | { ok: false; message: string } {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) {
+    return { ok: false, message: `${path} must be an object` };
+  }
+  const n = node as Record<string, unknown>;
+  const idRes = codespaceAddUniqueId(ctx, n.id, `${path}.id`);
+  if (!idRes.ok) return idRes;
+  if (typeof n.name !== 'string' || !n.name.trim()) {
+    return { ok: false, message: `${path}.name must be a non-empty string` };
+  }
+  const os = validateCodespaceOptionalString(n, path, ['qualifiedName', 'notes']);
+  if (!os.ok) return os;
+
+  if ('namespaces' in n && n.namespaces !== undefined) {
+    if (!Array.isArray(n.namespaces)) {
+      return { ok: false, message: `${path}.namespaces must be an array when present` };
+    }
+    for (let i = 0; i < n.namespaces.length; i++) {
+      const vn = validateCodespaceNamespaceNode(n.namespaces[i], `${path}.namespaces[${i}]`, ctx);
+      if (!vn.ok) return vn;
+    }
+  }
+
+  if ('classes' in n && n.classes !== undefined) {
+    if (!Array.isArray(n.classes)) {
+      return { ok: false, message: `${path}.classes must be an array when present` };
+    }
+    for (let i = 0; i < n.classes.length; i++) {
+      const cp = `${path}.classes[${i}]`;
+      const c = n.classes[i];
+      if (!c || typeof c !== 'object' || Array.isArray(c)) {
+        return { ok: false, message: `${cp} must be an object` };
+      }
+      const co = c as Record<string, unknown>;
+      const cid = codespaceAddUniqueId(ctx, co.id, `${cp}.id`);
+      if (!cid.ok) return cid;
+      ctx.classifierIds.add(cid.id);
+      if (typeof co.name !== 'string' || !co.name.trim()) {
+        return { ok: false, message: `${cp}.name must be a non-empty string` };
+      }
+      if ('kind' in co && co.kind !== undefined) {
+        if (typeof co.kind !== 'string' || !CODESPACE_CLASSIFIER_KINDS.has(co.kind)) {
+          return {
+            ok: false,
+            message: `${cp}.kind must be one of: class, interface, struct`,
+          };
+        }
+      }
+      const cs = validateCodespaceOptionalString(co, cp, ['qualifiedName', 'notes', 'stereotype']);
+      if (!cs.ok) return cs;
+      if ('abstract' in co && co.abstract !== undefined && typeof co.abstract !== 'boolean') {
+        return { ok: false, message: `${cp}.abstract must be a boolean when present` };
+      }
+      if ('templateParams' in co && co.templateParams !== undefined) {
+        if (!Array.isArray(co.templateParams)) {
+          return { ok: false, message: `${cp}.templateParams must be an array when present` };
+        }
+        for (let t = 0; t < co.templateParams.length; t++) {
+          if (typeof co.templateParams[t] !== 'string') {
+            return { ok: false, message: `${cp}.templateParams[${t}] must be a string` };
+          }
+        }
+      }
+      if ('bases' in co && co.bases !== undefined) {
+        if (!Array.isArray(co.bases)) {
+          return { ok: false, message: `${cp}.bases must be an array when present` };
+        }
+        for (let b = 0; b < co.bases.length; b++) {
+          const bp = `${cp}.bases[${b}]`;
+          const base = co.bases[b];
+          if (!base || typeof base !== 'object' || Array.isArray(base)) {
+            return { ok: false, message: `${bp} must be an object` };
+          }
+          const bo = base as Record<string, unknown>;
+          if (typeof bo.targetId !== 'string' || !bo.targetId.trim()) {
+            return { ok: false, message: `${bp}.targetId must be a non-empty string` };
+          }
+          if (typeof bo.relation !== 'string' || !CODESPACE_BASE_RELATIONS.has(bo.relation)) {
+            return {
+              ok: false,
+              message: `${bp}.relation must be one of: generalization, realization`,
+            };
+          }
+          ctx.pendingBases.push({ targetId: bo.targetId.trim(), path: bp });
+        }
+      }
+      if ('members' in co && co.members !== undefined) {
+        if (!Array.isArray(co.members)) {
+          return { ok: false, message: `${cp}.members must be an array when present` };
+        }
+        for (let m = 0; m < co.members.length; m++) {
+          const mp = `${cp}.members[${m}]`;
+          const mem = co.members[m];
+          if (!mem || typeof mem !== 'object' || Array.isArray(mem)) {
+            return { ok: false, message: `${mp} must be an object` };
+          }
+          const mo = mem as Record<string, unknown>;
+          if (typeof mo.name !== 'string' || !mo.name.trim()) {
+            return { ok: false, message: `${mp}.name must be a non-empty string` };
+          }
+          if (typeof mo.kind !== 'string' || !CODESPACE_MEMBER_KINDS.has(mo.kind)) {
+            return {
+              ok: false,
+              message: `${mp}.kind must be one of: field, method, enumLiteral`,
+            };
+          }
+          const ms = validateCodespaceOptionalString(mo, mp, ['visibility', 'type', 'signature', 'notes']);
+          if (!ms.ok) return ms;
+          if ('static' in mo && mo.static !== undefined && typeof mo.static !== 'boolean') {
+            return { ok: false, message: `${mp}.static must be a boolean when present` };
+          }
+          if ('virtual' in mo && mo.virtual !== undefined && typeof mo.virtual !== 'boolean') {
+            return { ok: false, message: `${mp}.virtual must be a boolean when present` };
+          }
+        }
+      }
+    }
+  }
+
+  const idArrayKeys = ['variables', 'functions', 'macros'] as const;
+  for (const key of idArrayKeys) {
+    if (!(key in n) || n[key] === undefined) continue;
+    if (!Array.isArray(n[key])) {
+      return { ok: false, message: `${path}.${key} must be an array when present` };
+    }
+    const arr = n[key] as unknown[];
+    for (let i = 0; i < arr.length; i++) {
+      const itemp = `${path}.${key}[${i}]`;
+      const item = arr[i];
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return { ok: false, message: `${itemp} must be an object` };
+      }
+      const io = item as Record<string, unknown>;
+      const ir = codespaceAddUniqueId(ctx, io.id, `${itemp}.id`);
+      if (!ir.ok) return ir;
+      if (typeof io.name !== 'string' || !io.name.trim()) {
+        return { ok: false, message: `${itemp}.name must be a non-empty string` };
+      }
+      const extra: string[] =
+        key === 'macros'
+          ? ['params', 'definitionSnippet', 'notes']
+          : key === 'variables'
+            ? ['type', 'notes']
+            : ['signature', 'notes'];
+      const es = validateCodespaceOptionalString(io, itemp, extra);
+      if (!es.ok) return es;
+    }
+  }
+
+  if ('associations' in n && n.associations !== undefined) {
+    if (!Array.isArray(n.associations)) {
+      return { ok: false, message: `${path}.associations must be an array when present` };
+    }
+    for (let i = 0; i < n.associations.length; i++) {
+      const ap = `${path}.associations[${i}]`;
+      const a = n.associations[i];
+      if (!a || typeof a !== 'object' || Array.isArray(a)) {
+        return { ok: false, message: `${ap} must be an object` };
+      }
+      const ao = a as Record<string, unknown>;
+      const aid = codespaceAddUniqueId(ctx, ao.id, `${ap}.id`);
+      if (!aid.ok) return aid;
+      if (typeof ao.kind !== 'string' || !CODESPACE_ASSOCIATION_KINDS.has(ao.kind)) {
+        return {
+          ok: false,
+          message: `${ap}.kind must be one of: association, aggregation, composition, dependency`,
+        };
+      }
+      if (typeof ao.fromClassifierId !== 'string' || !ao.fromClassifierId.trim()) {
+        return { ok: false, message: `${ap}.fromClassifierId must be a non-empty string` };
+      }
+      if (typeof ao.toClassifierId !== 'string' || !ao.toClassifierId.trim()) {
+        return { ok: false, message: `${ap}.toClassifierId must be a non-empty string` };
+      }
+      ctx.pendingAssocs.push({
+        from: ao.fromClassifierId.trim(),
+        to: ao.toClassifierId.trim(),
+        path: ap,
+      });
+      const as0 = validateCodespaceOptionalString(ao, ap, ['notes']);
+      if (!as0.ok) return as0;
+      for (const endKey of ['fromEnd', 'toEnd'] as const) {
+        if (!(endKey in ao) || ao[endKey] === undefined) continue;
+        const end = ao[endKey];
+        if (!end || typeof end !== 'object' || Array.isArray(end)) {
+          return { ok: false, message: `${ap}.${endKey} must be an object when present` };
+        }
+        const eo = end as Record<string, unknown>;
+        const es2 = validateCodespaceOptionalString(eo, `${ap}.${endKey}`, ['role', 'multiplicity']);
+        if (!es2.ok) return es2;
+        if ('navigable' in eo && eo.navigable !== undefined && typeof eo.navigable !== 'boolean') {
+          return { ok: false, message: `${ap}.${endKey}.navigable must be a boolean when present` };
+        }
+      }
+    }
+  }
+
+  return { ok: true };
+}
+
 function validateMvModelCodespace(
   obj: Record<string, unknown>,
 ): { ok: true; data: MvModelCodespacePayload } | { ok: false; message: string } {
@@ -312,7 +562,12 @@ function validateMvModelCodespace(
   if (!Array.isArray(mods) || mods.length === 0) {
     return { ok: false, message: 'mv-model-codespace: modules must be a non-empty array' };
   }
-  const seen = new Set<string>();
+  const ctx: CodespaceValCtx = {
+    seenIds: new Set<string>(),
+    classifierIds: new Set<string>(),
+    pendingBases: [],
+    pendingAssocs: [],
+  };
   for (let i = 0; i < mods.length; i++) {
     const m = mods[i];
     const path = `mv-model-codespace.modules[${i}]`;
@@ -320,20 +575,50 @@ function validateMvModelCodespace(
       return { ok: false, message: `${path} must be an object` };
     }
     const o = m as Record<string, unknown>;
-    if (typeof o.id !== 'string' || !o.id.trim()) {
-      return { ok: false, message: `${path}.id must be a non-empty string` };
-    }
+    const mid = codespaceAddUniqueId(ctx, o.id, `${path}.id`);
+    if (!mid.ok) return mid;
     if (typeof o.name !== 'string' || !o.name.trim()) {
       return { ok: false, message: `${path}.name must be a non-empty string` };
     }
-    if (seen.has(o.id)) {
-      return { ok: false, message: `mv-model-codespace: duplicate module id "${o.id}"` };
-    }
-    seen.add(o.id);
     for (const key of ['path', 'role', 'notes'] as const) {
       if (key in o && o[key] !== undefined && typeof o[key] !== 'string') {
         return { ok: false, message: `${path}.${key} must be a string when present` };
       }
+    }
+    if ('namespaces' in o && o.namespaces !== undefined) {
+      if (!Array.isArray(o.namespaces)) {
+        return { ok: false, message: `${path}.namespaces must be an array when present` };
+      }
+      for (let j = 0; j < o.namespaces.length; j++) {
+        const vn = validateCodespaceNamespaceNode(
+          o.namespaces[j],
+          `${path}.namespaces[${j}]`,
+          ctx,
+        );
+        if (!vn.ok) return vn;
+      }
+    }
+  }
+  for (const pb of ctx.pendingBases) {
+    if (!ctx.classifierIds.has(pb.targetId)) {
+      return {
+        ok: false,
+        message: `${pb.path}: targetId "${pb.targetId}" is not a declared classes[].id in this codespace block`,
+      };
+    }
+  }
+  for (const pa of ctx.pendingAssocs) {
+    if (!ctx.classifierIds.has(pa.from)) {
+      return {
+        ok: false,
+        message: `${pa.path}: fromClassifierId "${pa.from}" is not a declared classes[].id in this codespace block`,
+      };
+    }
+    if (!ctx.classifierIds.has(pa.to)) {
+      return {
+        ok: false,
+        message: `${pa.path}: toClassifierId "${pa.to}" is not a declared classes[].id in this codespace block`,
+      };
     }
   }
   return { ok: true, data: obj as unknown as MvModelCodespacePayload };

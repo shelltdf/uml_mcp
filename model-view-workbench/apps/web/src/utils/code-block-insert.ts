@@ -89,6 +89,22 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
           path: 'packages/core',
           role: 'lib',
           notes: '解析与类型（示意）',
+          namespaces: [
+            {
+              id: 'ns-core-root',
+              name: 'Core',
+              classes: [
+                {
+                  id: 'cls-service',
+                  name: 'Service',
+                  kind: 'class',
+                  members: [
+                    { name: 'run', kind: 'method', visibility: 'public', virtual: true, signature: 'void run()' },
+                  ],
+                },
+              ],
+            },
+          ],
         },
         {
           id: 'web',

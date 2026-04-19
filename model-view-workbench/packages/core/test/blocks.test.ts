@@ -313,7 +313,140 @@ describe('parseMarkdownBlocks', () => {
       '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.blocks).toHaveLength(0);
-    expect(r.errors.some((e) => e.message.includes('duplicate module id'))).toBe(true);
+    expect(r.errors.some((e) => e.message.includes('duplicate id'))).toBe(true);
+  });
+
+  it('parses mv-model-codespace with namespaces classifiers and associations', () => {
+    const payload = {
+      id: 'cs-uml',
+      title: 'with-ns',
+      modules: [
+        {
+          id: 'mod-core',
+          name: 'core',
+          namespaces: [
+            {
+              id: 'ns-root',
+              name: 'root',
+              classes: [
+                {
+                  id: 'cls-base',
+                  name: 'Base',
+                  kind: 'class',
+                  abstract: true,
+                  members: [{ name: 'x', kind: 'field', type: 'int' }],
+                },
+                {
+                  id: 'cls-derived',
+                  name: 'Derived',
+                  bases: [{ targetId: 'cls-base', relation: 'generalization' }],
+                },
+              ],
+              associations: [
+                {
+                  id: 'assoc-1',
+                  kind: 'association',
+                  fromClassifierId: 'cls-derived',
+                  toClassifierId: 'cls-base',
+                  fromEnd: { role: 'd', multiplicity: '1', navigable: true },
+                },
+              ],
+              macros: [{ id: 'mac-max', name: 'MAX', params: 'a,b', definitionSnippet: '((a)>(b)?(a):(b))' }],
+              variables: [{ id: 'var-pi', name: 'pi', type: 'double' }],
+              functions: [{ id: 'fn-main', name: 'main', signature: 'int main()' }],
+            },
+          ],
+        },
+      ],
+    };
+    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks[0].kind).toBe('mv-model-codespace');
+    expect(r.blocks[0].payload).toMatchObject(payload);
+  });
+
+  it('rejects mv-model-codespace duplicate id between module and namespace', () => {
+    const md =
+      '\`\`\`mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'x',
+        modules: [
+          {
+            id: 'dup',
+            name: 'M',
+            namespaces: [{ id: 'dup', name: 'N' }],
+          },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('duplicate id'))).toBe(true);
+  });
+
+  it('rejects mv-model-codespace bases targetId not a classifier', () => {
+    const md =
+      '\`\`\`mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'x',
+        modules: [
+          {
+            id: 'm',
+            name: 'M',
+            namespaces: [
+              {
+                id: 'ns',
+                name: 'ns',
+                classes: [
+                  { id: 'c1', name: 'C1', bases: [{ targetId: 'missing', relation: 'generalization' }] },
+                ],
+              },
+            ],
+          },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('targetId') && e.message.includes('missing'))).toBe(
+      true,
+    );
+  });
+
+  it('rejects mv-model-codespace association endpoint not a classifier', () => {
+    const md =
+      '\`\`\`mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'x',
+        modules: [
+          {
+            id: 'm',
+            name: 'M',
+            namespaces: [
+              {
+                id: 'ns',
+                name: 'ns',
+                classes: [{ id: 'c1', name: 'C1' }],
+                associations: [
+                  {
+                    id: 'a1',
+                    kind: 'dependency',
+                    fromClassifierId: 'c1',
+                    toClassifierId: 'ghost',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('toClassifierId') && e.message.includes('ghost'))).toBe(
+      true,
+    );
   });
 
   it('parses mv-model-interface', () => {

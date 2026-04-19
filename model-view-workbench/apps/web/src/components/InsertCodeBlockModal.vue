@@ -76,7 +76,7 @@ function descFor(kind: InsertCodeBlockKind): string {
     return '插入 ```mv-model-struct``` 围栏：根下递归「组 / 数据集」（类比 HDF5）；在结构化层次画布中编辑 JSON。';
   }
   if (kind === 'mv-model-codespace') {
-    return '插入 ```mv-model-codespace``` 围栏：工作区根与 **modules[]**（仓库/包划分示意，非真实文件树）；在代码空间模型画布中编辑 JSON。';
+    return '插入 ```mv-model-codespace``` 围栏：工作区根与 **modules[]**（可选递归 **namespaces**、Classifier、bases、associations、变量/函数/宏，UML 风格示意）；在代码空间模型画布中编辑 JSON。';
   }
   if (kind === 'mv-model-interface') {
     return '插入 ```mv-model-interface``` 围栏：**endpoints[]** 描述接口/端点（方法、路径、说明，文档示意）；在接口图模型画布中编辑 JSON。';

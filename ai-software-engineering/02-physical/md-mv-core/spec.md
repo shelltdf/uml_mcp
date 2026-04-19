@@ -46,14 +46,88 @@
 
 ## mv-model-codespace（软件模型 / 代码空间示意）
 
-语义：**一个** `` ```mv-model-codespace `` 围栏表示 **仓库或工作区结构的文档化示意**（逻辑模块 / 包列表），**不是**真实文件系统或运行时代码树。`id` 在文件内与其它围栏块唯一。
+语义：**一个** `` ```mv-model-codespace `` 围栏表示 **仓库或工作区结构的文档化示意**（逻辑模块、可选的嵌套命名空间与 UML 风格类型/关联），**不是**真实文件系统、AST 或运行时代码树。`id` 在文件内与其它围栏块唯一。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | string | 文件内唯一 |
 | title | string? | 可选标题 |
 | workspaceRoot | string? | 可选工作区根路径片段（示意） |
-| modules | array | **至少一项**。每项须为对象：必填非空 `id`（**块内唯一**）、`name`（string）；可选 `path`、`role`、`notes`（均为 string） |
+| modules | array | **至少一项**。每项为 **模块** 对象（见下表 `modules[]`） |
+
+### `modules[]` 模块对象
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | **本围栏 JSON 内全局唯一**（与下文所有命名空间、类、变量、函数、宏、关联的 `id` 不得重复） |
+| name | string | 必填非空 |
+| path | string? | 仓库内相对路径或逻辑位置（示意） |
+| role | string? | 如 lib / app / tool |
+| notes | string? | 说明 |
+| namespaces | array? | 可选；**命名空间树根列表**，每项为 `MvCodespaceNamespaceNode` 同形对象（可递归 `namespaces`） |
+
+### 全局 `id` 唯一与引用规则（v1）
+
+- 下列实体的 `id` 在同一围栏对象内 **全局唯一**：各 `modules[].id`、各命名空间节点、各 `classes[]`、各 `variables[]` / `functions[]` / `macros[]`、各 `associations[]`。
+- **`classes[].id`（Classifier）**：`bases[].targetId`、`associations[].fromClassifierId` / `toClassifierId` **必须**指向本围栏内某条 **`classes[].id`**（可跨模块下的不同命名空间，但须在同一 JSON 块内已声明）。**不**使用 `qualifiedName` 做解析。
+- **宏**：`macros[]` 为文档化预处理宏示意，**不**执行。
+
+### UML 概念映射（文档化类比，非 OMG 规范替代）
+
+| JSON / 语义 | UML 类比 |
+|-------------|----------|
+| `modules[]` | 逻辑子系统 / 分包边界（不必 1:1 Package） |
+| `namespaces` 递归树 | 嵌套 **Package** / **Namespace** |
+| `classes[]` + `kind` | **Classifier**（`class` / `interface` / `struct` 为文档化子集） |
+| `bases[]` + `generalization` | **Generalization**（继承） |
+| `bases[]` + `realization` | **InterfaceRealization**（实现） |
+| `associations[]` + `association` / `aggregation` / `composition` / `dependency` | **Association** / **Shared aggregation** / **Composition** / **Dependency**（仅示意，具体严格语义以团队约定为准） |
+| `members[]` | 属性 / 操作 / 枚举字面量等 **StructuralFeature** 的轻量列表 |
+| `variables[]` / `functions[]` | 命名空间级 **属性** / **行为** 的示意（非类成员时） |
+
+### `namespaces[]` 节点（`MvCodespaceNamespaceNode`）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | 必填；全局唯一 |
+| name | string | 必填非空 |
+| qualifiedName | string? | 人类可读全名，不参与引用解析 |
+| notes | string? | 说明 |
+| namespaces | array? | 子命名空间（同形递归） |
+| classes | array? | **Classifier** 列表（见下） |
+| variables | array? | 每项：`id`、`name` 必填；可选 `type`、`notes` |
+| functions | array? | 每项：`id`、`name` 必填；可选 `signature`、`notes` |
+| macros | array? | 每项：`id`、`name` 必填；可选 `params`、`definitionSnippet`、`notes` |
+| associations | array? | **类级关联**（见下） |
+
+### `classes[]`（Classifier）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | 必填；全局唯一；可被 `bases` / `associations` 引用 |
+| name | string | 必填非空 |
+| kind | string? | 可选；缺省视为 `class`；允许值：`class`、`interface`、`struct` |
+| qualifiedName | string? | 可选 |
+| notes | string? | 可选 |
+| abstract | boolean? | 可选 |
+| stereotype | string? | 可选（如文档化版型名） |
+| templateParams | string[]? | 可选；模板形参名列表（示意） |
+| bases | array? | 每项：`targetId`（string，指向本块内 `classes[].id`）、`relation`：`generalization` \| `realization` |
+| members | array? | 每项：`name`（必填）、`kind`：`field` \| `method` \| `enumLiteral`；可选 `static`、`visibility`（string）、`virtual`、`type`、`signature`、`notes` |
+
+### `associations[]`
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | 必填；全局唯一 |
+| kind | string | 必填；`association` \| `aggregation` \| `composition` \| `dependency` |
+| fromClassifierId | string | 必填；指向 `classes[].id` |
+| toClassifierId | string | 必填；指向 `classes[].id` |
+| fromEnd | object? | 可选：`role`、`multiplicity`（string）、`navigable`（boolean） |
+| toEnd | object? | 同上 |
+| notes | string? | 可选 |
+
+**向后兼容**：不提供 `namespaces` 时，校验行为与仅扁平 `modules[]` 的历史版本一致。
 
 ## mv-model-interface（接口模型 / 接口图示意）
 

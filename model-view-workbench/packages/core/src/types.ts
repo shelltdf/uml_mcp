@@ -81,6 +81,114 @@ export interface MvModelStructPayload {
   root: MvStructGroup;
 }
 
+/** 代码空间内 Classifier 种类（UML Classifier 的文档化子集） */
+export type MvCodespaceClassifierKind = 'class' | 'interface' | 'struct';
+
+/** 泛化 / 实现（对应 UML Generalization / InterfaceRealization） */
+export type MvCodespaceBaseRelation = 'generalization' | 'realization';
+
+/** 成员行种类（示意，非 AST） */
+export type MvCodespaceMemberKind = 'field' | 'method' | 'enumLiteral';
+
+/** 类间关系种类（对应 UML Association / Shared aggregation / Composition / Dependency） */
+export type MvCodespaceAssociationKind =
+  | 'association'
+  | 'aggregation'
+  | 'composition'
+  | 'dependency';
+
+/** 继承或实现边：`targetId` 须指向同围栏内另一条 `classes[].id` */
+export interface MvCodespaceClassifierBase {
+  targetId: string;
+  relation: MvCodespaceBaseRelation;
+}
+
+/** Classifier 成员（字段 / 方法 / 枚举字面量） */
+export interface MvCodespaceMember {
+  name: string;
+  kind: MvCodespaceMemberKind;
+  static?: boolean;
+  /** 如 public / private / protected / package */
+  visibility?: string;
+  virtual?: boolean;
+  type?: string;
+  signature?: string;
+  notes?: string;
+}
+
+/** 命名空间内类型（class / interface / struct 示意） */
+export interface MvCodespaceClassifier {
+  id: string;
+  name: string;
+  kind?: MvCodespaceClassifierKind;
+  /** 人类可读全名，不参与引用解析 */
+  qualifiedName?: string;
+  notes?: string;
+  abstract?: boolean;
+  stereotype?: string;
+  /** 模板形参名列表（示意，如 `["T","U"]`） */
+  templateParams?: string[];
+  bases?: MvCodespaceClassifierBase[];
+  members?: MvCodespaceMember[];
+}
+
+export interface MvCodespaceVariable {
+  id: string;
+  name: string;
+  type?: string;
+  notes?: string;
+}
+
+export interface MvCodespaceFunction {
+  id: string;
+  name: string;
+  signature?: string;
+  notes?: string;
+}
+
+/** 文档化宏，不执行预处理器 */
+export interface MvCodespaceMacro {
+  id: string;
+  name: string;
+  params?: string;
+  definitionSnippet?: string;
+  notes?: string;
+}
+
+export interface MvCodespaceAssociationEnd {
+  role?: string;
+  multiplicity?: string;
+  navigable?: boolean;
+}
+
+/** 类级关联；端点须引用同围栏内 `classes[].id`（v1 不跨 module） */
+export interface MvCodespaceAssociation {
+  id: string;
+  kind: MvCodespaceAssociationKind;
+  fromClassifierId: string;
+  toClassifierId: string;
+  fromEnd?: MvCodespaceAssociationEnd;
+  toEnd?: MvCodespaceAssociationEnd;
+  notes?: string;
+}
+
+/**
+ * 递归命名空间（≈ 嵌套 UML Package / Namespace）。
+ * 同一块内 `id` 与模块 `id`、其它命名空间、类、变量、函数、宏、关联的 `id` **全局不得重复**。
+ */
+export interface MvCodespaceNamespaceNode {
+  id: string;
+  name: string;
+  qualifiedName?: string;
+  notes?: string;
+  namespaces?: MvCodespaceNamespaceNode[];
+  classes?: MvCodespaceClassifier[];
+  variables?: MvCodespaceVariable[];
+  functions?: MvCodespaceFunction[];
+  macros?: MvCodespaceMacro[];
+  associations?: MvCodespaceAssociation[];
+}
+
 /** ``mv-model-codespace`` 内描述仓库/工作区划分的逻辑模块条目（示意，非运行时代码树）。 */
 export interface MvModelCodespaceModule {
   id: string;
@@ -90,6 +198,8 @@ export interface MvModelCodespaceModule {
   /** 如 lib / app / tool 等 */
   role?: string;
   notes?: string;
+  /** 可选：模块下命名空间树（UML 风格代码结构示意） */
+  namespaces?: MvCodespaceNamespaceNode[];
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   parseMarkdownBlocks,
   replaceBlockInnerById,
   type MvFenceKind,
+  type MvCodespaceNamespaceNode,
   type MvMapPayload,
   type MvModelCodespacePayload,
   type MvModelInterfacePayload,
@@ -479,6 +480,25 @@ const blocks = computed(() => {
   return r.blocks;
 });
 
+function countCodespaceNamespaceNodes(nodes: MvCodespaceNamespaceNode[] | undefined): number {
+  if (!nodes?.length) return 0;
+  let total = nodes.length;
+  for (const ns of nodes) {
+    total += countCodespaceNamespaceNodes(ns.namespaces);
+  }
+  return total;
+}
+
+function countCodespaceClassifiersInNamespaces(nodes: MvCodespaceNamespaceNode[] | undefined): number {
+  if (!nodes?.length) return 0;
+  let c = 0;
+  for (const ns of nodes) {
+    c += ns.classes?.length ?? 0;
+    c += countCodespaceClassifiersInNamespaces(ns.namespaces);
+  }
+  return c;
+}
+
 /** 索引行 / 子标签：围栏语言（mv-model-sql 等）之外的子类型（如 mv-view 的 kind、表标题） */
 function fenceBlockSubtypeLabel(b: ParsedFenceBlock): string {
   if (b.kind === 'mv-model-sql') {
@@ -501,6 +521,15 @@ function fenceBlockSubtypeLabel(b: ParsedFenceBlock): string {
     const p = b.payload as MvModelCodespacePayload;
     const t = p.title?.trim();
     const n = p.modules?.length ?? 0;
+    let ns = 0;
+    let cls = 0;
+    for (const m of p.modules ?? []) {
+      ns += countCodespaceNamespaceNodes(m.namespaces);
+      cls += countCodespaceClassifiersInNamespaces(m.namespaces);
+    }
+    if (ns > 0 || cls > 0) {
+      return t || `Codespace · ${n} 模块 · ${ns} NS · ${cls} 类`;
+    }
     return t || `Codespace · ${n} 模块`;
   }
   if (b.kind === 'mv-model-interface') {
@@ -596,6 +625,14 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
     if (p.workspaceRoot) lines.push({ label: 'workspaceRoot', value: p.workspaceRoot });
     lines.push({ label: '模块数', value: String(p.modules.length) });
     lines.push({ label: '模块 id', value: p.modules.map((m) => m.id).join(', ') });
+    let ns = 0;
+    let cls = 0;
+    for (const m of p.modules) {
+      ns += countCodespaceNamespaceNodes(m.namespaces);
+      cls += countCodespaceClassifiersInNamespaces(m.namespaces);
+    }
+    if (ns > 0) lines.push({ label: '命名空间节点数', value: String(ns) });
+    if (cls > 0) lines.push({ label: 'Classifier 数', value: String(cls) });
   } else if (b.kind === 'mv-model-interface') {
     lines.push({ label: '代码块画布', value: MV_MODEL_INTERFACE_CANVAS_TITLE });
     const p = b.payload as MvModelInterfacePayload;
@@ -644,7 +681,7 @@ const selectedBlockCanvasHint = computed(() => {
     return 'mv-model-struct：根下递归组与数据集（类比 HDF5）；在结构化层次画布中编辑整段 JSON。';
   }
   if (b.kind === 'mv-model-codespace') {
-    return 'mv-model-codespace：工作区根与 modules[]（仓库/包划分示意）；在代码空间模型画布中编辑 JSON。';
+    return 'mv-model-codespace：工作区根与 modules[]（可选递归 namespaces、Classifier、bases、associations、变量/函数/宏）；在代码空间模型画布中编辑 JSON。';
   }
   if (b.kind === 'mv-model-interface') {
     return 'mv-model-interface：endpoints[]（接口/端点示意）；在接口图模型画布中编辑 JSON。';
