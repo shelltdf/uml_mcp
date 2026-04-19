@@ -7,7 +7,8 @@ import {
   MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
   MV_VIEW_KIND_METADATA,
-  getMermaidViewKinds,
+  getMermaidNonUmlViewKinds,
+  MV_MERMAID_UML_INSERT_KINDS,
 } from '@mvwb/core';
 import type { InsertCodeBlockKind } from '../utils/code-block-insert';
 import DiagramTypeThumb from './DiagramTypeThumb.vue';
@@ -19,7 +20,8 @@ const emit = defineEmits<{
   (e: 'select', kind: InsertCodeBlockKind): void;
 }>();
 
-const mermaidInsertKinds = getMermaidViewKinds() as InsertCodeBlockKind[];
+const mermaidUmlKinds = [...MV_MERMAID_UML_INSERT_KINDS] as InsertCodeBlockKind[];
+const mermaidOtherKinds = getMermaidNonUmlViewKinds() as InsertCodeBlockKind[];
 
 /** 插入代码块弹窗分组（顺序即展示顺序） */
 const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
@@ -30,7 +32,8 @@ const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
   },
   { title: '接口模型（Model）', kinds: ['mv-model-interface'] },
   { title: '软件模型（Model）', kinds: ['mv-model-codespace'] },
-  { title: 'Mermaid 相关', kinds: mermaidInsertKinds },
+  { title: 'Mermaid UML', kinds: mermaidUmlKinds },
+  { title: 'Mermaid 其他', kinds: mermaidOtherKinds },
   {
     title: 'PlantUML相关',
     kinds: ['uml-class', 'uml-sequence', 'uml-activity', 'uml-diagram'],
@@ -128,7 +131,7 @@ function onKeydown(ev: KeyboardEvent) {
           <p class="icb-lead">
             Model 与 View 在 Markdown 中以<strong>围栏代码块</strong>落盘（围栏语言含 <code>mv-model-sql</code> / <code>mv-model-kv</code> /
             <code>mv-model-struct</code> / <code>mv-model-codespace</code> / <code>mv-model-interface</code> / <code>mv-view</code>）；块内正文可为
-            <strong>JSON</strong>、<strong>XML</strong> 或<strong>纯文本</strong>等，由对应类型解释。选择下方类型后，将在光标处插入一整段围栏；插入后可在左侧围栏索引选中块，并打开<strong>代码块画布</strong>做结构化或所见即所得编辑（须为「富文本」或「原始文本」模式）。
+            <strong>JSON</strong>、<strong>XML</strong> 或<strong>纯文本</strong>等，由对应类型解释。选择下方类型后，将在光标处插入一整段围栏；插入后可在左侧代码块大纲选中块，并打开<strong>代码块画布</strong>做结构化或所见即所得编辑（须为「富文本」或「原始文本」模式）。
           </p>
           <p class="icb-lead icb-lead--scheme">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>
         </header>

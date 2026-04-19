@@ -36,6 +36,8 @@ export {
   MV_MODEL_REFS_SCHEME_DOC,
   MV_PLANTUML_VIEW_KINDS,
   getMermaidViewKinds,
+  getMermaidNonUmlViewKinds,
+  MV_MERMAID_UML_INSERT_KINDS,
   isMermaidViewKind,
   isPlantUmlViewKind,
 } from './types.js';

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { parseMarkdownBlocks, replaceBlockInnerById, findMvModelSqlTable } from '../src/parse/blocks.js';
+import {
+  MV_MERMAID_UML_INSERT_KINDS,
+  getMermaidNonUmlViewKinds,
+  getMermaidViewKinds,
+} from '../src/types.js';
 
 const minimalSqlPayload = {
   id: 'sql1',
@@ -422,5 +427,15 @@ describe('parseMarkdownBlocks', () => {
     const r = parseMarkdownBlocks(out!);
     expect(r.errors).toEqual([]);
     expect((r.blocks[0].payload as { tables: { rows: unknown[] }[] }).tables[0].rows).toEqual([{ n: 2 }]);
+  });
+});
+
+describe('Mermaid insert UI kind partition', () => {
+  it('Mermaid UML + Mermaid 其他 无重复且并集为全部 mermaid-*', () => {
+    const all = [...getMermaidViewKinds()].sort();
+    const uml = [...MV_MERMAID_UML_INSERT_KINDS];
+    const other = [...getMermaidNonUmlViewKinds()];
+    expect(new Set([...uml, ...other]).size).toBe(uml.length + other.length);
+    expect([...uml, ...other].sort()).toEqual(all);
   });
 });

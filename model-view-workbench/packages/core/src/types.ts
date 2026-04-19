@@ -180,6 +180,28 @@ export function getMermaidViewKinds(): readonly MvViewKind[] {
   return MV_VIEW_KINDS.filter((k): k is MvViewKind => k.startsWith('mermaid-'));
 }
 
+/**
+ * 插入对话框 **「Mermaid UML」** 分组：与 **UML 图类**、**ER**、**需求图**、**C4**、**架构图（architecture-beta）**、**ZenUML 序列** 等**建模/架构**用途邻近的 Mermaid 图类（其余见 {@link getMermaidNonUmlViewKinds}）。
+ * **不含** `mermaid-block`：`block-beta` 为通用分块/阵列排版，**不是** OMG UML 标准图类，留在「Mermaid 其他」。
+ * 顺序与 `MV_VIEW_KINDS` 中首次出现顺序一致，便于与全量列表对照。
+ */
+export const MV_MERMAID_UML_INSERT_KINDS: readonly MvViewKind[] = [
+  'mermaid-class',
+  'mermaid-sequence',
+  'mermaid-state',
+  'mermaid-er',
+  'mermaid-c4',
+  'mermaid-architecture',
+  'mermaid-requirement',
+  'mermaid-zenuml',
+];
+
+/** `mermaid-*` 中不在 {@link MV_MERMAID_UML_INSERT_KINDS} 内的 kind，顺序同 `MV_VIEW_KINDS`。 */
+export function getMermaidNonUmlViewKinds(): readonly MvViewKind[] {
+  const uml = new Set<string>(MV_MERMAID_UML_INSERT_KINDS);
+  return MV_VIEW_KINDS.filter((k): k is MvViewKind => k.startsWith('mermaid-') && !uml.has(k));
+}
+
 /** 各视图 kind 对应独立「画布」的人类可读标题与说明（Workbench UI 与文档可共用） */
 export const MV_VIEW_KIND_METADATA: Record<
   MvViewKind,

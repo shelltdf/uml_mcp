@@ -28,6 +28,13 @@ import MdWysiwygEditor from './components/MdWysiwygEditor.vue';
 import BlockCanvasPage from './components/BlockCanvasPage.vue';
 import InsertCodeBlockModal from './components/InsertCodeBlockModal.vue';
 import { buildFenceMarkdownForInsert, type InsertCodeBlockKind } from './utils/code-block-insert';
+import {
+  exportMarkdownFile,
+  exportPng,
+  exportStandaloneHtml,
+  exportSvg,
+  stripMdExtension,
+} from './utils/export-document';
 
 const shell = computed(() => detectShell());
 const files = ref<Map<string, string>>(new Map());
@@ -184,6 +191,60 @@ function closeCurrentDocumentFromMenu() {
   closeMenus();
   const p = selectedPath.value;
   if (p) closeTab(p);
+}
+
+function exportMarkdownFromMenu() {
+  closeMenus();
+  const p = selectedPath.value;
+  if (!p) return;
+  const base = stripMdExtension(p);
+  exportMarkdownFile(base, currentContent.value);
+  logLine(`已导出：${base}.md`, 'info');
+}
+
+async function exportHtmlFromMenu() {
+  closeMenus();
+  const p = selectedPath.value;
+  if (!p) return;
+  const base = stripMdExtension(p);
+  try {
+    await exportStandaloneHtml(currentContent.value, base, base);
+    logLine(`已导出：${base}.html`, 'info');
+  } catch (e) {
+    const msg = String(e);
+    logLine(`导出 HTML 失败：${msg}`, 'error');
+    window.alert(`导出 HTML 失败：${msg}`);
+  }
+}
+
+async function exportSvgFromMenu() {
+  closeMenus();
+  const p = selectedPath.value;
+  if (!p) return;
+  const base = stripMdExtension(p);
+  try {
+    await exportSvg(currentContent.value, base);
+    logLine(`已导出：${base}.svg`, 'info');
+  } catch (e) {
+    const msg = String(e);
+    logLine(`导出 SVG 失败：${msg}`, 'error');
+    window.alert(`导出 SVG 失败：${msg}`);
+  }
+}
+
+async function exportPngFromMenu() {
+  closeMenus();
+  const p = selectedPath.value;
+  if (!p) return;
+  const base = stripMdExtension(p);
+  try {
+    await exportPng(currentContent.value, base);
+    logLine(`已导出：${base}.png`, 'info');
+  } catch (e) {
+    const msg = String(e);
+    logLine(`导出 PNG 失败：${msg}`, 'error');
+    window.alert(`导出 PNG 失败：${msg}`);
+  }
 }
 
 async function pickFromMenu() {
@@ -1460,6 +1521,55 @@ onUnmounted(() => {
             </li>
             <li class="menu-sep" role="separator" />
             <li role="none">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                :disabled="!selectedPath"
+                title="导出当前文档为 .md 副本（浏览器下载）— 无全局快捷键"
+                @click="exportMarkdownFromMenu"
+              >
+                导出 Markdown…
+              </button>
+            </li>
+            <li role="none">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                :disabled="!selectedPath"
+                title="导出独立 HTML（含 Vditor 样式外链）— 无全局快捷键"
+                @click="exportHtmlFromMenu"
+              >
+                导出 HTML…
+              </button>
+            </li>
+            <li role="none">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                :disabled="!selectedPath"
+                title="将预览渲染导出为 SVG — 无全局快捷键"
+                @click="exportSvgFromMenu"
+              >
+                导出 SVG…
+              </button>
+            </li>
+            <li role="none">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                :disabled="!selectedPath"
+                title="将预览渲染导出为 PNG — 无全局快捷键"
+                @click="exportPngFromMenu"
+              >
+                导出 PNG…
+              </button>
+            </li>
+            <li class="menu-sep" role="separator" />
+            <li role="none">
               <button type="button" class="menu-item" role="menuitem" :disabled="!selectedPath" @click="closeCurrentDocumentFromMenu">
                 关闭
               </button>
@@ -1487,7 +1597,7 @@ onUnmounted(() => {
             </li>
             <li class="menu-sep" role="separator" />
             <li class="menu-info" role="none">
-              文档标签在**中间编辑区**顶部切换；同一文档下打开「代码块画布」后在文档标签下方出现**文档 / 代码块**子标签。关闭标签用 ×。中间列**仅 Markdown**；**Model / View 围栏**索引在**左侧大纲 Dock**。其左右为大纲 Dock 与属性 Dock（各自标题栏可**折叠/展开**为窄条；视图菜单可整侧隐藏）。Markdown 支持<strong>预览 / 富文本 / 原始文本</strong>（右键切换）；插入代码块仅在富文本或原始文本下可用。
+              文档标签在**中间编辑区**顶部切换；同一文档下打开「代码块画布」后在文档标签下方出现**文档 / 代码块**子标签。关闭标签用 ×。中间列**仅 Markdown**；**代码块大纲**在**左侧大纲 Dock**。其左右为大纲 Dock 与属性 Dock（各自标题栏可**折叠/展开**为窄条；视图菜单可整侧隐藏）。Markdown 支持<strong>预览 / 富文本 / 原始文本</strong>（右键切换）；插入代码块仅在富文本或原始文本下可用。
             </li>
           </ul>
         </div>
@@ -1607,7 +1717,7 @@ onUnmounted(() => {
                 <p v-else class="dock-muted">（当前文档无 ATX 标题）</p>
               </section>
               <section class="dock-section">
-                <h3 class="dock-subh">Model / View 围栏</h3>
+                <h3 class="dock-subh">代码块大纲</h3>
                 <p class="dock-muted dock-hint dock-hint--tight">
                   中间列仅 Markdown；光标在围栏内时右侧属性会随动；亦可在此选中下列块，行末「代码块」打开代码块画布子标签。
                 </p>
@@ -1648,7 +1758,7 @@ onUnmounted(() => {
                   <li v-for="(ln, i) in dockSecondaryOutline.lines" :key="i" class="dock-outline-item">{{ ln }}</li>
                 </ul>
               </section>
-              <p v-else class="dock-muted dock-hint">在上方「Model / View 围栏」中选中块后，此处将显示该块相关结构（如 class 列表、表字段等）。</p>
+              <p v-else class="dock-muted dock-hint">在上方「代码块大纲」中选中块后，此处将显示该块相关结构（如 class 列表、表字段等）。</p>
             </div>
           </aside>
           <div class="editor-column">
@@ -1775,11 +1885,6 @@ onUnmounted(() => {
                 </button>
               </span>
             </h2>
-            <p class="md-pane-hint">
-              <strong>预览</strong>为只读排版；<strong>富文本</strong>为 Vditor 所见即所得；<strong>原始文本</strong>为 Markdown 源码。标题旁三钮或编辑区<strong>右键</strong>可切换模式；<strong>插入代码块</strong>仅在富文本或原始文本下可用。Model / View 以文档内<strong>围栏代码块</strong>（<code>mv-model-sql</code> /
-              <code>mv-model-kv</code> / <code>mv-model-struct</code> / <code>mv-model-codespace</code> / <code>mv-model-interface</code> / <code>mv-view</code>）存储，块内可为 JSON、XML 或纯文本等；左侧「Model / View 围栏」索引可选中块，在中间列打开<strong>代码块画布</strong>编辑。光标在某一围栏块<strong>内</strong>移动时，右侧<strong>属性</strong> Dock
-              会随当前块切换（仅富文本 / 原始文本）；在围栏外则为文档摘要。
-            </p>
             <ul v-if="parseErrors.length" class="errors md-parse-errors">
               <li v-for="(e, i) in parseErrors" :key="i">{{ e }}</li>
             </ul>
@@ -1903,13 +2008,12 @@ onUnmounted(() => {
                   <dt>解析警告</dt>
                   <dd>{{ parseErrors.length }}</dd>
                 </dl>
-                <p class="dock-muted">在左侧「Model / View 围栏」中选中块后，此处显示基本属性、操作按钮与可展开的完整 JSON。</p>
+                <p class="dock-muted">在左侧「代码块大纲」中选中块后，此处显示基本属性、操作按钮与可展开的完整 JSON。</p>
               </template>
             </div>
           </aside>
         </div>
       </template>
-      <p v-else class="empty">未打开文档：请使用菜单「文件」或工具栏打开/新建</p>
     </main>
     <footer v-if="!blockOnly" class="statusbar" role="status" title="点击查看完整日志" @click="onStatusClick">
       <span class="status-left" :title="statusLeftText">{{ statusLeftText }}</span>
@@ -2822,12 +2926,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-.md-pane-hint {
-  margin: 0 0 8px;
-  font-size: 0.72rem;
-  color: #64748b;
-  flex-shrink: 0;
 }
 .md-parse-errors {
   flex-shrink: 0;

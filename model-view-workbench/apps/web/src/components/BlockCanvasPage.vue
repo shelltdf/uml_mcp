@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch, withDefaults } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import {
   MV_MAP_CANVAS_TITLE,
   MV_MODEL_CODESPACE_CANVAS_TITLE,

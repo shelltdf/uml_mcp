@@ -17,8 +17,8 @@
 npm install
 npm test
 npm run build
-npm run dev:web          # 开发 http://localhost:5174
-npm run dev:electron     # 先 build web 再以 Electron 打开 dist
+npm run dev:web          # 先 build @mvwb/core 再 Vite 开发（避免改 core 源码后仍读旧 dist）
+npm run dev:electron     # 先 build core + web 再以 Electron 打开 dist
 python run_exe.py        # 同上：先 npm run build 再启动 Electron 套壳
 npm run build:vscode     # build + 复制 dist 到扩展 + tsc 编译扩展
 ```

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
+from pathlib import Path
 
 
 def npm_executable() -> str:
@@ -19,3 +21,12 @@ def npm_executable() -> str:
 
 def npm_cmd(*args: str) -> list[str]:
     return [npm_executable(), *args]
+
+
+def ensure_node_modules(project_root: Path) -> int:
+    """若尚未安装依赖则执行 npm install；成功返回 0。"""
+    if (project_root / "node_modules").is_dir():
+        return 0
+    print("未检测到 node_modules，正在执行 npm install …", flush=True)
+    r = subprocess.run(npm_cmd("install"), cwd=project_root)
+    return r.returncode
