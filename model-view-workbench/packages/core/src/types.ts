@@ -1,5 +1,12 @@
 /** Fence language tags supported by the workbench */
-export type MvFenceKind = 'mv-model-sql' | 'mv-model-kv' | 'mv-model-struct' | 'mv-view' | 'mv-map';
+export type MvFenceKind =
+  | 'mv-model-sql'
+  | 'mv-model-kv'
+  | 'mv-model-struct'
+  | 'mv-model-codespace'
+  | 'mv-model-interface'
+  | 'mv-view'
+  | 'mv-map';
 
 /** `` ```mv-model-sql `` 内单张表的列 schema（设计元数据 + 行数据键名）。列名 ``id`` 在业务上常作主键：Workbench 默认 ``primaryKey`` + 非可空，且解析器要求 **所有标记 ``primaryKey`` 的列在行间取值组合唯一**。 */
 export interface MvModelColumnDef {
@@ -72,6 +79,50 @@ export interface MvModelStructPayload {
   id: string;
   title?: string;
   root: MvStructGroup;
+}
+
+/** ``mv-model-codespace`` 内描述仓库/工作区划分的逻辑模块条目（示意，非运行时代码树）。 */
+export interface MvModelCodespaceModule {
+  id: string;
+  name: string;
+  /** 仓库内相对路径或逻辑位置 */
+  path?: string;
+  /** 如 lib / app / tool 等 */
+  role?: string;
+  notes?: string;
+}
+
+/**
+ * 一个 `` ```mv-model-codespace `` 围栏 = **软件模型 / 代码空间示意**：工作区根与模块列表（JSON）；用于文档化 monorepo 或分层边界，不等同于真实文件系统。
+ */
+export interface MvModelCodespacePayload {
+  id: string;
+  title?: string;
+  /** 工作区或 monorepo 根路径片段（示意） */
+  workspaceRoot?: string;
+  /** 至少一条模块；`id` 在块内须唯一 */
+  modules: MvModelCodespaceModule[];
+}
+
+/** ``mv-model-interface`` 内单条接口 / 端点描述（文档化用，非运行时契约）。 */
+export interface MvModelInterfaceEndpoint {
+  id: string;
+  name: string;
+  /** HTTP 方法或 RPC 动词等 */
+  method?: string;
+  /** 路径或操作名 */
+  path?: string;
+  notes?: string;
+}
+
+/**
+ * 一个 `` ```mv-model-interface `` 围栏 = **接口模型 / 接口图示意**：端点列表（JSON），用于文档化 API 面或模块间契约，**不**替代 OpenAPI 等正式规范文件。
+ */
+export interface MvModelInterfacePayload {
+  id: string;
+  title?: string;
+  /** 至少一条；每项 `id` 在块内须唯一 */
+  endpoints: MvModelInterfaceEndpoint[];
 }
 
 /**
@@ -288,6 +339,12 @@ export const MV_MODEL_KV_CANVAS_TITLE = 'KV 数据表画布';
 /** 结构化层次（mv-model-struct）画布名称 */
 export const MV_MODEL_STRUCT_CANVAS_TITLE = '结构化层次画布';
 
+/** 代码空间 / 软件仓库结构示意（mv-model-codespace）画布名称 */
+export const MV_MODEL_CODESPACE_CANVAS_TITLE = '代码空间模型画布';
+
+/** 接口模型 / 接口图示意（mv-model-interface）画布名称 */
+export const MV_MODEL_INTERFACE_CANVAS_TITLE = '接口图模型画布';
+
 /** 映射块画布名称 */
 export const MV_MAP_CANVAS_TITLE = '映射规则画布';
 
@@ -344,6 +401,8 @@ export type MvBlockPayload =
   | MvModelSqlPayload
   | MvModelKvPayload
   | MvModelStructPayload
+  | MvModelCodespacePayload
+  | MvModelInterfacePayload
   | MvViewPayload
   | MvMapPayload;
 

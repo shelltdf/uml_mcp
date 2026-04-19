@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import {
+  MV_MODEL_CODESPACE_CANVAS_TITLE,
+  MV_MODEL_INTERFACE_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
   MV_MODEL_SQL_CANVAS_TITLE,
@@ -21,14 +23,16 @@ const mermaidInsertKinds = getMermaidViewKinds() as InsertCodeBlockKind[];
 
 /** 插入代码块弹窗分组（顺序即展示顺序） */
 const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
+  { title: '设计', kinds: ['mindmap-ui', 'ui-design'] },
   {
-    title: '数据模型（Model模型）',
+    title: '数据库模型（Model）',
     kinds: ['mv-model-sql', 'mv-model-kv', 'mv-model-struct'],
   },
-  { title: 'UI 相关（View视图）', kinds: ['mindmap-ui', 'ui-design'] },
-  { title: 'Mermaid 相关（View视图）', kinds: mermaidInsertKinds },
+  { title: '接口模型（Model）', kinds: ['mv-model-interface'] },
+  { title: '软件模型（Model）', kinds: ['mv-model-codespace'] },
+  { title: 'Mermaid 相关', kinds: mermaidInsertKinds },
   {
-    title: 'PlantUML（View视图）',
+    title: 'PlantUML相关',
     kinds: ['uml-class', 'uml-sequence', 'uml-activity', 'uml-diagram'],
   },
 ];
@@ -37,6 +41,8 @@ function titleFor(kind: InsertCodeBlockKind): string {
   if (kind === 'mv-model-sql') return MV_MODEL_SQL_CANVAS_TITLE;
   if (kind === 'mv-model-kv') return MV_MODEL_KV_CANVAS_TITLE;
   if (kind === 'mv-model-struct') return MV_MODEL_STRUCT_CANVAS_TITLE;
+  if (kind === 'mv-model-codespace') return MV_MODEL_CODESPACE_CANVAS_TITLE;
+  if (kind === 'mv-model-interface') return MV_MODEL_INTERFACE_CANVAS_TITLE;
   return MV_VIEW_KIND_METADATA[kind].canvasTitle;
 }
 
@@ -45,6 +51,8 @@ function insertCardTitle(kind: InsertCodeBlockKind): string {
   if (kind === 'mv-model-sql') return 'SQL数据库';
   if (kind === 'mv-model-kv') return 'KV数据库';
   if (kind === 'mv-model-struct') return '结构化数据库';
+  if (kind === 'mv-model-codespace') return '代码空间';
+  if (kind === 'mv-model-interface') return '接口图';
   const raw = titleFor(kind);
   let s = raw
     .replace(/\s*画布（/, '（')
@@ -63,6 +71,12 @@ function descFor(kind: InsertCodeBlockKind): string {
   }
   if (kind === 'mv-model-struct') {
     return '插入 ```mv-model-struct``` 围栏：根下递归「组 / 数据集」（类比 HDF5）；在结构化层次画布中编辑 JSON。';
+  }
+  if (kind === 'mv-model-codespace') {
+    return '插入 ```mv-model-codespace``` 围栏：工作区根与 **modules[]**（仓库/包划分示意，非真实文件树）；在代码空间模型画布中编辑 JSON。';
+  }
+  if (kind === 'mv-model-interface') {
+    return '插入 ```mv-model-interface``` 围栏：**endpoints[]** 描述接口/端点（方法、路径、说明，文档示意）；在接口图模型画布中编辑 JSON。';
   }
   const base = MV_VIEW_KIND_METADATA[kind].description;
   if (typeof kind === 'string' && kind.startsWith('mermaid-')) {
@@ -113,7 +127,7 @@ function onKeydown(ev: KeyboardEvent) {
           <h2 id="icb-title" class="icb-title">插入代码块</h2>
           <p class="icb-lead">
             Model 与 View 在 Markdown 中以<strong>围栏代码块</strong>落盘（围栏语言含 <code>mv-model-sql</code> / <code>mv-model-kv</code> /
-            <code>mv-model-struct</code> / <code>mv-view</code>）；块内正文可为
+            <code>mv-model-struct</code> / <code>mv-model-codespace</code> / <code>mv-model-interface</code> / <code>mv-view</code>）；块内正文可为
             <strong>JSON</strong>、<strong>XML</strong> 或<strong>纯文本</strong>等，由对应类型解释。选择下方类型后，将在光标处插入一整段围栏；插入后可在左侧围栏索引选中块，并打开<strong>代码块画布</strong>做结构化或所见即所得编辑（须为「富文本」或「原始文本」模式）。
           </p>
           <p class="icb-lead icb-lead--scheme">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>

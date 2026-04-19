@@ -2,7 +2,13 @@ import type { MvModelSqlPayload, MvViewKind, MvViewPayload } from '@mvwb/core';
 import { MV_VIEW_KIND_METADATA, isMermaidViewKind, parseMarkdownBlocks, resolveRefPath } from '@mvwb/core';
 
 /** 可通过「插入代码块」对话框插入的围栏类型（各 mv-model* 或各 mv-view kind） */
-export type InsertCodeBlockKind = MvViewKind | 'mv-model-sql' | 'mv-model-kv' | 'mv-model-struct';
+export type InsertCodeBlockKind =
+  | MvViewKind
+  | 'mv-model-sql'
+  | 'mv-model-kv'
+  | 'mv-model-struct'
+  | 'mv-model-codespace'
+  | 'mv-model-interface';
 
 export interface InsertFenceContext {
   /** 当前 view 将写入的 .md 工作区相对路径（用于生成 ref: 示例路径） */
@@ -69,6 +75,55 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
       },
     };
     return `\n\n\`\`\`mv-model-struct\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
+  }
+  if (kind === 'mv-model-codespace') {
+    const id = newBlockId('cs');
+    const body = {
+      id,
+      title: '新代码空间模型',
+      workspaceRoot: '.',
+      modules: [
+        {
+          id: 'core',
+          name: '核心库',
+          path: 'packages/core',
+          role: 'lib',
+          notes: '解析与类型（示意）',
+        },
+        {
+          id: 'web',
+          name: 'Web 壳',
+          path: 'apps/web',
+          role: 'app',
+          notes: 'Workbench 前端（示意）',
+        },
+      ],
+    };
+    return `\n\n\`\`\`mv-model-codespace\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
+  }
+  if (kind === 'mv-model-interface') {
+    const id = newBlockId('if');
+    const body = {
+      id,
+      title: '新接口模型',
+      endpoints: [
+        {
+          id: 'health',
+          name: '健康检查',
+          method: 'GET',
+          path: '/health',
+          notes: '存活探针（示意）',
+        },
+        {
+          id: 'users',
+          name: '用户列表',
+          method: 'GET',
+          path: '/api/users',
+          notes: '分页查询（示意）',
+        },
+      ],
+    };
+    return `\n\n\`\`\`mv-model-interface\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
   }
   const id = newBlockId('v');
   const meta = MV_VIEW_KIND_METADATA[kind];

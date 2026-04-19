@@ -31,6 +31,34 @@ const markerId = ref(`dtt-arr-${Math.random().toString(36).slice(2, 11)}`);
       <rect x="48" y="26" width="32" height="14" rx="2" fill="#fffbeb" stroke="#d97706" stroke-width="1" />
       <path d="M56 20 L56 24 M26 26 L26 24 M64 26 L64 24" stroke="#b45309" stroke-width="1" fill="none" />
     </g>
+    <!-- mv-model-codespace：根目录 + 子文件夹 -->
+    <g v-else-if="variant === 'mv-model-codespace'">
+      <rect x="30" y="4" width="52" height="12" rx="1" fill="#e0e7ff" stroke="#4338ca" stroke-width="1" />
+      <text x="56" y="12" text-anchor="middle" font-size="6" fill="#312e81" font-family="system-ui,sans-serif">root</text>
+      <rect x="8" y="22" width="34" height="22" rx="2" fill="#eef2ff" stroke="#6366f1" stroke-width="1" />
+      <rect x="46" y="22" width="34" height="22" rx="2" fill="#eef2ff" stroke="#6366f1" stroke-width="1" />
+      <path d="M44 16 L26 22 M44 16 L62 22" stroke="#4338ca" stroke-width="0.8" fill="none" />
+    </g>
+    <!-- mv-model-interface：Client — API → Server -->
+    <g v-else-if="variant === 'mv-model-interface'">
+      <defs>
+        <marker :id="markerId" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#0d9488" />
+        </marker>
+      </defs>
+      <rect x="6" y="14" width="28" height="24" rx="2" fill="#ecfdf5" stroke="#059669" stroke-width="1" />
+      <text x="20" y="28" text-anchor="middle" font-size="7" fill="#065f46" font-family="system-ui,sans-serif">C</text>
+      <rect x="54" y="14" width="28" height="24" rx="2" fill="#fff7ed" stroke="#ea580c" stroke-width="1" />
+      <text x="68" y="28" text-anchor="middle" font-size="7" fill="#9a3412" font-family="system-ui,sans-serif">S</text>
+      <path
+        :marker-end="`url(#${markerId})`"
+        d="M34 26 L54 26"
+        stroke="#0d9488"
+        stroke-width="1.4"
+        fill="none"
+      />
+      <text x="44" y="22" text-anchor="middle" font-size="6" fill="#115e59" font-family="system-ui,sans-serif">API</text>
+    </g>
     <!-- mermaid-*：共用示意（类框 + 连线） -->
     <g v-else-if="variant.startsWith('mermaid-')">
       <rect x="8" y="8" width="32" height="22" rx="2" fill="#dbeafe" stroke="#2563eb" stroke-width="1" />

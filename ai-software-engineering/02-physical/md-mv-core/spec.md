@@ -2,7 +2,7 @@
 
 ## 围栏块语法
 
-- 围栏首行必须为以下之一（整行，前后无其它字符）：`` ```mv-model-sql ``、`` ```mv-model-kv ``、`` ```mv-model-struct ``、`` ```mv-view ``、`` ```mv-map ``。
+- 围栏首行必须为以下之一（整行，前后无其它字符）：`` ```mv-model-sql ``、`` ```mv-model-kv ``、`` ```mv-model-struct ``、`` ```mv-model-codespace ``、`` ```mv-model-interface ``、`` ```mv-view ``、`` ```mv-map ``。
 - 围栏内为 **单个 JSON 对象**（允许首尾空白）；解析前对体文本 `trim()` 后 `JSON.parse`。
 - 闭合围栏：行首为换行后的 `` ``` ``（即序列 `\n` + `` ``` ``）。
 
@@ -43,6 +43,27 @@
 | id | string | 文件内唯一 |
 | title | string? | 可选标题 |
 | root | object | **根组**：必填非空 `name`（string）；可选 `attributes`（object）、`groups`（`root` 同形对象数组）、`datasets`（对象数组，每项必填非空 `name`，可选 `dtype` string、`data` 任意 JSON） |
+
+## mv-model-codespace（软件模型 / 代码空间示意）
+
+语义：**一个** `` ```mv-model-codespace `` 围栏表示 **仓库或工作区结构的文档化示意**（逻辑模块 / 包列表），**不是**真实文件系统或运行时代码树。`id` 在文件内与其它围栏块唯一。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | 文件内唯一 |
+| title | string? | 可选标题 |
+| workspaceRoot | string? | 可选工作区根路径片段（示意） |
+| modules | array | **至少一项**。每项须为对象：必填非空 `id`（**块内唯一**）、`name`（string）；可选 `path`、`role`、`notes`（均为 string） |
+
+## mv-model-interface（接口模型 / 接口图示意）
+
+语义：**一个** `` ```mv-model-interface `` 围栏表示 **API 或模块间接口面的文档化示意**（端点列表），**不是** OpenAPI/Swagger 等正式契约文件的替代。`id` 在文件内与其它围栏块唯一。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | 文件内唯一 |
+| title | string? | 可选标题 |
+| endpoints | array | **至少一项**。每项须为对象：必填非空 `id`（**块内唯一**）、`name`（string）；可选 `method`、`path`、`notes`（均为 string） |
 
 ## mv-view（视图基类 / 可扩展子类型）
 

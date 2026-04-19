@@ -30,4 +30,4 @@
 
 ## 姊妹产品：Model-View MD Workbench（`model-view-workbench/`）
 
-与上文 **UML 同步工作台** 并列、**不替代**其定位：以 **Markdown 为唯一落盘**，用 `mv-model-sql`（Model · 多表）/ `mv-view`（View）/ `mv-map` 围栏块表达 **表式数据、观察视图、代码映射规则**；支持单文件多块与多文件引用（核心解析已备）。其中 **`mv-view` 在契约上为视图基类**，以 JSON 字段 `kind` 区分 **Mermaid 各图类、脑图 UI、PlantUML/UML、UI 设计** 等可扩展子类型（详见 `md-mv-core` 与 `@mvwb/core` 的 `MV_VIEW_KINDS`）。交付形态为 **浏览器 SPA + Electron + VS Code Webview**，实现见 `model-view-workbench/` 与 `02-physical/md-mv-*`。
+与上文 **UML 同步工作台** 并列、**不替代**其定位：以 **Markdown 为唯一落盘**，用 `mv-model-sql`（Model · 多表）/ `mv-model-kv` / `mv-model-struct` / `mv-model-interface`（接口端点示意）/ `mv-model-codespace`（软件仓库结构示意）/ `mv-view`（View）/ `mv-map` 围栏块表达 **表式数据、文档与层次模型、接口图示意、代码空间示意、观察视图、代码映射规则**；支持单文件多块与多文件引用（核心解析已备）。其中 **`mv-view` 在契约上为视图基类**，以 JSON 字段 `kind` 区分 **Mermaid 各图类、脑图 UI、PlantUML/UML、UI 设计** 等可扩展子类型（详见 `md-mv-core` 与 `@mvwb/core` 的 `MV_VIEW_KINDS`）。交付形态为 **浏览器 SPA + Electron + VS Code Webview**，实现见 `model-view-workbench/` 与 `02-physical/md-mv-*`。

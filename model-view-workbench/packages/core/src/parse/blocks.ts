@@ -1,6 +1,8 @@
 import type {
   MvFenceKind,
   MvMapPayload,
+  MvModelCodespacePayload,
+  MvModelInterfacePayload,
   MvModelKvPayload,
   MvModelSqlPayload,
   MvModelSqlTable,
@@ -13,7 +15,8 @@ import type {
 } from '../types.js';
 import { MV_VIEW_KINDS, isMermaidViewKind } from '../types.js';
 
-const FENCE = /^```(mv-model-sql|mv-model-kv|mv-model-struct|mv-view|mv-map)\s*$/m;
+const FENCE =
+  /^```(mv-model-sql|mv-model-kv|mv-model-struct|mv-model-codespace|mv-model-interface|mv-view|mv-map)\s*$/m;
 
 function lineNumberAt(source: string, offset: number): number {
   let n = 1;
@@ -289,6 +292,93 @@ function validateMvModelStruct(
   return { ok: true, data: obj as unknown as MvModelStructPayload };
 }
 
+function validateMvModelCodespace(
+  obj: Record<string, unknown>,
+): { ok: true; data: MvModelCodespacePayload } | { ok: false; message: string } {
+  if (typeof obj.id !== 'string' || !obj.id.trim()) {
+    return { ok: false, message: 'mv-model-codespace: id must be a non-empty string' };
+  }
+  if ('title' in obj && obj.title !== undefined && typeof obj.title !== 'string') {
+    return { ok: false, message: 'mv-model-codespace: title must be a string when present' };
+  }
+  if (
+    'workspaceRoot' in obj &&
+    obj.workspaceRoot !== undefined &&
+    typeof obj.workspaceRoot !== 'string'
+  ) {
+    return { ok: false, message: 'mv-model-codespace: workspaceRoot must be a string when present' };
+  }
+  const mods = obj.modules;
+  if (!Array.isArray(mods) || mods.length === 0) {
+    return { ok: false, message: 'mv-model-codespace: modules must be a non-empty array' };
+  }
+  const seen = new Set<string>();
+  for (let i = 0; i < mods.length; i++) {
+    const m = mods[i];
+    const path = `mv-model-codespace.modules[${i}]`;
+    if (!m || typeof m !== 'object' || Array.isArray(m)) {
+      return { ok: false, message: `${path} must be an object` };
+    }
+    const o = m as Record<string, unknown>;
+    if (typeof o.id !== 'string' || !o.id.trim()) {
+      return { ok: false, message: `${path}.id must be a non-empty string` };
+    }
+    if (typeof o.name !== 'string' || !o.name.trim()) {
+      return { ok: false, message: `${path}.name must be a non-empty string` };
+    }
+    if (seen.has(o.id)) {
+      return { ok: false, message: `mv-model-codespace: duplicate module id "${o.id}"` };
+    }
+    seen.add(o.id);
+    for (const key of ['path', 'role', 'notes'] as const) {
+      if (key in o && o[key] !== undefined && typeof o[key] !== 'string') {
+        return { ok: false, message: `${path}.${key} must be a string when present` };
+      }
+    }
+  }
+  return { ok: true, data: obj as unknown as MvModelCodespacePayload };
+}
+
+function validateMvModelInterface(
+  obj: Record<string, unknown>,
+): { ok: true; data: MvModelInterfacePayload } | { ok: false; message: string } {
+  if (typeof obj.id !== 'string' || !obj.id.trim()) {
+    return { ok: false, message: 'mv-model-interface: id must be a non-empty string' };
+  }
+  if ('title' in obj && obj.title !== undefined && typeof obj.title !== 'string') {
+    return { ok: false, message: 'mv-model-interface: title must be a string when present' };
+  }
+  const eps = obj.endpoints;
+  if (!Array.isArray(eps) || eps.length === 0) {
+    return { ok: false, message: 'mv-model-interface: endpoints must be a non-empty array' };
+  }
+  const seen = new Set<string>();
+  for (let i = 0; i < eps.length; i++) {
+    const m = eps[i];
+    const path = `mv-model-interface.endpoints[${i}]`;
+    if (!m || typeof m !== 'object' || Array.isArray(m)) {
+      return { ok: false, message: `${path} must be an object` };
+    }
+    const o = m as Record<string, unknown>;
+    if (typeof o.id !== 'string' || !o.id.trim()) {
+      return { ok: false, message: `${path}.id must be a non-empty string` };
+    }
+    if (typeof o.name !== 'string' || !o.name.trim()) {
+      return { ok: false, message: `${path}.name must be a non-empty string` };
+    }
+    if (seen.has(o.id)) {
+      return { ok: false, message: `mv-model-interface: duplicate endpoint id "${o.id}"` };
+    }
+    seen.add(o.id);
+    for (const key of ['method', 'path', 'notes'] as const) {
+      if (key in o && o[key] !== undefined && typeof o[key] !== 'string') {
+        return { ok: false, message: `${path}.${key} must be a string when present` };
+      }
+    }
+  }
+  return { ok: true, data: obj as unknown as MvModelInterfacePayload };
+}
+
 function isMvViewKind(k: unknown): k is MvViewKind {
   return typeof k === 'string' && (MV_VIEW_KINDS as readonly string[]).includes(k);
 }
@@ -398,6 +488,26 @@ export function parseMarkdownBlocks(source: string): ParseMdResult {
         });
       } else {
         payload = st.data;
+      }
+    } else if (kind === 'mv-model-codespace') {
+      const cs = validateMvModelCodespace(obj);
+      if (!cs.ok) {
+        errors.push({
+          message: cs.message,
+          line: lineNumberAt(source, innerStartOffset),
+        });
+      } else {
+        payload = cs.data;
+      }
+    } else if (kind === 'mv-model-interface') {
+      const iface = validateMvModelInterface(obj);
+      if (!iface.ok) {
+        errors.push({
+          message: iface.message,
+          line: lineNumberAt(source, innerStartOffset),
+        });
+      } else {
+        payload = iface.data;
       }
     } else if (kind === 'mv-view') {
       const vv = validateMvView(obj);

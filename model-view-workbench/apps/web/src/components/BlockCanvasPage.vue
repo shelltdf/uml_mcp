@@ -2,6 +2,8 @@
 import { computed, nextTick, ref, watch, withDefaults } from 'vue';
 import {
   MV_MAP_CANVAS_TITLE,
+  MV_MODEL_CODESPACE_CANVAS_TITLE,
+  MV_MODEL_INTERFACE_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
   MV_MODEL_SQL_CANVAS_TITLE,
@@ -95,6 +97,8 @@ const kvDraft = ref<MvModelKvPayload | null>(null);
 /** 与 documents 平行的 JSON 文本，便于逐条编辑 */
 const kvDocStrings = ref<string[]>([]);
 const structJsonText = ref('');
+const codespaceJsonText = ref('');
+const interfaceJsonText = ref('');
 const viewDraft = ref<MvViewPayload | null>(null);
 const viewModelRefsText = ref('');
 const mapJsonText = ref('');
@@ -113,6 +117,8 @@ watch(
     kvDraft.value = null;
     kvDocStrings.value = [];
     structJsonText.value = '';
+    codespaceJsonText.value = '';
+    interfaceJsonText.value = '';
     viewDraft.value = null;
     viewModelRefsText.value = '';
     mapJsonText.value = '';
@@ -129,6 +135,10 @@ watch(
       kvDocStrings.value = p.documents.map((d) => JSON.stringify(d, null, 2));
     } else if (b.kind === 'mv-model-struct') {
       structJsonText.value = JSON.stringify(b.payload, null, 2);
+    } else if (b.kind === 'mv-model-codespace') {
+      codespaceJsonText.value = JSON.stringify(b.payload, null, 2);
+    } else if (b.kind === 'mv-model-interface') {
+      interfaceJsonText.value = JSON.stringify(b.payload, null, 2);
     } else if (b.kind === 'mv-view') {
       viewDraft.value = JSON.parse(JSON.stringify(b.payload)) as MvViewPayload;
       viewModelRefsText.value = (viewDraft.value.modelRefs ?? []).join(', ');
@@ -158,6 +168,8 @@ const canvasSurfaceTitle = computed(() => {
   if (b.kind === 'mv-model-sql') return MV_MODEL_SQL_CANVAS_TITLE;
   if (b.kind === 'mv-model-kv') return MV_MODEL_KV_CANVAS_TITLE;
   if (b.kind === 'mv-model-struct') return MV_MODEL_STRUCT_CANVAS_TITLE;
+  if (b.kind === 'mv-model-codespace') return MV_MODEL_CODESPACE_CANVAS_TITLE;
+  if (b.kind === 'mv-model-interface') return MV_MODEL_INTERFACE_CANVAS_TITLE;
   if (b.kind === 'mv-map') return MV_MAP_CANVAS_TITLE;
   if (b.kind === 'mv-view') {
     const k = (b.payload as MvViewPayload).kind;
@@ -751,6 +763,24 @@ function buildInnerJson(): string | null {
       return null;
     }
   }
+  if (b.kind === 'mv-model-codespace') {
+    try {
+      const parsed = JSON.parse(codespaceJsonText.value) as Record<string, unknown>;
+      const inner = JSON.stringify(parsed, null, 2);
+      return fenceInnerParsesOk('mv-model-codespace', inner) ? inner : null;
+    } catch {
+      return null;
+    }
+  }
+  if (b.kind === 'mv-model-interface') {
+    try {
+      const parsed = JSON.parse(interfaceJsonText.value) as Record<string, unknown>;
+      const inner = JSON.stringify(parsed, null, 2);
+      return fenceInnerParsesOk('mv-model-interface', inner) ? inner : null;
+    } catch {
+      return null;
+    }
+  }
   if (b.kind === 'mv-view' && viewDraft.value) {
     const v = { ...viewDraft.value };
     v.modelRefs = viewModelRefsText.value
@@ -776,9 +806,15 @@ function save() {
   const inner = buildInnerJson();
   if (!inner) {
     const k = block.value?.kind;
-    if (k === 'mv-model-sql' || k === 'mv-model-kv' || k === 'mv-model-struct') {
+    if (
+      k === 'mv-model-sql' ||
+      k === 'mv-model-kv' ||
+      k === 'mv-model-struct' ||
+      k === 'mv-model-codespace' ||
+      k === 'mv-model-interface'
+    ) {
       window.alert(
-        '无法保存：JSON 无效或不符合当前围栏契约（mv-model-sql：非空 tables、行须满足列声明、**主键列组合在表内唯一**；KV 每条须为 JSON 对象；结构化层次须含合法 root）。',
+        '无法保存：JSON 无效或不符合当前围栏契约（mv-model-sql：非空 tables、行须满足列声明、**主键列组合在表内唯一**；KV 每条须为 JSON 对象；结构化层次须含合法 root；代码空间须含非空 modules 且模块 id 唯一；接口模型须含非空 endpoints 且端点 id 唯一）。',
       );
     }
     return;
@@ -1209,6 +1245,26 @@ function closeWin() {
             <code>datasets[]</code>）。数据集含 <code>name</code>、可选 <code>dtype</code>、<code>data</code>。保存前将整段 JSON 送解析器校验。
           </p>
           <textarea v-model="structJsonText" class="payload-ta" spellcheck="false" rows="22" aria-label="mv-model-struct JSON" />
+        </template>
+
+        <template v-else-if="block.kind === 'mv-model-codespace'">
+          <h3 class="model-section-title">代码空间模型画布 · 仓库 / 工作区示意</h3>
+          <p class="canvas-hint canvas-hint--compact">
+            <strong>软件结构示意</strong>：块级 <code>id</code> / <code>title</code>、可选 <code>workspaceRoot</code>，以及非空
+            <code>modules[]</code>；每条模块须含非空 <code>id</code>、<code>name</code>，可选 <code>path</code> / <code>role</code> /
+            <code>notes</code>。模块 <code>id</code> 在块内须唯一。非真实文件系统树，仅用于文档化分层与边界。
+          </p>
+          <textarea v-model="codespaceJsonText" class="payload-ta" spellcheck="false" rows="22" aria-label="mv-model-codespace JSON" />
+        </template>
+
+        <template v-else-if="block.kind === 'mv-model-interface'">
+          <h3 class="model-section-title">接口图模型画布 · 端点列表示意</h3>
+          <p class="canvas-hint canvas-hint--compact">
+            <strong>接口图（文档化）</strong>：非空 <code>endpoints[]</code>；每条须含非空 <code>id</code>、<code>name</code>，可选
+            <code>method</code> / <code>path</code> / <code>notes</code>（均为字符串）。端点 <code>id</code> 在块内须唯一。不等同于 OpenAPI
+            等正式契约，仅供示意与对齐讨论。
+          </p>
+          <textarea v-model="interfaceJsonText" class="payload-ta" spellcheck="false" rows="22" aria-label="mv-model-interface JSON" />
         </template>
 
         <template v-else-if="block.kind === 'mv-view' && viewDraft">

@@ -281,6 +281,65 @@ describe('parseMarkdownBlocks', () => {
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
+  it('parses mv-model-codespace', () => {
+    const payload = {
+      id: 'cs1',
+      title: 'mono',
+      workspaceRoot: '.',
+      modules: [{ id: 'a', name: 'pkg-a', path: 'packages/a', role: 'lib' }],
+    };
+    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks[0].kind).toBe('mv-model-codespace');
+    expect(r.blocks[0].payload).toMatchObject(payload);
+  });
+
+  it('rejects mv-model-codespace duplicate module id', () => {
+    const md =
+      '\`\`\`mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'x',
+        modules: [
+          { id: 'm', name: 'A' },
+          { id: 'm', name: 'B' },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('duplicate module id'))).toBe(true);
+  });
+
+  it('parses mv-model-interface', () => {
+    const payload = {
+      id: 'api1',
+      title: '用户 API',
+      endpoints: [{ id: 'list', name: '列表', method: 'GET', path: '/users' }],
+    };
+    const md = '\`\`\`mv-model-interface\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks[0].kind).toBe('mv-model-interface');
+    expect(r.blocks[0].payload).toMatchObject(payload);
+  });
+
+  it('rejects mv-model-interface duplicate endpoint id', () => {
+    const md =
+      '\`\`\`mv-model-interface\n' +
+      JSON.stringify({
+        id: 'x',
+        endpoints: [
+          { id: 'a', name: '1' },
+          { id: 'a', name: '2' },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('duplicate endpoint id'))).toBe(true);
+  });
+
   it('parses mv-view mermaid-flowchart with trailing mermaid mirror and fills empty payload', () => {
     const mer = 'flowchart TD\n  A --> B';
     const md =
