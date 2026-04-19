@@ -88,6 +88,10 @@ const mdCtxMenuRef = ref<HTMLElement | null>(null);
 const mdWysiwygRef = ref<InstanceType<typeof MdWysiwygEditor> | null>(null);
 const mdPreviewRef = ref<InstanceType<typeof MdMarkdownPreview> | null>(null);
 const mdSourceTextareaRef = ref<HTMLTextAreaElement | null>(null);
+/** Markdown 中间列（预览 / 富文本 / 源码），用于大纲跳转时查找滚动容器与标题 DOM */
+const mdPaneRef = ref<HTMLElement | null>(null);
+/** 文档章节大纲：被用户折叠的父标题索引（其子项在侧栏隐藏） */
+const outlineCollapsedParents = ref(new Set<number>());
 const insertCodeBlockOpen = ref(false);
 let electronWriteTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -684,6 +688,150 @@ function parseMdOutline(src: string): MdOutlineHeading[] {
 }
 
 const mdOutlineHeadings = computed(() => parseMdOutline(currentContent.value));
+
+const MVWB_HEADING_FLASH_MS = 1100;
+const MVWB_HEADING_FLASH_CLS = 'mvwb-heading-flash';
+
+function outlineParentIndex(list: readonly MdOutlineHeading[], i: number): number | null {
+  const L = list[i]?.level ?? 99;
+  for (let j = i - 1; j >= 0; j--) {
+    if (list[j].level < L) return j;
+  }
+  return null;
+}
+
+function outlineHasChildren(list: readonly MdOutlineHeading[], i: number): boolean {
+  if (i + 1 >= list.length) return false;
+  return list[i + 1].level > list[i].level;
+}
+
+function outlineIsAncestorOf(list: readonly MdOutlineHeading[], ancestorIdx: number, childIdx: number): boolean {
+  if (childIdx <= ancestorIdx) return false;
+  let p = outlineParentIndex(list, childIdx);
+  while (p !== null) {
+    if (p === ancestorIdx) return true;
+    if (p < ancestorIdx) return false;
+    p = outlineParentIndex(list, p);
+  }
+  return false;
+}
+
+function isOutlineRowHiddenByCollapse(i: number): boolean {
+  const list = mdOutlineHeadings.value;
+  const collapsed = outlineCollapsedParents.value;
+  for (const c of collapsed) {
+    if (i === c) continue;
+    if (i > c && outlineIsAncestorOf(list, c, i)) return true;
+  }
+  return false;
+}
+
+function isOutlineBranchCollapsed(i: number): boolean {
+  return outlineCollapsedParents.value.has(i);
+}
+
+function toggleOutlineCollapse(i: number) {
+  const next = new Set(outlineCollapsedParents.value);
+  if (next.has(i)) next.delete(i);
+  else next.add(i);
+  outlineCollapsedParents.value = next;
+}
+
+/** 1-based 行号 → 该行行首在全文中的 UTF-16 偏移（与 `parseMdOutline` 的 split 规则一致） */
+function offsetForLineStart(src: string, line1: number): number {
+  if (line1 <= 1) return 0;
+  const lines = src.split(/\r?\n/);
+  let off = 0;
+  for (let li = 0; li < line1 - 1 && li < lines.length; li++) {
+    off += (lines[li]?.length ?? 0) + 1;
+  }
+  return Math.min(off, src.length);
+}
+
+/** 1-based 行：该行内容末尾（不含换行）偏移，用于源码行高亮 */
+function offsetLineExclusiveEnd(src: string, line1: number): number {
+  const lines = src.split(/\r?\n/);
+  const li = line1 - 1;
+  if (li < 0 || li >= lines.length) return src.length;
+  const start = offsetForLineStart(src, line1);
+  const row = lines[li] ?? '';
+  return Math.min(start + row.length, src.length);
+}
+
+function flashDomHeading(el: HTMLElement | null) {
+  if (!el) return;
+  el.classList.remove(MVWB_HEADING_FLASH_CLS);
+  void el.offsetWidth;
+  el.classList.add(MVWB_HEADING_FLASH_CLS);
+  window.setTimeout(() => {
+    el.classList.remove(MVWB_HEADING_FLASH_CLS);
+  }, MVWB_HEADING_FLASH_MS);
+}
+
+/** 原始文本：短暂选中整行以提示对应标题 */
+function flashSourceHeadingLine(line1: number) {
+  void nextTick(() => {
+    window.setTimeout(() => {
+      const ta = mdSourceTextareaRef.value;
+      if (!ta) return;
+      const src = sourceEditorText.value;
+      const a = offsetForLineStart(src, line1);
+      const b = offsetLineExclusiveEnd(src, line1);
+      ta.focus();
+      ta.setSelectionRange(a, Math.max(a, b));
+      window.setTimeout(() => {
+        ta.setSelectionRange(a, a);
+      }, 720);
+    }, 100);
+  });
+}
+
+function scrollSourceToLine(line1: number) {
+  void nextTick(() => {
+    const ta = mdSourceTextareaRef.value;
+    if (!ta) return;
+    const src = sourceEditorText.value;
+    const pos = offsetForLineStart(src, line1);
+    ta.focus();
+    ta.setSelectionRange(pos, pos);
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 22;
+    ta.scrollTop = Math.max(0, (line1 - 1) * lh - ta.clientHeight * 0.25);
+  });
+}
+
+/** 与大纲顺序一致的正文区标题（排除 Vditor 目录 TOC 内的标题链接） */
+function bodyHeadingsInOutlineOrder(root: HTMLElement): HTMLElement[] {
+  const all = [...root.querySelectorAll('h1,h2,h3,h4,h5,h6')] as HTMLElement[];
+  return all.filter((el) => !el.closest('.vditor-toc'));
+}
+
+function scrollToOutlineIndex(index: number) {
+  const items = mdOutlineHeadings.value;
+  const meta = items[index];
+  if (!meta) return;
+  if (mdPaneMode.value === 'source') {
+    scrollSourceToLine(meta.line);
+    flashSourceHeadingLine(meta.line);
+    return;
+  }
+  const pane = mdPaneRef.value;
+  if (!pane) return;
+  const root =
+    mdPaneMode.value === 'preview'
+      ? (pane.querySelector('.md-preview-root') as HTMLElement | null)
+      : (pane.querySelector('.vditor-wysiwyg') as HTMLElement | null);
+  if (!root) return;
+  void nextTick(() => {
+    const heads = bodyHeadingsInOutlineOrder(root);
+    const el = heads[index];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.setTimeout(() => flashDomHeading(el), 420);
+      return;
+    }
+    logLine(`大纲跳转：未在页面上找到与「${meta.text}」对应的标题节点（索引 ${index + 1}）`, 'warn');
+  });
+}
 
 function extractMermaidClassNames(src: string): string[] {
   const names = new Set<string>();
@@ -1367,6 +1515,7 @@ function onOpenerCanvasSaved(ev: MessageEvent) {
 watch(
   selectedPath,
   () => {
+    outlineCollapsedParents.value = new Set();
     editOpen.value = false;
     selectedBlockId.value = null;
     const p = selectedPath.value;
@@ -1716,12 +1865,40 @@ onUnmounted(() => {
                 <ul v-if="mdOutlineHeadings.length" class="dock-outline-list">
                   <li
                     v-for="(h, i) in mdOutlineHeadings"
+                    v-show="!isOutlineRowHiddenByCollapse(i)"
                     :key="i"
-                    class="dock-outline-item"
-                    :style="{ paddingLeft: `${(h.level - 1) * 10 + 4}px` }"
+                    class="dock-outline-li"
                   >
-                    <span class="dock-outline-ln" :title="`第 ${h.line} 行`">L{{ h.line }}</span>
-                    {{ h.text }}
+                    <div
+                      class="dock-outline-row"
+                      :style="{ paddingLeft: `${4 + Math.max(0, h.level - 1) * 12}px` }"
+                    >
+                      <span
+                        v-if="outlineHasChildren(mdOutlineHeadings, i)"
+                        class="dock-outline-chev"
+                        tabindex="0"
+                        role="button"
+                        :aria-expanded="!isOutlineBranchCollapsed(i)"
+                        :aria-label="isOutlineBranchCollapsed(i) ? '展开子章节' : '折叠子章节'"
+                        :title="isOutlineBranchCollapsed(i) ? '展开子章节' : '折叠子章节'"
+                        @click.stop="toggleOutlineCollapse(i)"
+                        @keydown.enter.prevent.stop="toggleOutlineCollapse(i)"
+                        @keydown.space.prevent.stop="toggleOutlineCollapse(i)"
+                      >
+                        {{ isOutlineBranchCollapsed(i) ? '▶' : '▼' }}
+                      </span>
+                      <span v-else class="dock-outline-chev-spacer" aria-hidden="true" />
+                      <button
+                        type="button"
+                        class="dock-outline-item dock-outline-item--btn"
+                        :title="`跳转到第 ${h.line} 行 — 无全局快捷键`"
+                        @click="scrollToOutlineIndex(i)"
+                      >
+                        <span class="dock-outline-level" :aria-hidden="true">H{{ h.level }}</span>
+                        <span class="dock-outline-text">{{ h.text }}</span>
+                        <span class="dock-outline-ln" :title="`第 ${h.line} 行`">L{{ h.line }}</span>
+                      </button>
+                    </div>
                   </li>
                 </ul>
                 <p v-else class="dock-muted">（当前文档无 ATX 标题）</p>
@@ -1856,7 +2033,7 @@ onUnmounted(() => {
               <template v-if="activeEditorTab === 'markdown'">
               <div class="split-wrap">
                 <div class="split">
-          <section class="md-pane" @contextmenu.prevent="onMdPaneContextMenu">
+          <section ref="mdPaneRef" class="md-pane" @contextmenu.prevent="onMdPaneContextMenu">
             <h2 class="md-pane-head">
               Markdown
               <span class="md-mode-switch" role="radiogroup" aria-label="Markdown 显示模式">
@@ -2738,8 +2915,40 @@ onUnmounted(() => {
 .dock-outline-list--dense .dock-outline-item {
   font-size: 0.75rem;
 }
-.dock-outline-item {
+.dock-outline-li {
   margin: 0 0 4px;
+  list-style: none;
+}
+.dock-outline-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 2px;
+  box-sizing: border-box;
+}
+.dock-outline-chev,
+.dock-outline-chev-spacer {
+  flex-shrink: 0;
+  width: 1.25em;
+  min-height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  line-height: 1;
+  color: #64748b;
+  user-select: none;
+  align-self: stretch;
+}
+.dock-outline-chev {
+  border-radius: 3px;
+  cursor: pointer;
+}
+.dock-outline-chev:hover {
+  background: rgba(148, 163, 184, 0.35);
+  color: #0f172a;
+}
+.dock-outline-item {
   padding: 4px 6px;
   font-size: 0.78rem;
   line-height: 1.35;
@@ -2748,10 +2957,42 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.65);
   border: 1px solid transparent;
 }
+.dock-outline-item--btn {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.dock-outline-item--btn:hover {
+  background: rgba(241, 245, 249, 0.95);
+  border-color: #cbd5e1;
+}
+.dock-outline-level {
+  flex-shrink: 0;
+  min-width: 1.75em;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+.dock-outline-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dock-outline-ln {
-  display: inline-block;
-  min-width: 2.2em;
-  margin-right: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
   font-size: 0.68rem;
   color: #94a3b8;
   font-variant-numeric: tabular-nums;
@@ -3143,5 +3384,27 @@ onUnmounted(() => {
   padding: 6px 14px;
   border-radius: 6px;
   cursor: pointer;
+}
+</style>
+
+<style>
+/* 预览 / 所见即所得：大纲跳转后标题闪烁（类名由脚本挂在 h1–h6 上，须非 scoped） */
+@keyframes mvwb-heading-flash-keyframes {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55);
+    background-color: rgba(191, 219, 254, 0.45);
+  }
+  40% {
+    box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.12);
+    background-color: rgba(191, 219, 254, 0.28);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: transparent;
+  }
+}
+.mvwb-heading-flash {
+  border-radius: 4px;
+  animation: mvwb-heading-flash-keyframes 1.1s ease-out 1;
 }
 </style>
