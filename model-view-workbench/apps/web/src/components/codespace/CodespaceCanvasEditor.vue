@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type {
-  MvCodespaceAssociation,
-  MvCodespaceAssociationKind,
   MvCodespaceClassifier,
   MvCodespaceClassifierBase,
   MvCodespaceFunction,
@@ -36,8 +34,7 @@ type CsSelection =
   | { t: 'class'; mi: number; path: number[]; ci: number }
   | { t: 'var'; mi: number; path: number[]; vi: number }
   | { t: 'fn'; mi: number; path: number[]; fi: number }
-  | { t: 'macro'; mi: number; path: number[]; maci: number }
-  | { t: 'assoc'; mi: number; path: number[]; ai: number };
+  | { t: 'macro'; mi: number; path: number[]; maci: number };
 
 const selection = ref<CsSelection>({ t: 'meta' });
 const advancedJsonOpen = ref(false);
@@ -125,13 +122,6 @@ const sidebarRows = computed((): FlatRow[] => {
             depth: baseDepth + 1,
             label: `宏 · ${ns.macros![maci].name}`,
             sel: { t: 'macro', mi, path: pth, maci },
-          });
-        });
-        (ns.associations ?? []).forEach((_a: MvCodespaceAssociation, ai: number) => {
-          rows.push({
-            depth: baseDepth + 1,
-            label: `关联 · ${ns.associations![ai].id}`,
-            sel: { t: 'assoc', mi, path: pth, ai },
           });
         });
         walkNs(ns.namespaces, pth, baseDepth + 1);
@@ -265,33 +255,10 @@ function addMacro(mi: number, path: number[]) {
   });
 }
 
-function addAssoc(mi: number, path: number[]) {
-  patch((d) => {
-    const n = getNamespaceAtPath(d, mi, path);
-    if (!n) return;
-    if (!n.associations) n.associations = [];
-    const ids = collectClassifierIds(d);
-    const from = ids[0] ?? '';
-    const to = ids[1] ?? from;
-    n.associations.push({
-      id: newCodespaceUniqueId('asc', d),
-      kind: 'association',
-      fromClassifierId: from,
-      toClassifierId: to,
-    });
-  });
-}
-
 function isSelRow(sel: CsSelection, row: FlatRow): boolean {
   return JSON.stringify(sel) === JSON.stringify(row.sel);
 }
 
-const ASSOC_KINDS: MvCodespaceAssociationKind[] = [
-  'association',
-  'aggregation',
-  'composition',
-  'dependency',
-];
 const CLASSIFIER_KINDS = ['class', 'interface', 'struct'] as const;
 const MEMBER_KINDS = ['field', 'method', 'enumLiteral'] as const;
 const BASE_REL = ['generalization', 'realization'] as const;
@@ -330,12 +297,6 @@ const selectedMacro = computed((): MvCodespaceMacro | null => {
   const s = selection.value;
   if (s.t !== 'macro') return null;
   return getNamespaceAtPath(props.modelValue, s.mi, s.path)?.macros?.[s.maci] ?? null;
-});
-
-const selectedAssoc = computed((): MvCodespaceAssociation | null => {
-  const s = selection.value;
-  if (s.t !== 'assoc') return null;
-  return getNamespaceAtPath(props.modelValue, s.mi, s.path)?.associations?.[s.ai] ?? null;
 });
 
 function patchMetaTitle(title: string) {
@@ -525,35 +486,6 @@ function removeMacro(mi: number, path: number[], maci: number) {
   });
 }
 
-function patchAssoc(mi: number, path: number[], ai: number, part: Partial<MvCodespaceAssociation>) {
-  patch((d) => {
-    const a = getNamespaceAtPath(d, mi, path)?.associations?.[ai];
-    if (!a) return;
-    Object.assign(a, part);
-  });
-}
-
-function patchAssocEnd(
-  mi: number,
-  path: number[],
-  ai: number,
-  end: 'fromEnd' | 'toEnd',
-  part: Record<string, unknown>,
-) {
-  patch((d) => {
-    const a = getNamespaceAtPath(d, mi, path)?.associations?.[ai];
-    if (!a) return;
-    const cur = { ...(a[end] ?? {}) };
-    Object.assign(cur, part);
-    a[end] = cur;
-  });
-}
-
-function removeAssoc(mi: number, path: number[], ai: number) {
-  patch((d) => {
-    getNamespaceAtPath(d, mi, path)?.associations?.splice(ai, 1);
-  });
-}
 </script>
 
 <template>
@@ -724,7 +656,6 @@ function removeAssoc(mi: number, path: number[], ai: number) {
             <button type="button" class="add-row" title="变量 — 无全局快捷键" @click="addVar(selection.mi, selection.path)">＋ 变量</button>
             <button type="button" class="add-row" title="函数 — 无全局快捷键" @click="addFn(selection.mi, selection.path)">＋ 函数</button>
             <button type="button" class="add-row" title="宏 — 无全局快捷键" @click="addMacro(selection.mi, selection.path)">＋ 宏</button>
-            <button type="button" class="add-row" title="关联 — 无全局快捷键" @click="addAssoc(selection.mi, selection.path)">＋ 关联</button>
             <button
               type="button"
               class="link-btn cs-danger"
@@ -1036,118 +967,6 @@ function removeAssoc(mi: number, path: number[], ai: number) {
             <input type="text" class="wide" :value="selectedMacro.notes ?? ''" @input="patchMacro(selection.mi, selection.path, selection.maci, { notes: ($event.target as HTMLInputElement).value })" />
           </label>
           <button type="button" class="link-btn cs-danger" title="删除宏 — 无全局快捷键" @click="removeMacro(selection.mi, selection.path, selection.maci)">删除宏</button>
-        </template>
-
-        <template v-else-if="selection.t === 'assoc' && selectedAssoc">
-          <h4 class="cs-detail-title">关联</h4>
-          <label class="field">
-            <span>id</span>
-            <input type="text" class="wide" :value="selectedAssoc.id" @input="patchAssoc(selection.mi, selection.path, selection.ai, { id: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <label class="field">
-            <span>kind</span>
-            <select
-              class="wide"
-              :value="selectedAssoc.kind"
-              @change="
-                patchAssoc(selection.mi, selection.path, selection.ai, {
-                  kind: ($event.target as HTMLSelectElement).value as MvCodespaceAssociationKind,
-                })
-              "
-            >
-              <option v-for="k in ASSOC_KINDS" :key="k" :value="k">{{ k }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>fromClassifierId</span>
-            <select
-              class="wide"
-              :value="selectedAssoc.fromClassifierId"
-              @change="
-                patchAssoc(selection.mi, selection.path, selection.ai, {
-                  fromClassifierId: ($event.target as HTMLSelectElement).value,
-                })
-              "
-            >
-              <option v-for="cid in classifierOptions" :key="'f-' + cid" :value="cid">{{ cid }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>toClassifierId</span>
-            <select
-              class="wide"
-              :value="selectedAssoc.toClassifierId"
-              @change="
-                patchAssoc(selection.mi, selection.path, selection.ai, {
-                  toClassifierId: ($event.target as HTMLSelectElement).value,
-                })
-              "
-            >
-              <option v-for="cid in classifierOptions" :key="'t-' + cid" :value="cid">{{ cid }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>notes</span>
-            <input type="text" class="wide" :value="selectedAssoc.notes ?? ''" @input="patchAssoc(selection.mi, selection.path, selection.ai, { notes: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <h5 class="cs-subh">fromEnd / toEnd</h5>
-          <div class="cs-rowline">
-            <span>fromEnd.role</span>
-            <input
-              :value="selectedAssoc.fromEnd?.role ?? ''"
-              @input="patchAssocEnd(selection.mi, selection.path, selection.ai, 'fromEnd', { role: ($event.target as HTMLInputElement).value })"
-            />
-            <span>mult</span>
-            <input
-              :value="selectedAssoc.fromEnd?.multiplicity ?? ''"
-              @input="
-                patchAssocEnd(selection.mi, selection.path, selection.ai, 'fromEnd', {
-                  multiplicity: ($event.target as HTMLInputElement).value,
-                })
-              "
-            />
-            <label class="cs-check">
-              <input
-                type="checkbox"
-                :checked="selectedAssoc.fromEnd?.navigable === true"
-                @change="
-                  patchAssocEnd(selection.mi, selection.path, selection.ai, 'fromEnd', {
-                    navigable: ($event.target as HTMLInputElement).checked,
-                  })
-                "
-              />
-              <span>navigable</span>
-            </label>
-          </div>
-          <div class="cs-rowline">
-            <span>toEnd.role</span>
-            <input
-              :value="selectedAssoc.toEnd?.role ?? ''"
-              @input="patchAssocEnd(selection.mi, selection.path, selection.ai, 'toEnd', { role: ($event.target as HTMLInputElement).value })"
-            />
-            <span>mult</span>
-            <input
-              :value="selectedAssoc.toEnd?.multiplicity ?? ''"
-              @input="
-                patchAssocEnd(selection.mi, selection.path, selection.ai, 'toEnd', {
-                  multiplicity: ($event.target as HTMLInputElement).value,
-                })
-              "
-            />
-            <label class="cs-check">
-              <input
-                type="checkbox"
-                :checked="selectedAssoc.toEnd?.navigable === true"
-                @change="
-                  patchAssocEnd(selection.mi, selection.path, selection.ai, 'toEnd', {
-                    navigable: ($event.target as HTMLInputElement).checked,
-                  })
-                "
-              />
-              <span>navigable</span>
-            </label>
-          </div>
-          <button type="button" class="link-btn cs-danger" title="删除关联 — 无全局快捷键" @click="removeAssoc(selection.mi, selection.path, selection.ai)">删除关联</button>
         </template>
 
         <p v-else class="canvas-hint">在左侧选择节点。</p>

@@ -1251,7 +1251,7 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
         <template v-else-if="block.kind === 'mv-model-codespace' && codespaceDraft">
           <h3 class="model-section-title">代码空间模型画布 · 树形编辑</h3>
           <p class="canvas-hint canvas-hint--compact">
-            <strong>软件结构示意</strong>：左侧树选择 <strong>块属性 / 模块 / 命名空间 / 类 / 变量 / 函数 / 宏 / 关联</strong>，右侧编辑字段；保存时由解析器校验（含递归
+            <strong>软件结构示意</strong>：左侧树选择 <strong>块属性 / 模块 / 命名空间 / 类 / 变量 / 函数 / 宏</strong>，右侧编辑字段；<strong>类间关联</strong>（<code>associations[]</code>）不在命名空间树中操作，请用底部「高级：原始 JSON」维护。保存时由解析器校验（含递归
             <code>namespaces</code>、Classifier、全局 <code>id</code> 唯一等）。非真实文件系统。展开底部「高级：原始 JSON」可整段粘贴后「应用到树」。
           </p>
           <CodespaceCanvasEditor :model-value="codespaceDraft" @update:model-value="setCodespaceDraft" />
