@@ -8,6 +8,7 @@ import {
   isMermaidViewKind,
   parseMarkdownBlocks,
   replaceBlockInnerById,
+  type MvFenceKind,
   type MvMapPayload,
   type MvModelPayload,
   type MvViewPayload,
@@ -40,6 +41,8 @@ interface CanvasTabSpec {
   id: string;
   relPath: string;
   blockId: string;
+  fenceKind: MvFenceKind;
+  subtypeLabel: string;
 }
 const canvasTabs = ref<CanvasTabSpec[]>([]);
 /** `'markdown'` = 中间列仅 Markdown 编辑；否则为 `canvasTabs` 中某条 `id` */
@@ -393,6 +396,34 @@ const blocks = computed(() => {
   return r.blocks;
 });
 
+/** 索引行 / 子标签：围栏语言（mv-model 等）之外的子类型（如 mv-view 的 kind、表标题） */
+function fenceBlockSubtypeLabel(b: ParsedFenceBlock): string {
+  if (b.kind === 'mv-model') {
+    const p = b.payload as MvModelPayload;
+    const t = p.title?.trim();
+    return t || '数据表';
+  }
+  if (b.kind === 'mv-view') {
+    return (b.payload as MvViewPayload).kind;
+  }
+  if (b.kind === 'mv-map') {
+    const p = b.payload as MvMapPayload;
+    const n = p.rules?.length ?? 0;
+    return n > 0 ? `映射 · ${n} 条` : '映射';
+  }
+  return '—';
+}
+
+function refreshCanvasTabSubtypesForPath(relPath: string, markdown: string) {
+  const { blocks: bl } = parseMarkdownBlocks(markdown);
+  canvasTabs.value = canvasTabs.value.map((t) => {
+    if (t.relPath !== relPath) return t;
+    const hit = bl.find((b) => b.payload.id === t.blockId);
+    if (!hit) return t;
+    return { ...t, fenceKind: hit.kind, subtypeLabel: fenceBlockSubtypeLabel(hit) };
+  });
+}
+
 /** 左侧 Dock：当前选中的围栏块（用于大纲第二段与右侧属性） */
 const selectedBlockId = ref<string | null>(null);
 const showOutlineDock = ref(true);
@@ -431,6 +462,7 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
   if (!b) return null;
   const lines: DockPropLine[] = [
     { label: '类型', value: b.kind },
+    { label: '子类型', value: fenceBlockSubtypeLabel(b) },
     { label: '块 ID', value: b.payload.id },
     { label: '围栏行', value: `L${b.startLine}–L${b.endLine}` },
     { label: '正文长度', value: `${b.rawInner.length} 字符` },
@@ -445,7 +477,6 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
     const p = b.payload as MvViewPayload;
     lines.push({ label: '代码块画布', value: MV_VIEW_KIND_METADATA[p.kind].canvasTitle });
     if (p.title) lines.push({ label: '标题', value: p.title });
-    lines.push({ label: '视图 kind', value: p.kind });
     lines.push({
       label: 'Model 地址 (modelRefs)',
       value: p.modelRefs.length ? p.modelRefs.join('；') : '（未绑定，须填写）',
@@ -1078,7 +1109,16 @@ function openVisualCanvas(block: ParsedFenceBlock) {
     return;
   }
   const id = makeCanvasTabId();
-  canvasTabs.value = [...canvasTabs.value, { id, relPath: p, blockId: block.payload.id }];
+  canvasTabs.value = [
+    ...canvasTabs.value,
+    {
+      id,
+      relPath: p,
+      blockId: block.payload.id,
+      fenceKind: block.kind,
+      subtypeLabel: fenceBlockSubtypeLabel(block),
+    },
+  ];
   activeEditorTab.value = id;
   logLine(`已打开代码块画布标签：${block.payload.id}`, 'info');
 }
@@ -1099,6 +1139,7 @@ async function onEmbeddedCanvasSaved(payload: { markdown: string; relPath: strin
     await electronApi.value.writeWorkspaceFile(payload.relPath, payload.markdown);
   }
   syncBaselineForPath(payload.relPath, payload.markdown);
+  refreshCanvasTabSubtypesForPath(payload.relPath, payload.markdown);
   logLine(`代码块画布已保存：${payload.relPath}`, 'info');
 }
 
@@ -1140,6 +1181,7 @@ function onOpenerCanvasSaved(ev: MessageEvent) {
     sourceEditorText.value = markdown;
   }
   syncBaselineForPath(relPath, markdown);
+  refreshCanvasTabSubtypesForPath(relPath, markdown);
   logLine(`已从代码块画布窗口合并保存：${relPath}`, 'info');
 }
 
@@ -1471,10 +1513,13 @@ onUnmounted(() => {
                     <button
                       type="button"
                       class="dock-fence-select"
-                      :title="`选中块 ${b.payload.id} — 无全局快捷键`"
+                      :title="`选中 ${b.kind} · ${fenceBlockSubtypeLabel(b)} · ${b.payload.id} — 无全局快捷键`"
                       @click="selectFenceBlock(b)"
                     >
-                      <span class="dock-fence-kind">{{ b.kind }}</span>
+                      <span class="dock-fence-type-line">
+                        <span class="dock-fence-kind">{{ b.kind }}</span>
+                        <span class="dock-fence-sub">{{ fenceBlockSubtypeLabel(b) }}</span>
+                      </span>
                       <code class="dock-fence-id">{{ b.payload.id }}</code>
                     </button>
                     <button
@@ -1558,10 +1603,15 @@ onUnmounted(() => {
                   class="subtab subtab-main"
                   role="tab"
                   :aria-selected="activeEditorTab === t.id"
-                  :title="`${t.relPath} · ${t.blockId}`"
+                  :title="`${t.fenceKind} · ${t.subtypeLabel} · ${t.blockId} — 无全局快捷键`"
                   @click="activeEditorTab = t.id"
                 >
-                  代码块 <code class="subtab-code">{{ t.blockId }}</code>
+                  <span class="subtab-meta">
+                    <span class="subtab-kind">{{ t.fenceKind }}</span>
+                    <span class="subtab-sep">·</span>
+                    <span class="subtab-sub">{{ t.subtypeLabel }}</span>
+                  </span>
+                  <code class="subtab-code">{{ t.blockId }}</code>
                 </button>
                 <button
                   type="button"
@@ -2246,6 +2296,31 @@ onUnmounted(() => {
   border-radius: 6px 0 0 0;
   background: transparent;
   padding: 5px 8px 5px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+}
+.subtab-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+.subtab-kind {
+  font-weight: 700;
+  color: #4338ca;
+}
+.subtab-sub {
+  font-weight: 600;
+  color: #475569;
+}
+.subtab-sep {
+  color: #94a3b8;
+  font-weight: 400;
 }
 .subtab-wrap.active .subtab-main {
   font-weight: 600;
@@ -2677,8 +2752,9 @@ onUnmounted(() => {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   padding: 6px 8px;
   margin: 0;
   border: none;
@@ -2688,6 +2764,18 @@ onUnmounted(() => {
   text-align: left;
   cursor: pointer;
   color: #0f172a;
+}
+.dock-fence-type-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.dock-fence-sub {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #475569;
 }
 .dock-fence-select:hover {
   background: #f1f5f9;
