@@ -73,6 +73,17 @@ function pick(kind: InsertCodeBlockKind) {
   emit('select', kind);
 }
 
+function groupSectionId(gi: number): string {
+  return `icb-insert-g${gi}`;
+}
+
+function scrollToGroup(gi: number) {
+  const el = document.getElementById(groupSectionId(gi));
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  window.setTimeout(() => el.focus({ preventScroll: true }), 280);
+}
+
 function onKeydown(ev: KeyboardEvent) {
   if (ev.key === 'Escape') emit('close');
 }
@@ -107,24 +118,47 @@ function onKeydown(ev: KeyboardEvent) {
         </header>
 
         <div class="icb-body">
-          <section v-for="(g, gi) in insertGroups" :key="gi" class="icb-group">
-            <h3 class="icb-group-title">{{ g.title }}</h3>
-            <div class="icb-grid">
-              <button
-                v-for="k in g.kinds"
-                :key="k"
-                type="button"
-                class="icb-card"
-                :title="`插入「${insertCardTitle(k)}」围栏代码块 — 无全局快捷键`"
-                @click="pick(k)"
-              >
-                <DiagramTypeThumb :variant="k" class="icb-thumb-wrap" />
-                <span class="icb-card-title">{{ insertCardTitle(k) }}</span>
-                <span class="icb-card-desc">{{ descFor(k) }}</span>
-                <span class="icb-kind-tag"><code>{{ k }}</code></span>
-              </button>
-            </div>
-          </section>
+          <nav class="icb-toc" aria-label="类型大纲">
+            <p class="icb-toc-heading">大纲</p>
+            <ul class="icb-toc-list">
+              <li v-for="(g, gi) in insertGroups" :key="`toc-${gi}`">
+                <button
+                  type="button"
+                  class="icb-toc-link"
+                  :title="`跳转到「${g.title}」— 无全局快捷键`"
+                  @click="scrollToGroup(gi)"
+                >
+                  {{ g.title }}
+                </button>
+              </li>
+            </ul>
+          </nav>
+          <div class="icb-scroll">
+            <section
+              v-for="(g, gi) in insertGroups"
+              :key="gi"
+              :id="groupSectionId(gi)"
+              class="icb-group"
+              tabindex="-1"
+            >
+              <h3 class="icb-group-title">{{ g.title }}</h3>
+              <div class="icb-grid">
+                <button
+                  v-for="k in g.kinds"
+                  :key="k"
+                  type="button"
+                  class="icb-card"
+                  :title="`插入「${insertCardTitle(k)}」围栏代码块 — 无全局快捷键`"
+                  @click="pick(k)"
+                >
+                  <DiagramTypeThumb :variant="k" class="icb-thumb-wrap" />
+                  <span class="icb-card-title">{{ insertCardTitle(k) }}</span>
+                  <span class="icb-card-desc">{{ descFor(k) }}</span>
+                  <span class="icb-kind-tag"><code>{{ k }}</code></span>
+                </button>
+              </div>
+            </section>
+          </div>
         </div>
 
         <footer class="icb-foot">
@@ -147,7 +181,7 @@ function onKeydown(ev: KeyboardEvent) {
   background: rgba(15, 23, 42, 0.45);
 }
 .icb-dialog {
-  width: min(920px, 100%);
+  width: min(1040px, 100%);
   max-height: min(88vh, 900px);
   display: flex;
   flex-direction: column;
@@ -186,12 +220,63 @@ function onKeydown(ev: KeyboardEvent) {
 }
 .icb-body {
   flex: 1;
+  display: flex;
+  flex-direction: row;
   min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.icb-toc {
+  flex-shrink: 0;
+  width: min(200px, 34vw);
+  padding: 12px 10px 14px 14px;
+  border-right: 1px solid #e2e8f0;
+  background: #f1f5f9;
+  overflow-y: auto;
+}
+.icb-toc-heading {
+  margin: 0 0 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.icb-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.icb-toc-list li + li {
+  margin-top: 2px;
+}
+.icb-toc-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: #334155;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.icb-toc-link:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.icb-scroll {
+  flex: 1;
+  min-width: 0;
   overflow: auto;
   padding: 12px 16px 14px;
 }
 .icb-group {
   margin-bottom: 18px;
+  scroll-margin-top: 8px;
 }
 .icb-group:last-child {
   margin-bottom: 0;
