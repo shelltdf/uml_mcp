@@ -208,6 +208,31 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('primaryKey'))).toBe(true);
   });
 
+  it('rejects mv-model-sql duplicate primary key tuple in rows', () => {
+    const md =
+      '\`\`\`mv-model-sql\n' +
+      JSON.stringify({
+        id: 'x',
+        tables: [
+          {
+            id: 'tb',
+            columns: [
+              { name: 'id', type: 'string', primaryKey: true, nullable: false },
+              { name: 'name', type: 'string', nullable: true },
+            ],
+            rows: [
+              { id: '1', name: 'a' },
+              { id: '1', name: 'b' },
+            ],
+          },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('duplicate primary key'))).toBe(true);
+  });
+
   it('rejects mv-model-sql duplicate table id', () => {
     const md =
       '\`\`\`mv-model-sql\n' +

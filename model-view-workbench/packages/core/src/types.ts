@@ -1,7 +1,7 @@
 /** Fence language tags supported by the workbench */
 export type MvFenceKind = 'mv-model-sql' | 'mv-model-kv' | 'mv-model-struct' | 'mv-view' | 'mv-map';
 
-/** `` ```mv-model-sql `` 内单张表的列 schema（设计元数据 + 行数据键名） */
+/** `` ```mv-model-sql `` 内单张表的列 schema（设计元数据 + 行数据键名）。列名 ``id`` 在业务上常作主键：Workbench 默认 ``primaryKey`` + 非可空，且解析器要求 **所有标记 ``primaryKey`` 的列在行间取值组合唯一**。 */
 export interface MvModelColumnDef {
   name: string;
   type?: string;

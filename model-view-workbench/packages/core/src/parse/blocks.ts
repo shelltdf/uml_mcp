@@ -153,6 +153,29 @@ function validateMvModelSqlTable(
     }
   }
 
+  const pkCols = (colsRaw as Array<Record<string, unknown>>).filter(
+    (c) => c.primaryKey === true && typeof (c as { name?: unknown }).name === 'string',
+  ) as Array<{ name: string }>;
+  if (pkCols.length > 0) {
+    const seenPk = new Set<string>();
+    for (let ri = 0; ri < rowsRaw.length; ri++) {
+      const r = rowsRaw[ri] as Record<string, unknown>;
+      const parts = pkCols.map((c) => {
+        const cn = c.name;
+        if (!Object.prototype.hasOwnProperty.call(r, cn)) return '__missing__';
+        return JSON.stringify(r[cn]);
+      });
+      const sig = parts.join('\u0001');
+      if (seenPk.has(sig)) {
+        return {
+          ok: false,
+          message: `${path}.rows: duplicate primary key (PK columns: ${pkCols.map((c) => c.name).join(', ')})`,
+        };
+      }
+      seenPk.add(sig);
+    }
+  }
+
   return { ok: true, table: obj as unknown as MvModelSqlTable };
 }
 

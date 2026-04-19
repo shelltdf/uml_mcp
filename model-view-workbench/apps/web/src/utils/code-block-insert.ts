@@ -41,7 +41,7 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
         {
           id: 'main',
           title: '主表',
-          columns: [{ name: 'id', type: 'string' }],
+          columns: [{ name: 'id', type: 'string', primaryKey: true, nullable: false }],
           rows: [{ id: '1' }],
         },
       ],

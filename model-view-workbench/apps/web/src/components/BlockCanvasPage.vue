@@ -277,7 +277,7 @@ function addModelSqlTable() {
   const newTable: MvModelSqlTable = {
     id: tid,
     title: '',
-    columns: [{ name: 'col_1', type: 'string', nullable: true }],
+    columns: [{ name: 'id', type: 'string', primaryKey: true, nullable: false }],
     rows: [],
   };
   d.tables = [...d.tables, newTable];
@@ -435,7 +435,12 @@ function renameModelColumn(ci: number, raw: string) {
     window.alert('列名已存在。');
     return;
   }
-  m.columns = m.columns.map((c, i) => (i === ci ? { ...c, name: nextName } : c));
+  const isIdCol = nextName === 'id';
+  m.columns = m.columns.map((c, i) => {
+    if (i !== ci) return c;
+    if (isIdCol) return { ...c, name: 'id', primaryKey: true, nullable: undefined };
+    return { ...c, name: nextName };
+  });
   for (const row of m.rows) {
     if (Object.prototype.hasOwnProperty.call(row, old)) {
       row[nextName] = row[old];
@@ -466,6 +471,10 @@ function setModelColumnNullable(ci: number, nullable: boolean) {
   const m = modelDraft.value;
   if (!m) return;
   const col = m.columns[ci]!;
+  if (nullable && col.name === 'id' && col.primaryKey === true) {
+    window.alert('列「id」作为主键时不可设为可空。');
+    return;
+  }
   if (nullable === false) {
     const nextCol: MvModelColumnDef = { ...col };
     delete nextCol.nullable;
@@ -479,9 +488,17 @@ function setModelColumnNullable(ci: number, nullable: boolean) {
 function setModelColumnPrimaryKey(ci: number, pk: boolean) {
   const m = modelDraft.value;
   if (!m) return;
-  m.columns = m.columns.map((c, i) =>
-    i === ci ? { ...c, primaryKey: pk ? true : undefined } : c,
-  );
+  m.columns = m.columns.map((c, i) => {
+    if (i !== ci) return c;
+    const next: MvModelColumnDef = { ...c };
+    if (pk) {
+      next.primaryKey = true;
+      if (next.name === 'id') delete next.nullable;
+    } else {
+      delete next.primaryKey;
+    }
+    return next;
+  });
 }
 
 function setModelColumnUnique(ci: number, uq: boolean) {
@@ -522,6 +539,18 @@ function addModelRow() {
   for (const c of m.columns) {
     row[c.name] = initialCellValueForColumn(c);
   }
+  const pks = pkColumnsOf(m);
+  if (pks.length > 0) {
+    const hasIdPk = pks.some((c) => c.name === 'id');
+    const k0 = pkTupleKeyFromRow(row, pks);
+    const dupTuple = m.rows.some((r) => pkTupleKeyFromRow(r, pks) === k0);
+    /** 首行也会得到非可空列的初始空串；空 id 不应作为主键值保留 */
+    const emptyIdPk = hasIdPk && cellStr(row, 'id') === '';
+    if (dupTuple || emptyIdPk) {
+      const bump = pks.find((c) => c.name === 'id') ?? pks[0]!;
+      row[bump.name] = nextUniqueScalarForColumnExcluding(m, bump.name, -1);
+    }
+  }
   m.rows = [...m.rows, row];
 }
 
@@ -529,7 +558,9 @@ function duplicateModelRow(originalIndex: number) {
   const m = modelDraft.value;
   if (!m || originalIndex < 0 || originalIndex >= m.rows.length) return;
   const copy = { ...m.rows[originalIndex] };
-  m.rows = [...m.rows.slice(0, originalIndex + 1), copy, ...m.rows.slice(originalIndex + 1)];
+  const insertAt = originalIndex + 1;
+  m.rows = [...m.rows.slice(0, insertAt), copy, ...m.rows.slice(insertAt)];
+  dedupePkOnRow(m, insertAt);
 }
 
 function removeModelRow(index: number) {
@@ -545,6 +576,17 @@ function clearAllModelRows() {
   m.rows = [];
 }
 
+/** 保存前：主键列 id 不允许长期为空串（与新增行逻辑一致，并修复历史数据） */
+function normalizeEmptyPkIdsForTable(tbl: MvModelSqlTable) {
+  const idPk = tbl.columns.find((c) => c.name === 'id' && c.primaryKey === true);
+  if (!idPk) return;
+  for (let ri = 0; ri < tbl.rows.length; ri++) {
+    const row = tbl.rows[ri]!;
+    if (cellStr(row, 'id') !== '') continue;
+    row.id = nextUniqueScalarForColumnExcluding(tbl, 'id', ri);
+  }
+}
+
 function normalizeModelRowsForSave() {
   const d = modelSqlDraft.value;
   if (!d) return;
@@ -556,6 +598,7 @@ function normalizeModelRowsForSave() {
         }
       }
     }
+    normalizeEmptyPkIdsForTable(tbl);
   }
 }
 
@@ -565,20 +608,80 @@ function cellStr(row: Record<string, unknown>, col: string): string {
   return String(v);
 }
 
+function pkColumnsOf(m: MvModelSqlTable): MvModelColumnDef[] {
+  return m.columns.filter((c) => c.primaryKey === true);
+}
+
+function pkTupleKeyFromRow(row: Record<string, unknown>, pks: MvModelColumnDef[]): string {
+  return pks
+    .map((c) => {
+      if (!Object.prototype.hasOwnProperty.call(row, c.name)) return '__missing__';
+      return JSON.stringify(row[c.name]);
+    })
+    .join('\u0001');
+}
+
+function nextUniqueScalarForColumnExcluding(m: MvModelSqlTable, colName: string, excludeRowIndex: number): string {
+  const used = new Set<string>();
+  for (let i = 0; i < m.rows.length; i++) {
+    if (i === excludeRowIndex) continue;
+    used.add(cellStr(m.rows[i]!, colName));
+  }
+  let n = 1;
+  while (used.has(String(n))) n++;
+  return String(n);
+}
+
+function dedupePkOnRow(m: MvModelSqlTable, rowIndex: number) {
+  const pks = pkColumnsOf(m);
+  if (pks.length === 0) return;
+  const row = m.rows[rowIndex];
+  if (!row) return;
+  let guard = 0;
+  while (
+    m.rows.some((r, i) => i !== rowIndex && pkTupleKeyFromRow(r, pks) === pkTupleKeyFromRow(row, pks)) &&
+    guard < 9999
+  ) {
+    const bump = pks.find((c) => c.name === 'id') ?? pks[0]!;
+    row[bump.name] = nextUniqueScalarForColumnExcluding(m, bump.name, rowIndex);
+    guard++;
+  }
+}
+
 function setCell(row: Record<string, unknown>, col: string, s: string) {
-  const t = s.trim();
   const m = modelDraft.value;
   const colDef = m?.columns.find((c) => c.name === col);
   const nullable = colDef?.nullable === true;
+  const t = s.trim();
+  let nextVal: unknown;
   if (t === '') {
-    if (nullable) delete row[col];
-    else row[col] = '';
-    return;
+    nextVal = nullable ? undefined : '';
+  } else if (t === 'true') nextVal = true;
+  else if (t === 'false') nextVal = false;
+  else if (!Number.isNaN(Number(t)) && String(Number(t)) === t) nextVal = Number(t);
+  else nextVal = s;
+
+  if (m) {
+    const pks = pkColumnsOf(m);
+    if (pks.some((c) => c.name === col)) {
+      const ri = m.rows.indexOf(row);
+      if (ri >= 0) {
+        const trial = { ...row };
+        if (nextVal === undefined) delete trial[col];
+        else trial[col] = nextVal;
+        const testKey = pkTupleKeyFromRow(trial, pks);
+        if (m.rows.some((r, i) => i !== ri && pkTupleKeyFromRow(r, pks) === testKey)) {
+          window.alert(
+            `主键不可重复：在 PK 列（${pks.map((c) => c.name).join(', ')}）上与其它行取值相同。`,
+          );
+          return;
+        }
+      }
+    }
   }
-  if (t === 'true') row[col] = true;
-  else if (t === 'false') row[col] = false;
-  else if (!Number.isNaN(Number(t)) && String(Number(t)) === t) row[col] = Number(t);
-  else row[col] = s;
+
+  if (nextVal === undefined) delete row[col];
+  else row[col] = nextVal;
 }
 
 function fenceInnerParsesOk(fence: string, inner: string): boolean {
@@ -675,7 +778,7 @@ function save() {
     const k = block.value?.kind;
     if (k === 'mv-model-sql' || k === 'mv-model-kv' || k === 'mv-model-struct') {
       window.alert(
-        '无法保存：JSON 无效或不符合当前围栏契约（mv-model-sql 须含非空 tables；KV 每条须为 JSON 对象；结构化层次须含合法 root）。',
+        '无法保存：JSON 无效或不符合当前围栏契约（mv-model-sql：非空 tables、行须满足列声明、**主键列组合在表内唯一**；KV 每条须为 JSON 对象；结构化层次须含合法 root）。',
       );
     }
     return;

@@ -18,6 +18,8 @@
 
 **子表 `columns[]` 列项**：必填 `name`（同子表内不重复），可选 `type`、`nullable`、`primaryKey`、`unique`、`defaultValue`（标量 JSON）、`comment`（string）。
 
+**行与主键**：凡 `primaryKey: true` 的列，**同子表内各行**在这些列上的取值 **组合**（按 `columns[]` 中出现顺序）须 **唯一**；重复则解析失败。列名 **`id`** 在 Workbench 新建子表 / 插入 ``mv-model-sql`` 时默认 **`primaryKey` + 非可空**（画布内编辑时亦约束主键不可重复）。
+
 **View 绑定**：`` ```mv-view `` 的 `modelRefs` 指向子表时，同文件写 **`{Model块id}#{子表id}`**；若该 Model 块仅含 **一张** 子表，可省略 `#子表id` 仅写块 id。跨文件写 **`ref:相对路径.md#块id#子表id`** 或（单子表块）**`ref:相对路径.md#块id`**（见 `parseRefUri`：`ResolvedRef.tableId`）。
 
 校验失败时：记录错误并 **不** 收录该块；同文件其它块仍可解析。
