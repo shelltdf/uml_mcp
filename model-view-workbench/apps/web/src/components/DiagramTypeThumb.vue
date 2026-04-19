@@ -9,12 +9,14 @@ const markerId = ref(`dtt-arr-${Math.random().toString(36).slice(2, 11)}`);
 
 <template>
   <svg class="dtt" viewBox="0 0 88 52" aria-hidden="true" focusable="false">
-    <!-- mv-model：表网格 -->
-    <g v-if="variant === 'mv-model'">
-      <rect x="6" y="10" width="76" height="32" rx="3" fill="#e2e8f0" stroke="#64748b" stroke-width="1.2" />
-      <line x1="6" y1="18" x2="82" y2="18" stroke="#64748b" stroke-width="1" />
-      <line x1="28" y1="10" x2="28" y2="42" stroke="#94a3b8" stroke-width="0.8" />
-      <line x1="50" y1="10" x2="50" y2="42" stroke="#94a3b8" stroke-width="0.8" />
+    <!-- mv-model-sql：多表 Model 组 -->
+    <g v-if="variant === 'mv-model-sql'">
+      <rect x="6" y="10" width="34" height="28" rx="2" fill="#e2e8f0" stroke="#64748b" stroke-width="1" />
+      <line x1="6" y1="17" x2="40" y2="17" stroke="#64748b" stroke-width="0.8" />
+      <line x1="20" y1="10" x2="20" y2="38" stroke="#94a3b8" stroke-width="0.6" />
+      <rect x="48" y="10" width="34" height="28" rx="2" fill="#e2e8f0" stroke="#64748b" stroke-width="1" />
+      <line x1="48" y1="17" x2="82" y2="17" stroke="#64748b" stroke-width="0.8" />
+      <line x1="62" y1="10" x2="62" y2="38" stroke="#94a3b8" stroke-width="0.6" />
     </g>
     <!-- mv-model-kv：文档卡片叠放 -->
     <g v-else-if="variant === 'mv-model-kv'">

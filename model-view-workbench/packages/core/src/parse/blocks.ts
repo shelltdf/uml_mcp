@@ -2,7 +2,8 @@ import type {
   MvFenceKind,
   MvMapPayload,
   MvModelKvPayload,
-  MvModelPayload,
+  MvModelSqlPayload,
+  MvModelSqlTable,
   MvModelStructPayload,
   MvViewKind,
   MvViewPayload,
@@ -12,7 +13,7 @@ import type {
 } from '../types.js';
 import { MV_VIEW_KINDS, isMermaidViewKind } from '../types.js';
 
-const FENCE = /^```(mv-model|mv-model-kv|mv-model-struct|mv-view|mv-map)\s*$/m;
+const FENCE = /^```(mv-model-sql|mv-model-kv|mv-model-struct|mv-view|mv-map)\s*$/m;
 
 function lineNumberAt(source: string, offset: number): number {
   let n = 1;
@@ -69,41 +70,44 @@ function parseJsonPayload<T extends object>(inner: string, kind: MvFenceKind): {
 }
 
 /**
- * 校验 mv-model：一张表 = 非空 columns（列上可选元数据类型合法）+ rows 中每行仅允许声明列，且非 nullable 列必须出现。
+ * 校验 ``mv-model-sql`` 内单张表：非空 columns + rows 与列声明一致。
  */
-function validateMvModel(obj: Record<string, unknown>): { ok: true; model: MvModelPayload } | { ok: false; message: string } {
+function validateMvModelSqlTable(
+  obj: Record<string, unknown>,
+  path: string,
+): { ok: true; table: MvModelSqlTable } | { ok: false; message: string } {
   if (typeof obj.id !== 'string' || !obj.id.trim()) {
-    return { ok: false, message: 'mv-model: id must be a non-empty string' };
+    return { ok: false, message: `${path}.id must be a non-empty string` };
   }
   if ('title' in obj && obj.title !== undefined && typeof obj.title !== 'string') {
-    return { ok: false, message: 'mv-model: title must be a string when present' };
+    return { ok: false, message: `${path}.title must be a string when present` };
   }
 
   const colsRaw = obj.columns;
   if (!Array.isArray(colsRaw) || colsRaw.length === 0) {
-    return { ok: false, message: 'mv-model: columns must be a non-empty array (fixed table schema)' };
+    return { ok: false, message: `${path}.columns must be a non-empty array` };
   }
 
   const names = new Set<string>();
   for (let i = 0; i < colsRaw.length; i++) {
     const c = colsRaw[i];
     if (!c || typeof c !== 'object' || Array.isArray(c)) {
-      return { ok: false, message: `mv-model: columns[${i}] must be an object` };
+      return { ok: false, message: `${path}.columns[${i}] must be an object` };
     }
     const o = c as Record<string, unknown>;
     if (typeof o.name !== 'string' || !o.name.trim()) {
-      return { ok: false, message: `mv-model: columns[${i}].name must be a non-empty string` };
+      return { ok: false, message: `${path}.columns[${i}].name must be a non-empty string` };
     }
     if (names.has(o.name)) {
-      return { ok: false, message: `mv-model: duplicate column name "${o.name}"` };
+      return { ok: false, message: `${path}: duplicate column name "${o.name}"` };
     }
     names.add(o.name);
 
     if ('primaryKey' in o && o.primaryKey !== undefined && typeof o.primaryKey !== 'boolean') {
-      return { ok: false, message: `mv-model: columns[${i}].primaryKey must be boolean when present` };
+      return { ok: false, message: `${path}.columns[${i}].primaryKey must be boolean when present` };
     }
     if ('unique' in o && o.unique !== undefined && typeof o.unique !== 'boolean') {
-      return { ok: false, message: `mv-model: columns[${i}].unique must be boolean when present` };
+      return { ok: false, message: `${path}.columns[${i}].unique must be boolean when present` };
     }
     if ('defaultValue' in o && o.defaultValue !== undefined) {
       const dv = o.defaultValue;
@@ -112,31 +116,31 @@ function validateMvModel(obj: Record<string, unknown>): { ok: true; model: MvMod
       if (!dvOk) {
         return {
           ok: false,
-          message: `mv-model: columns[${i}].defaultValue must be string, number, boolean, or null`,
+          message: `${path}.columns[${i}].defaultValue must be string, number, boolean, or null`,
         };
       }
     }
     if ('comment' in o && o.comment !== undefined && typeof o.comment !== 'string') {
-      return { ok: false, message: `mv-model: columns[${i}].comment must be a string when present` };
+      return { ok: false, message: `${path}.columns[${i}].comment must be a string when present` };
     }
   }
 
   const rowsRaw = obj.rows;
   if (!Array.isArray(rowsRaw)) {
-    return { ok: false, message: 'mv-model: rows must be an array' };
+    return { ok: false, message: `${path}.rows must be an array` };
   }
 
   for (let ri = 0; ri < rowsRaw.length; ri++) {
     const row = rowsRaw[ri];
     if (!row || typeof row !== 'object' || Array.isArray(row)) {
-      return { ok: false, message: `mv-model: rows[${ri}] must be an object (one table row)` };
+      return { ok: false, message: `${path}.rows[${ri}] must be an object (one table row)` };
     }
     const r = row as Record<string, unknown>;
     for (const key of Object.keys(r)) {
       if (!names.has(key)) {
         return {
           ok: false,
-          message: `mv-model: rows[${ri}] has unknown property "${key}" (not among declared columns)`,
+          message: `${path}.rows[${ri}] has unknown property "${key}" (not among declared columns)`,
         };
       }
     }
@@ -144,12 +148,40 @@ function validateMvModel(obj: Record<string, unknown>): { ok: true; model: MvMod
       const colName = c.name as string;
       const nullable = c.nullable === true;
       if (!(colName in r) && !nullable) {
-        return { ok: false, message: `mv-model: rows[${ri}] missing required column "${colName}"` };
+        return { ok: false, message: `${path}.rows[${ri}] missing required column "${colName}"` };
       }
     }
   }
 
-  return { ok: true, model: obj as unknown as MvModelPayload };
+  return { ok: true, table: obj as unknown as MvModelSqlTable };
+}
+
+function validateMvModelSql(obj: Record<string, unknown>): { ok: true; data: MvModelSqlPayload } | { ok: false; message: string } {
+  if (typeof obj.id !== 'string' || !obj.id.trim()) {
+    return { ok: false, message: 'mv-model-sql: id must be a non-empty string' };
+  }
+  if ('title' in obj && obj.title !== undefined && typeof obj.title !== 'string') {
+    return { ok: false, message: 'mv-model-sql: title must be a string when present' };
+  }
+  const tabs = obj.tables;
+  if (!Array.isArray(tabs) || tabs.length === 0) {
+    return { ok: false, message: 'mv-model-sql: tables must be a non-empty array' };
+  }
+  const seen = new Set<string>();
+  for (let i = 0; i < tabs.length; i++) {
+    const t = tabs[i];
+    if (!t || typeof t !== 'object' || Array.isArray(t)) {
+      return { ok: false, message: `mv-model-sql.tables[${i}] must be an object` };
+    }
+    const path = `mv-model-sql.tables[${i}]`;
+    const vt = validateMvModelSqlTable(t as Record<string, unknown>, path);
+    if (!vt.ok) return vt;
+    if (seen.has(vt.table.id)) {
+      return { ok: false, message: `mv-model-sql: duplicate table id "${vt.table.id}"` };
+    }
+    seen.add(vt.table.id);
+  }
+  return { ok: true, data: obj as unknown as MvModelSqlPayload };
 }
 
 function validateMvModelKv(obj: Record<string, unknown>): { ok: true; data: MvModelKvPayload } | { ok: false; message: string } {
@@ -314,15 +346,15 @@ export function parseMarkdownBlocks(source: string): ParseMdResult {
     }
     const obj = parsed.value;
     let payload: ParsedFenceBlock['payload'] | null = null;
-    if (kind === 'mv-model') {
-      const mv = validateMvModel(obj);
+    if (kind === 'mv-model-sql') {
+      const mv = validateMvModelSql(obj);
       if (!mv.ok) {
         errors.push({
           message: mv.message,
           line: lineNumberAt(source, innerStartOffset),
         });
       } else {
-        payload = mv.model;
+        payload = mv.data;
       }
     } else if (kind === 'mv-model-kv') {
       const kv = validateMvModelKv(obj);
@@ -453,4 +485,24 @@ export function replaceBlockInnerById(source: string, blockId: string, newInnerJ
 
 export function getBlockFenceSlice(source: string, block: ParsedFenceBlock): string {
   return source.slice(block.startOffset, block.endOffset);
+}
+
+/**
+ * 在已解析块列表中定位 ``mv-model-sql`` 围栏内的一张表。
+ * `tableId` 省略时仅当该块仅含一张表时返回该表，否则返回 null。
+ */
+export function findMvModelSqlTable(
+  blocks: ParsedFenceBlock[],
+  blockId: string,
+  tableId?: string,
+): MvModelSqlTable | null {
+  const b = blocks.find((x) => x.kind === 'mv-model-sql' && x.payload.id === blockId);
+  if (!b || b.kind !== 'mv-model-sql') return null;
+  const p = b.payload as MvModelSqlPayload;
+  const tid = tableId?.trim();
+  if (tid) {
+    return p.tables.find((t) => t.id === tid) ?? null;
+  }
+  if (p.tables.length === 1) return p.tables[0]!;
+  return null;
 }

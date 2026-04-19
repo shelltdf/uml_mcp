@@ -1,15 +1,18 @@
 import type { ResolvedRef } from '../types.js';
 
-const REF_RE = /^ref:(.+)#([^#]+)$/;
+/** ref:path.md#blockId 或 ref:path.md#blockId#tableId（mv-model-sql 子表）；路径段内不得含 # */
+const REF_RE = /^ref:(.+?)#([^#]+)(?:#([^#]+))?$/;
 
 /**
- * Parse ref: relative/path.md#blockId
+ * Parse ref: relative/path.md#blockId 或 ref: relative/path.md#blockId#tableId
  */
 export function parseRefUri(ref: string): ResolvedRef | null {
   const s = ref.trim();
   const m = REF_RE.exec(s);
   if (!m) return null;
-  return { ref: s, fileRel: normalizeRelPath(m[1]), blockId: m[2] };
+  const out: ResolvedRef = { ref: s, fileRel: normalizeRelPath(m[1]), blockId: m[2] };
+  if (m[3] !== undefined && m[3] !== '') out.tableId = m[3];
+  return out;
 }
 
 /** Normalize path segments; keep posix style for storage */

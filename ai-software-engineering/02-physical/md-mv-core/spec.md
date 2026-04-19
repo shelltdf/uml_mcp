@@ -2,20 +2,23 @@
 
 ## 围栏块语法
 
-- 围栏首行必须为以下之一（整行，前后无其它字符）：`` ```mv-model ``、`` ```mv-model-kv ``、`` ```mv-model-struct ``、`` ```mv-view ``、`` ```mv-map ``。
+- 围栏首行必须为以下之一（整行，前后无其它字符）：`` ```mv-model-sql ``、`` ```mv-model-kv ``、`` ```mv-model-struct ``、`` ```mv-view ``、`` ```mv-map ``。
 - 围栏内为 **单个 JSON 对象**（允许首尾空白）；解析前对体文本 `trim()` 后 `JSON.parse`。
 - 闭合围栏：行首为换行后的 `` ``` ``（即序列 `\n` + `` ``` ``）。
 
-## mv-model（表）
+## mv-model-sql（Model · 多子表）
 
-语义：**一个** `` ```mv-model `` 围栏表示 **一张表**（固定列 `columns` + 行数据 `rows`）。同一 Markdown 中可包含 **多个** `` ```mv-model `` 围栏，即 **多张表**；每张表以 `id` 标识，且在 **同一文件内** `id` 必须唯一（与其它块类型共用唯一性规则）。
+语义：**一个** `` ```mv-model-sql `` 围栏表示 **一个 Model 组**（**Model**），内含 **多张** SQL 风格子表（`tables[]`）。围栏级 `id` 在 **同一文件内** 与其它围栏块唯一。每个子表有独立的 `id`（**组内唯一**）、可选 `title`、固定列 `columns`、行 `rows`；列与行的校验规则与旧版单表一致（仅允许声明列键；非 `nullable` 列每行必须出现）。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | string | 文件内唯一 |
-| title | string? | 可选表标题（展示用） |
-| columns | array | **至少一项**。每项为列定义：必填 `name`（非空字符串、同表内不重复），可选 `type`、`nullable`、`primaryKey`（boolean，多列 true 表示联合主键，设计用）、`unique`（boolean，设计用）、`defaultValue`（仅标量 JSON：字符串、数字、布尔、null）、`comment`（string） |
-| rows | array | 每元素为一 **行**（JSON 对象）。**仅允许**出现在 `columns[].name` 中的键；对 `nullable !== true` 的列，每一行 **必须** 包含该键 |
+| id | string | **Model 组** id，文件内唯一 |
+| title | string? | 可选组标题 |
+| tables | array | **至少一项**。每项为子表对象：必填非空 `id`（组内唯一）、可选 `title`、`columns`（非空数组，列定义同下表）、`rows`（数组，每行为对象） |
+
+**子表 `columns[]` 列项**：必填 `name`（同子表内不重复），可选 `type`、`nullable`、`primaryKey`、`unique`、`defaultValue`（标量 JSON）、`comment`（string）。
+
+**View 绑定**：`` ```mv-view `` 的 `modelRefs` 指向子表时，同文件写 **`{Model块id}#{子表id}`**；若该 Model 块仅含 **一张** 子表，可省略 `#子表id` 仅写块 id。跨文件写 **`ref:相对路径.md#块id#子表id`** 或（单子表块）**`ref:相对路径.md#块id`**（见 `parseRefUri`：`ResolvedRef.tableId`）。
 
 校验失败时：记录错误并 **不** 收录该块；同文件其它块仍可解析。
 
@@ -47,7 +50,7 @@
 |------|------|------|
 | id | string | 文件内唯一 |
 | kind | string | **已注册子类型**（见 `@mvwb/core` 导出 `MV_VIEW_KINDS` 与 `MV_VIEW_KIND_METADATA`）：含 `table-readonly`、**全部 `mermaid-*`**（各 Mermaid 图类独立 kind，payload 为对应语法）、`mindmap-ui`、`uml-diagram`（通用 PlantUML）、`uml-class` / `uml-sequence` / `uml-activity`（各专用画布）、`ui-design`（UI 规格画布）等。扩展时追加 `kind`、元数据与画布实现。 |
-| modelRefs | string[] | **每个 view 应绑定至少一个 Model 地址**（可为多项）：同文件写该文件内 `` ```mv-model `` 的 JSON **`id`**；其它 `.md` 内写 **`ref:相对路径.md#块id`**（`#` 后为目标文件中 model 的 `id`；相对路径相对于**当前 view 所在 .md** 的目录，见包内 `parseRefUri` / `resolveRefPath`）。工作台预览与画布在具备工作区多文件内容时可解析 `ref:`。 |
+| modelRefs | string[] | **每个 view 应绑定至少一个 Model 子表地址**（可为多项）：同文件 **`Model块id#子表id`**（单子表块可仅写块 id）；跨文件 **`ref:相对路径.md#块id#子表id`** 或 **`ref:相对路径.md#块id`**（见 `parseRefUri` / `resolveRefPath` / `findMvModelSqlTable`）。 |
 | title | string? | 可选视图标题 |
 | payload | string? | **子类型相关**载荷（如 Mermaid / PlantUML 文本、脑图 JSON 快照等，由对应 `kind` 解释） |
 

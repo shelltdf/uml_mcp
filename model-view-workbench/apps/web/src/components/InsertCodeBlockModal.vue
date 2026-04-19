@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import {
-  MV_MODEL_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
+  MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
   MV_VIEW_KIND_METADATA,
   getMermaidViewKinds,
@@ -23,7 +23,7 @@ const mermaidInsertKinds = getMermaidViewKinds() as InsertCodeBlockKind[];
 const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
   {
     title: '数据模型',
-    kinds: ['mv-model', 'mv-model-kv', 'mv-model-struct'],
+    kinds: ['mv-model-sql', 'mv-model-kv', 'mv-model-struct'],
   },
   { title: 'UI 相关', kinds: ['table-readonly', 'mindmap-ui', 'ui-design'] },
   { title: 'Mermaid 相关', kinds: mermaidInsertKinds },
@@ -32,15 +32,24 @@ const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
 ];
 
 function titleFor(kind: InsertCodeBlockKind): string {
-  if (kind === 'mv-model') return MV_MODEL_CANVAS_TITLE;
+  if (kind === 'mv-model-sql') return MV_MODEL_SQL_CANVAS_TITLE;
   if (kind === 'mv-model-kv') return MV_MODEL_KV_CANVAS_TITLE;
   if (kind === 'mv-model-struct') return MV_MODEL_STRUCT_CANVAS_TITLE;
   return MV_VIEW_KIND_METADATA[kind].canvasTitle;
 }
 
+/** 插入弹窗卡片文案：此处表示 Model / View 类型，不沿用各编辑器「画布」后缀 */
+function insertCardTitle(kind: InsertCodeBlockKind): string {
+  const raw = titleFor(kind);
+  return raw
+    .replace(/\s*画布（/, '（')
+    .replace(/画布$/, '')
+    .trim();
+}
+
 function descFor(kind: InsertCodeBlockKind): string {
-  if (kind === 'mv-model') {
-    return '插入 ```mv-model``` 围栏代码块，块内为表数据（常用 JSON）；在 SQL 风格数据表画布中编辑列与行（含 DDL 示意）。';
+  if (kind === 'mv-model-sql') {
+    return '插入 ```mv-model-sql``` 围栏：**Model** 组，内含多张 SQL 风格表（JSON）；画布内可对子表增删改查，并编辑列与行。';
   }
   if (kind === 'mv-model-kv') {
     return '插入 ```mv-model-kv``` 围栏：文档型集合（类比 MongoDB），每条为自由键的 JSON 对象；在 KV 数据表画布中编辑。';
@@ -85,7 +94,7 @@ function onKeydown(ev: KeyboardEvent) {
         <header class="icb-head">
           <h2 id="icb-title" class="icb-title">插入代码块</h2>
           <p class="icb-lead">
-            Model 与 View 在 Markdown 中以<strong>围栏代码块</strong>落盘（围栏语言含 <code>mv-model</code> / <code>mv-model-kv</code> /
+            Model 与 View 在 Markdown 中以<strong>围栏代码块</strong>落盘（围栏语言含 <code>mv-model-sql</code> / <code>mv-model-kv</code> /
             <code>mv-model-struct</code> / <code>mv-view</code>）；块内正文可为
             <strong>JSON</strong>、<strong>XML</strong> 或<strong>纯文本</strong>等，由对应类型解释。选择下方类型后，将在光标处插入一整段围栏；插入后可在左侧围栏索引选中块，并打开<strong>代码块画布</strong>做结构化或所见即所得编辑（须为「富文本」或「原始文本」模式）。
           </p>
@@ -101,11 +110,11 @@ function onKeydown(ev: KeyboardEvent) {
                 :key="k"
                 type="button"
                 class="icb-card"
-                :title="`插入「${titleFor(k)}」围栏代码块 — 无全局快捷键`"
+                :title="`插入「${insertCardTitle(k)}」围栏代码块 — 无全局快捷键`"
                 @click="pick(k)"
               >
                 <DiagramTypeThumb :variant="k" class="icb-thumb-wrap" />
-                <span class="icb-card-title">{{ titleFor(k) }}</span>
+                <span class="icb-card-title">{{ insertCardTitle(k) }}</span>
                 <span class="icb-card-desc">{{ descFor(k) }}</span>
                 <span class="icb-kind-tag"><code>{{ k }}</code></span>
               </button>

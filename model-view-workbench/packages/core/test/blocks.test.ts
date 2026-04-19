@@ -1,14 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { parseMarkdownBlocks, replaceBlockInnerById } from '../src/parse/blocks.js';
+import { parseMarkdownBlocks, replaceBlockInnerById, findMvModelSqlTable } from '../src/parse/blocks.js';
+
+const minimalSqlPayload = {
+  id: 'sql1',
+  tables: [
+    {
+      id: 't1',
+      columns: [{ name: 'a', type: 'int' }],
+      rows: [{ a: 1 }],
+    },
+  ],
+};
 
 describe('parseMarkdownBlocks', () => {
-  it('parses mv-model', () => {
-    const md = `# Hi\n\n\`\`\`mv-model\n{"id":"t1","columns":[{"name":"a","type":"int"}],"rows":[{"a":1}]}\n\`\`\`\n`;
+  it('parses mv-model-sql', () => {
+    const md = `# Hi\n\n\`\`\`mv-model-sql\n${JSON.stringify(minimalSqlPayload)}\n\`\`\`\n`;
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks).toHaveLength(1);
-    expect(r.blocks[0].kind).toBe('mv-model');
-    expect(r.blocks[0].payload.id).toBe('t1');
+    expect(r.blocks[0].kind).toBe('mv-model-sql');
+    expect(r.blocks[0].payload.id).toBe('sql1');
+    expect((r.blocks[0].payload as { tables: unknown[] }).tables).toHaveLength(1);
+  });
+
+  it('findMvModelSqlTable resolves block#table', () => {
+    const md = `\`\`\`mv-model-sql\n${JSON.stringify({
+      id: 'doc',
+      tables: [
+        { id: 'a', columns: [{ name: 'x' }], rows: [{ x: 1 }] },
+        { id: 'b', columns: [{ name: 'y' }], rows: [{ y: 2 }] },
+      ],
+    })}\n\`\`\`\n`;
+    const r = parseMarkdownBlocks(md);
+    expect(findMvModelSqlTable(r.blocks, 'doc', 'b')?.rows).toEqual([{ y: 2 }]);
+    expect(findMvModelSqlTable(r.blocks, 'doc')).toBeNull();
+    expect(findMvModelSqlTable(r.blocks, 'doc', 'a')?.id).toBe('a');
   });
 
   it('parses mv-view mermaid-flowchart kind', () => {
@@ -33,7 +59,7 @@ describe('parseMarkdownBlocks', () => {
       JSON.stringify({
         id: 'v1',
         kind: 'mermaid-class',
-        modelRefs: ['ref:./m.md#t1'],
+        modelRefs: ['ref:./m.md#t1#tbl'],
         payload: 'classDiagram\n  class A',
       }) +
       '\n\`\`\`\n';
@@ -91,13 +117,13 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('unknown kind'))).toBe(true);
   });
 
-  it('parses multiple mv-model tables in one file', () => {
+  it('parses multiple mv-model-sql blocks in one file', () => {
     const md =
-      '\`\`\`mv-model\n' +
-      '{"id":"a","columns":[{"name":"x"}],"rows":[{"x":1}]}\n' +
+      '\`\`\`mv-model-sql\n' +
+      '{"id":"a","tables":[{"id":"x","columns":[{"name":"x"}],"rows":[{"x":1}]}]}\n' +
       '\`\`\`\n\n' +
-      '\`\`\`mv-model\n' +
-      '{"id":"b","title":"Second","columns":[{"name":"y"}],"rows":[{"y":2}]}\n' +
+      '\`\`\`mv-model-sql\n' +
+      '{"id":"b","title":"Second","tables":[{"id":"t","columns":[{"name":"y"}],"rows":[{"y":2}]}]}\n' +
       '\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
@@ -106,24 +132,34 @@ describe('parseMarkdownBlocks', () => {
     expect((r.blocks[1].payload as { title?: string }).title).toBe('Second');
   });
 
-  it('rejects mv-model row with unknown column key', () => {
+  it('rejects mv-model-sql row with unknown column key', () => {
     const md =
-      '\`\`\`mv-model\n' + JSON.stringify({ id: 't', columns: [{ name: 'a' }], rows: [{ a: 1, bad: 2 }] }) + '\n\`\`\`\n';
+      '\`\`\`mv-model-sql\n' +
+      JSON.stringify({
+        id: 't',
+        tables: [{ id: 'tb', columns: [{ name: 'a' }], rows: [{ a: 1, bad: 2 }] }],
+      }) +
+      '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.blocks).toHaveLength(0);
     expect(r.errors.some((e) => e.message.includes('unknown property'))).toBe(true);
   });
 
-  it('rejects mv-model row missing required column', () => {
+  it('rejects mv-model-sql row missing required column', () => {
     const md =
-      '\`\`\`mv-model\n' +
+      '\`\`\`mv-model-sql\n' +
       JSON.stringify({
         id: 't',
-        columns: [
-          { name: 'a', nullable: true },
-          { name: 'b' },
+        tables: [
+          {
+            id: 'tb',
+            columns: [
+              { name: 'a', nullable: true },
+              { name: 'b' },
+            ],
+            rows: [{ a: 1 }],
+          },
         ],
-        rows: [{ a: 1 }],
       }) +
       '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
@@ -131,41 +167,61 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('missing required'))).toBe(true);
   });
 
-  it('parses mv-model with extended column metadata', () => {
+  it('parses mv-model-sql with extended column metadata', () => {
     const payload = {
-      id: 'tbl',
-      columns: [
+      id: 'grp',
+      tables: [
         {
-          name: 'id',
-          type: 'int',
-          primaryKey: true,
-          defaultValue: 0,
-          comment: ' surrogate ',
+          id: 'tbl',
+          columns: [
+            {
+              name: 'id',
+              type: 'int',
+              primaryKey: true,
+              defaultValue: 0,
+              comment: ' surrogate ',
+            },
+            { name: 'code', type: 'string', unique: true, nullable: true, defaultValue: null },
+          ],
+          rows: [{ id: 1, code: 'a' }],
         },
-        { name: 'code', type: 'string', unique: true, nullable: true, defaultValue: null },
       ],
-      rows: [{ id: 1, code: 'a' }],
     };
-    const md = '\`\`\`mv-model\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`mv-model-sql\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks).toHaveLength(1);
-    expect(r.blocks[0].kind).toBe('mv-model');
+    expect(r.blocks[0].kind).toBe('mv-model-sql');
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('rejects mv-model column with invalid primaryKey type', () => {
+  it('rejects mv-model-sql column with invalid primaryKey type', () => {
     const md =
-      '\`\`\`mv-model\n' +
+      '\`\`\`mv-model-sql\n' +
       JSON.stringify({
         id: 't',
-        columns: [{ name: 'a', primaryKey: 'yes' }],
-        rows: [{ a: 1 }],
+        tables: [{ id: 'tb', columns: [{ name: 'a', primaryKey: 'yes' }], rows: [{ a: 1 }] }],
       }) +
       '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.blocks).toHaveLength(0);
     expect(r.errors.some((e) => e.message.includes('primaryKey'))).toBe(true);
+  });
+
+  it('rejects mv-model-sql duplicate table id', () => {
+    const md =
+      '\`\`\`mv-model-sql\n' +
+      JSON.stringify({
+        id: 'x',
+        tables: [
+          { id: 'same', columns: [{ name: 'a' }], rows: [] },
+          { id: 'same', columns: [{ name: 'b' }], rows: [] },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('duplicate table id'))).toBe(true);
   });
 
   it('parses mv-model-kv', () => {
@@ -263,13 +319,24 @@ describe('parseMarkdownBlocks', () => {
     expect((r.blocks[0].payload as { payload?: string }).payload).toBe(mer1);
   });
 
-  it('replaceBlockInnerById', () => {
-    const md = 'x\n\`\`\`mv-model\n{"id":"u","columns":[{"name":"n"}],"rows":[]}\n\`\`\`\ny';
-    const next = JSON.stringify({ id: 'u', columns: [{ name: 'n' }], rows: [{ n: 2 }] }, null, 2);
+  it('replaceBlockInnerById for mv-model-sql', () => {
+    const inner0 = {
+      id: 'u',
+      tables: [{ id: 'main', columns: [{ name: 'n' }], rows: [] }],
+    };
+    const md = 'x\n\`\`\`mv-model-sql\n' + JSON.stringify(inner0) + '\n\`\`\`\ny';
+    const next = JSON.stringify(
+      {
+        id: 'u',
+        tables: [{ id: 'main', columns: [{ name: 'n' }], rows: [{ n: 2 }] }],
+      },
+      null,
+      2,
+    );
     const out = replaceBlockInnerById(md, 'u', next);
     expect(out).toBeTruthy();
     const r = parseMarkdownBlocks(out!);
     expect(r.errors).toEqual([]);
-    expect(r.blocks[0]?.payload).toMatchObject({ id: 'u', rows: [{ n: 2 }] });
+    expect((r.blocks[0].payload as { tables: { rows: unknown[] }[] }).tables[0].rows).toEqual([{ n: 2 }]);
   });
 });

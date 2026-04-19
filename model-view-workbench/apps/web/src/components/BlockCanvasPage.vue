@@ -2,11 +2,12 @@
 import { computed, ref, watch, withDefaults } from 'vue';
 import {
   MV_MAP_CANVAS_TITLE,
-  MV_MODEL_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
+  MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
   MV_VIEW_KIND_METADATA,
+  findMvModelSqlTable,
   isMermaidViewKind,
   isPlantUmlViewKind,
   parseMarkdownBlocks,
@@ -16,7 +17,8 @@ import {
   type MvMapPayload,
   type MvModelColumnDef,
   type MvModelKvPayload,
-  type MvModelPayload,
+  type MvModelSqlPayload,
+  type MvModelSqlTable,
   type MvViewKind,
   type MvViewPayload,
   type ParsedFenceBlock,
@@ -30,7 +32,7 @@ const TOOLTIP_SCHEMA_NULLABLE =
 
 /** 表设计列「主键」 */
 const TOOLTIP_SCHEMA_PK =
-  '主键（PRIMARY KEY，PK）：勾选表示该列属于表的主键；多列同时勾选表示联合主键。标记会写入 mv-model JSON，便于与 SQL 表设计对齐。当前工作台不会在保存时校验主键唯一、非空或自增。无全局快捷键。';
+  '主键（PRIMARY KEY，PK）：勾选表示该列属于表的主键；多列同时勾选表示联合主键。标记会写入 mv-model-sql JSON，便于与 SQL 表设计对齐。当前工作台不会在保存时校验主键唯一、非空或自增。无全局快捷键。';
 
 /** 表设计列「唯一」 */
 const TOOLTIP_SCHEMA_UQ =
@@ -75,10 +77,22 @@ const block = computed<ParsedFenceBlock | null>(() => {
   return blocks.find((b) => b.payload.id === props.blockId) ?? null;
 });
 
-const modelDraft = ref<MvModelPayload | null>(null);
+const modelSqlDraft = ref<MvModelSqlPayload | null>(null);
+/** 当前编辑的 ``tables[]`` 下标 */
+const activeTableIndex = ref(0);
+/** 当前子表（计算属性，指向 modelSqlDraft 内对象，可原地改列/行） */
+const modelDraft = computed((): MvModelSqlTable | null => {
+  const d = modelSqlDraft.value;
+  const i = activeTableIndex.value;
+  if (!d || i < 0 || i >= d.tables.length) return null;
+  return d.tables[i]!;
+});
 /** 行数据区：按单元格全文筛选（不写入 JSON） */
 const modelRowFilter = ref('');
-/** mv-model 画布内嵌只读平铺表（无需另建 table-readonly 的 mv-view） */
+/** DDL / DML 分区折叠（仅 mv-model-sql 画布） */
+const sqlDdlSectionOpen = ref(true);
+const sqlDmlSectionOpen = ref(true);
+/** mv-model-sql 画布内嵌只读平铺表（无需另建 table-readonly 的 mv-view） */
 const showModelReadonlyPreview = ref(false);
 const kvDraft = ref<MvModelKvPayload | null>(null);
 /** 与 documents 平行的 JSON 文本，便于逐条编辑 */
@@ -91,7 +105,8 @@ const mapJsonText = ref('');
 watch(
   block,
   (b) => {
-    modelDraft.value = null;
+    modelSqlDraft.value = null;
+    activeTableIndex.value = 0;
     showModelReadonlyPreview.value = false;
     kvDraft.value = null;
     kvDocStrings.value = [];
@@ -100,9 +115,12 @@ watch(
     viewModelRefsText.value = '';
     mapJsonText.value = '';
     if (!b) return;
-    if (b.kind === 'mv-model') {
+    if (b.kind === 'mv-model-sql') {
       modelRowFilter.value = '';
-      modelDraft.value = JSON.parse(JSON.stringify(b.payload)) as MvModelPayload;
+      sqlDdlSectionOpen.value = true;
+      sqlDmlSectionOpen.value = true;
+      modelSqlDraft.value = JSON.parse(JSON.stringify(b.payload)) as MvModelSqlPayload;
+      activeTableIndex.value = 0;
     } else if (b.kind === 'mv-model-kv') {
       const p = JSON.parse(JSON.stringify(b.payload)) as MvModelKvPayload;
       kvDraft.value = p;
@@ -122,7 +140,7 @@ watch(
 const canvasSurfaceTitle = computed(() => {
   const b = block.value;
   if (!b) return '';
-  if (b.kind === 'mv-model') return MV_MODEL_CANVAS_TITLE;
+  if (b.kind === 'mv-model-sql') return MV_MODEL_SQL_CANVAS_TITLE;
   if (b.kind === 'mv-model-kv') return MV_MODEL_KV_CANVAS_TITLE;
   if (b.kind === 'mv-model-struct') return MV_MODEL_STRUCT_CANVAS_TITLE;
   if (b.kind === 'mv-map') return MV_MAP_CANVAS_TITLE;
@@ -145,7 +163,8 @@ const viewPayloadPlaceholder = computed(() => {
   return MV_VIEW_KIND_METADATA[viewDraft.value.kind as MvViewKind].payloadPlaceholder;
 });
 
-function resolveMvModelByRef(ref: string): MvModelPayload | null {
+/** 解析 modelRefs 项，定位 ``mv-model-sql`` 内一张子表 */
+function resolveSqlTableByRef(ref: string): MvModelSqlTable | null {
   const r = ref.trim();
   if (!r) return null;
   const parsed = parseRefUri(r);
@@ -154,20 +173,20 @@ function resolveMvModelByRef(ref: string): MvModelPayload | null {
     const md = props.workspaceFiles[targetPath];
     if (!md) return null;
     const { blocks } = parseMarkdownBlocks(md);
-    const m = blocks.find((x) => x.kind === 'mv-model' && x.payload.id === parsed.blockId);
-    return m && m.kind === 'mv-model' ? (m.payload as MvModelPayload) : null;
+    return findMvModelSqlTable(blocks, parsed.blockId, parsed.tableId);
   }
+  const parts = r.split('#').map((s) => s.trim()).filter(Boolean);
   const { blocks } = parseMarkdownBlocks(props.markdown);
-  const m = blocks.find((x) => x.kind === 'mv-model' && x.payload.id === r);
-  return m && m.kind === 'mv-model' ? (m.payload as MvModelPayload) : null;
+  if (parts.length >= 2) return findMvModelSqlTable(blocks, parts[0]!, parts[1]);
+  return findMvModelSqlTable(blocks, parts[0]!);
 }
 
-const tableReadonlyBackingModel = computed((): MvModelPayload | null => {
+const tableReadonlyBackingModel = computed((): MvModelSqlTable | null => {
   if (!block.value || block.value.kind !== 'mv-view' || !viewDraft.value) return null;
   if (viewDraft.value.kind !== 'table-readonly') return null;
   const id = viewDraft.value.modelRefs[0];
   if (!id) return null;
-  return resolveMvModelByRef(id);
+  return resolveSqlTableByRef(id);
 });
 
 const filteredModelRowEntries = computed(() => {
@@ -219,7 +238,9 @@ const modelSqlDdlPreview = computed(() => {
   if (!m) return '--';
   if (!m.columns.length) return '-- （无列，无法生成 DDL）';
   const lines: string[] = [];
-  lines.push('-- 示意 DDL（不执行；保存仍为 mv-model JSON）');
+  lines.push('-- 示意 DDL（不执行；保存仍为 mv-model-sql JSON）');
+  const grp = modelSqlDraft.value;
+  if (grp?.title?.trim()) lines.push(`-- MODEL GROUP: ${grp.title.trim().replace(/\n/g, ' ')}`);
   if (m.title?.trim()) lines.push(`-- TABLE COMMENT: ${m.title.trim().replace(/\n/g, ' ')}`);
   lines.push(`CREATE TABLE ${sqlQuoteIdent(m.id)} (`);
   const pkNames = m.columns.filter((c) => c.primaryKey === true).map((c) => c.name);
@@ -246,6 +267,67 @@ function columnHeaderSqlLabel(c: MvModelColumnDef): string {
   if (c.primaryKey === true) bits.push('PK');
   if (c.unique === true) bits.push('UQ');
   return bits.join(' · ');
+}
+
+function selectSqlTable(index: number) {
+  const d = modelSqlDraft.value;
+  if (!d || index < 0 || index >= d.tables.length) return;
+  activeTableIndex.value = index;
+  modelRowFilter.value = '';
+}
+
+function addModelSqlTable() {
+  const d = modelSqlDraft.value;
+  if (!d) return;
+  let n = d.tables.length + 1;
+  let tid = `t_${n}`;
+  while (d.tables.some((t) => t.id === tid)) {
+    n++;
+    tid = `t_${n}`;
+  }
+  const newTable: MvModelSqlTable = {
+    id: tid,
+    title: '',
+    columns: [{ name: 'col_1', type: 'string', nullable: true }],
+    rows: [],
+  };
+  d.tables = [...d.tables, newTable];
+  activeTableIndex.value = d.tables.length - 1;
+  modelRowFilter.value = '';
+}
+
+function removeModelSqlTable() {
+  const d = modelSqlDraft.value;
+  const i = activeTableIndex.value;
+  if (!d || i < 0 || i >= d.tables.length) return;
+  if (d.tables.length <= 1) {
+    window.alert('Model 组内至少保留一张表。');
+    return;
+  }
+  const t = d.tables[i]!;
+  if (!window.confirm(`确定删除子表「${t.id}」？该表上全部行将丢失。`)) return;
+  d.tables = d.tables.filter((_, j) => j !== i);
+  activeTableIndex.value = Math.min(i, d.tables.length - 1);
+  modelRowFilter.value = '';
+}
+
+function onSqlTableIdBlur(ev: FocusEvent) {
+  const el = ev.target as HTMLInputElement;
+  const d = modelSqlDraft.value;
+  const m = modelDraft.value;
+  if (!d || !m) return;
+  const raw = sanitizeColumnName(el.value);
+  if (!raw) {
+    window.alert('子表 id 不能为空。');
+    el.value = m.id;
+    return;
+  }
+  if (d.tables.some((t, j) => t.id === raw && j !== activeTableIndex.value)) {
+    window.alert('子表 id 与同组其它表冲突。');
+    el.value = m.id;
+    return;
+  }
+  m.id = raw;
 }
 
 /** 列名校验：与 core 一致，非空且不重复即可（推荐 SQL 标识符风格，非强制） */
@@ -450,12 +532,14 @@ function clearAllModelRows() {
 }
 
 function normalizeModelRowsForSave() {
-  const m = modelDraft.value;
-  if (!m) return;
-  for (const row of m.rows) {
-    for (const c of m.columns) {
-      if (!(c.name in row) && c.nullable !== true) {
-        row[c.name] = initialCellValueForColumn(c);
+  const d = modelSqlDraft.value;
+  if (!d) return;
+  for (const tbl of d.tables) {
+    for (const row of tbl.rows) {
+      for (const c of tbl.columns) {
+        if (!(c.name in row) && c.nullable !== true) {
+          row[c.name] = initialCellValueForColumn(c);
+        }
       }
     }
   }
@@ -532,9 +616,10 @@ function removeKvDocument(i: number) {
 function buildInnerJson(): string | null {
   const b = block.value;
   if (!b) return null;
-  if (b.kind === 'mv-model' && modelDraft.value) {
+  if (b.kind === 'mv-model-sql' && modelSqlDraft.value) {
     normalizeModelRowsForSave();
-    return JSON.stringify(modelDraft.value, null, 2);
+    const inner = JSON.stringify(modelSqlDraft.value, null, 2);
+    return fenceInnerParsesOk('mv-model-sql', inner) ? inner : null;
   }
   if (b.kind === 'mv-model-kv' && kvDraft.value) {
     const inner = JSON.stringify(kvDraft.value, null, 2);
@@ -574,8 +659,10 @@ function save() {
   const inner = buildInnerJson();
   if (!inner) {
     const k = block.value?.kind;
-    if (k === 'mv-model-kv' || k === 'mv-model-struct') {
-      window.alert('无法保存：JSON 无效或不符合当前围栏契约（结构化层次须含合法 root；KV 每条须为 JSON 对象）。');
+    if (k === 'mv-model-sql' || k === 'mv-model-kv' || k === 'mv-model-struct') {
+      window.alert(
+        '无法保存：JSON 无效或不符合当前围栏契约（mv-model-sql 须含非空 tables；KV 每条须为 JSON 对象；结构化层次须含合法 root）。',
+      );
     }
     return;
   }
@@ -612,41 +699,98 @@ function closeWin() {
         >
           关闭
         </button>
-        <button
-          v-if="block && block.kind === 'mv-model'"
-          type="button"
-          class="tb"
-          :title="
-            showModelReadonlyPreview
-              ? '隐藏下方只读平铺表 — 无全局快捷键'
-              : '在画布内展示只读平铺表（等同只读表视图效果），无需另建 mv-view table-readonly — 无全局快捷键'
-          "
-          @click="showModelReadonlyPreview = !showModelReadonlyPreview"
-        >
-          {{ showModelReadonlyPreview ? '隐藏只读视图' : '显示只读视图' }}
-        </button>
         <button type="button" class="tb primary" :disabled="!block" title="保存到 Markdown — 无全局快捷键" @click="save">保存</button>
       </div>
     </header>
 
     <main v-if="block" class="canvas-body">
       <div class="canvas-surface" aria-label="Markdown 围栏代码块编辑画布">
-        <template v-if="block.kind === 'mv-model' && modelDraft">
+        <template v-if="block.kind === 'mv-model-sql' && modelSqlDraft">
           <div class="model-sql-surface">
-          <h3 class="model-section-title">DDL · 列定义（结构化编辑）</h3>
+          <p class="canvas-hint canvas-hint--compact">
+            本围栏为 <strong>Model</strong>（<code>mv-model-sql</code>）：一个代码块内可含<strong>多张</strong>子表；<code>mv-view</code> 为
+            <strong>View</strong>，通过 <code>modelRefs</code> 绑定 <code>块id#子表id</code>（见下方属性区说明）。子表用标签切换；可对子表做增删。
+          </p>
+          <h3 class="model-section-title">Model 组 · 元数据</h3>
+          <div class="model-meta-grid model-meta-grid--sql">
+            <label class="field field--inline">
+              <span class="sql-meta-label">MODEL id</span>
+              <input class="wide sql-mono-inp" type="text" :value="modelSqlDraft.id" readonly title="围栏块 id，与 mv-view 的 modelRefs 第一段对齐 — 无全局快捷键" />
+            </label>
+            <label class="field field--inline">
+              <span class="sql-meta-label">组 COMMENT（title）</span>
+              <input v-model="modelSqlDraft.title" class="wide sql-mono-inp" type="text" placeholder="可选" />
+            </label>
+          </div>
+          <div class="model-table-tabs" role="tablist" aria-label="子表切换">
+            <button
+              v-for="(tb, ti) in modelSqlDraft.tables"
+              :key="tb.id"
+              type="button"
+              class="model-table-tab"
+              :class="{ 'model-table-tab--active': ti === activeTableIndex }"
+              :title="`编辑子表 ${tb.id} — 无全局快捷键`"
+              @click="selectSqlTable(ti)"
+            >
+              {{ tb.id }}
+            </button>
+            <button type="button" class="model-table-tab model-table-tab--action" title="新增子表 — 无全局快捷键" @click="addModelSqlTable">＋ 子表</button>
+            <button
+              v-if="modelSqlDraft.tables.length > 1"
+              type="button"
+              class="model-table-tab model-table-tab--danger"
+              title="删除当前子表 — 无全局快捷键"
+              @click="removeModelSqlTable"
+            >
+              删当前子表
+            </button>
+          </div>
+          <template v-if="modelDraft">
+          <section
+            class="model-fold-section"
+            :class="{ 'model-fold-section--collapsed': !sqlDdlSectionOpen }"
+            aria-label="DDL 当前子表列定义"
+          >
+            <h3 class="model-fold-heading">
+              <button
+                type="button"
+                class="model-fold-head"
+                :aria-expanded="sqlDdlSectionOpen"
+                aria-controls="sql-ddl-fold-panel"
+                id="sql-ddl-fold-trigger"
+                :title="(sqlDdlSectionOpen ? '折叠' : '展开') + ' DDL · 当前子表列定义 — 无全局快捷键'"
+                @click="sqlDdlSectionOpen = !sqlDdlSectionOpen"
+              >
+                <span class="model-fold-chevron" aria-hidden="true">{{ sqlDdlSectionOpen ? '▼' : '▶' }}</span>
+                <span class="model-fold-title">DDL · 当前子表列定义</span>
+              </button>
+            </h3>
+            <div
+              v-show="sqlDdlSectionOpen"
+              id="sql-ddl-fold-panel"
+              class="model-fold-body"
+              role="region"
+              aria-labelledby="sql-ddl-fold-trigger"
+            >
           <p class="canvas-hint canvas-hint--compact">
             以 <strong>SQL 表设计</strong> 语义呈现：<code>COLUMN</code> / 逻辑类型映射为示意 <code>TYPE</code>、<code>NULL</code> /
             <code>NOT NULL</code>、<code>PRIMARY KEY</code>（多列即联合）、<code>UNIQUE</code>、<code>DEFAULT</code>、列级
-            <code>-- comment</code>。下方 <code>CREATE TABLE</code> 为<strong>只读示意</strong>；落盘仍是 <code>mv-model</code> JSON。默认值输入仍按
-            JSON 字面量解析。块 <code>id</code> 只读。
+            <code>-- comment</code>。下方 <code>CREATE TABLE</code> 为<strong>只读示意</strong>（对应当前子表）；落盘为 <code>mv-model-sql</code> JSON。默认值输入仍按
+            JSON 字面量解析。子表 <code>id</code> 可编辑（失焦校验唯一）。
           </p>
           <div class="model-meta-grid model-meta-grid--sql">
             <label class="field field--inline">
-              <span class="sql-meta-label">TABLE</span>
-              <input class="wide sql-mono-inp" type="text" :value="modelDraft.id" readonly title="块 id ≡ 表名标识；只读 — 无全局快捷键" />
+              <span class="sql-meta-label">TABLE id</span>
+              <input
+                class="wide sql-mono-inp"
+                type="text"
+                :value="modelDraft.id"
+                title="子表 id；须在同组内唯一 — 无全局快捷键"
+                @blur="onSqlTableIdBlur($event)"
+              />
             </label>
             <label class="field field--inline">
-              <span class="sql-meta-label">COMMENT（title）</span>
+              <span class="sql-meta-label">子表 COMMENT（title）</span>
               <input v-model="modelDraft.title" class="wide sql-mono-inp" type="text" placeholder="可选" />
             </label>
           </div>
@@ -747,8 +891,35 @@ function closeWin() {
             </table>
           </div>
           <button type="button" class="add-row" @click="addModelColumn">＋ ADD COLUMN</button>
+            </div>
+          </section>
 
-          <h3 class="model-section-title model-section-title--data">DML · 行集（JSON 单元格）</h3>
+          <section
+            class="model-fold-section"
+            :class="{ 'model-fold-section--collapsed': !sqlDmlSectionOpen }"
+            aria-label="DML 行集 JSON 单元格"
+          >
+            <h3 class="model-fold-heading">
+              <button
+                type="button"
+                class="model-fold-head"
+                :aria-expanded="sqlDmlSectionOpen"
+                aria-controls="sql-dml-fold-panel"
+                id="sql-dml-fold-trigger"
+                :title="(sqlDmlSectionOpen ? '折叠' : '展开') + ' DML · 行集（JSON 单元格） — 无全局快捷键'"
+                @click="sqlDmlSectionOpen = !sqlDmlSectionOpen"
+              >
+                <span class="model-fold-chevron" aria-hidden="true">{{ sqlDmlSectionOpen ? '▼' : '▶' }}</span>
+                <span class="model-fold-title">DML · 行集（JSON 单元格）</span>
+              </button>
+            </h3>
+            <div
+              v-show="sqlDmlSectionOpen"
+              id="sql-dml-fold-panel"
+              class="model-fold-body"
+              role="region"
+              aria-labelledby="sql-dml-fold-trigger"
+            >
           <p class="canvas-hint canvas-hint--compact">
             类比 <code>UPDATE</code> 单格编辑；<code>INSERT</code>/<code>DELETE</code> 用添加行、删行、复制行；筛选为全列子串匹配（视图层
             <code>LIKE '%…%'</code> 语义，不写回 JSON）。
@@ -762,6 +933,18 @@ function closeWin() {
               共 {{ modelDraft.rows.length }} 行
               <template v-if="modelRowFilter.trim()"> · 显示 {{ filteredModelRowEntries.length }} 行</template>
             </span>
+            <button
+              type="button"
+              class="tb model-readonly-toggle"
+              :title="
+                showModelReadonlyPreview
+                  ? '隐藏下方只读平铺表 — 无全局快捷键'
+                  : '在画布内展示只读平铺表（等同只读表视图效果），无需另建 mv-view table-readonly — 无全局快捷键'
+              "
+              @click="showModelReadonlyPreview = !showModelReadonlyPreview"
+            >
+              {{ showModelReadonlyPreview ? '隐藏只读视图' : '显示只读视图' }}
+            </button>
           </div>
           <div class="canvas-table-wrap canvas-table-wrap--sql-rows">
             <table class="canvas-table canvas-table--sql-rows">
@@ -809,26 +992,32 @@ function closeWin() {
               清空全部行
             </button>
           </div>
+            </div>
+          </section>
+          </template>
 
           <section v-if="showModelReadonlyPreview" class="model-readonly-preview" aria-label="只读平铺表预览">
-            <h3 class="model-section-title model-section-title--readonly">SELECT * 风格 · 只读</h3>
+            <h3 class="model-section-title model-section-title--readonly">SELECT * 风格 · 只读（全部子表）</h3>
             <p class="canvas-hint canvas-hint--compact">
-              平铺<strong>全部行</strong>（与 <code>table-readonly</code> 视图画布表格区一致）；无需另建 <code>mv-view</code>。未保存修改即时反映；落盘仍以
-              <code>mv-model</code> JSON 为准。
+              各子表全行平铺（与 <code>table-readonly</code> 视图画布一致）；无需另建 <code>mv-view</code>。未保存修改即时反映；落盘为
+              <code>mv-model-sql</code> JSON。
             </p>
-            <div class="canvas-table-wrap canvas-table-wrap--readonly">
-              <table class="canvas-table canvas-table--sql-rows">
-                <thead>
-                  <tr>
-                    <th v-for="c in modelDraft.columns" :key="'ro-h-' + c.name">{{ c.name }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(row, ri) in modelDraft.rows" :key="'ro-r-' + ri">
-                    <td v-for="c in modelDraft.columns" :key="c.name">{{ cellStr(row, c.name) }}</td>
-                  </tr>
-                </tbody>
-              </table>
+            <div v-for="tbl in modelSqlDraft.tables" :key="'ro-t-' + tbl.id" class="model-readonly-one-table">
+              <h4 class="model-readonly-table-title"><code>{{ tbl.id }}</code></h4>
+              <div class="canvas-table-wrap canvas-table-wrap--readonly">
+                <table class="canvas-table canvas-table--sql-rows">
+                  <thead>
+                    <tr>
+                      <th v-for="c in tbl.columns" :key="'ro-h-' + tbl.id + '-' + c.name">{{ c.name }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, ri) in tbl.rows" :key="'ro-r-' + tbl.id + '-' + ri">
+                      <td v-for="c in tbl.columns" :key="c.name">{{ cellStr(row, c.name) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </section>
           </div>
@@ -896,7 +1085,9 @@ function closeWin() {
 
           <template v-if="viewDraft.kind === 'table-readonly'">
             <div v-if="tableReadonlyBackingModel" class="canvas-table-wrap canvas-table-wrap--readonly">
-              <p class="canvas-hint">关联表 <code>{{ tableReadonlyBackingModel.id }}</code>（只读预览；改数据请打开该 <code>mv-model</code> 块画布）</p>
+              <p class="canvas-hint">
+                关联子表 <code>{{ tableReadonlyBackingModel.id }}</code>（只读预览；改数据请打开对应 <code>mv-model-sql</code> Model 块画布并选中该子表）
+              </p>
               <table class="canvas-table">
                 <thead>
                   <tr>
@@ -1111,6 +1302,45 @@ function closeWin() {
 .model-section-title--data {
   margin-top: 24px;
 }
+.model-table-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 12px 0 16px;
+}
+.model-table-tab {
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #0f172a;
+  cursor: pointer;
+}
+.model-table-tab--active {
+  background: #e0f2fe;
+  border-color: #0284c7;
+  font-weight: 600;
+}
+.model-table-tab--action {
+  border-style: dashed;
+}
+.model-table-tab--danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+.model-readonly-one-table {
+  margin-bottom: 16px;
+}
+.model-readonly-table-title {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
 .model-readonly-preview {
   margin-top: 20px;
   padding-top: 16px;
@@ -1119,6 +1349,75 @@ function closeWin() {
 .model-section-title--readonly {
   margin-top: 0;
   color: #475569;
+}
+.model-fold-section {
+  max-width: 960px;
+  border: 1px solid #64748b;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
+  overflow: hidden;
+}
+.model-fold-section:first-of-type {
+  margin-top: 16px;
+}
+.model-fold-section + .model-fold-section {
+  margin-top: 14px;
+}
+.model-fold-heading {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+.model-fold-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  text-align: left;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: 0.02em;
+  background: linear-gradient(180deg, #e8eef5 0%, #d2dce8 100%);
+  border: none;
+  cursor: pointer;
+  transition:
+    filter 0.12s,
+    background 0.12s;
+}
+.model-fold-head:hover {
+  filter: brightness(1.04);
+}
+.model-fold-head:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+  position: relative;
+  z-index: 1;
+}
+.model-fold-section--collapsed .model-fold-head {
+  border-bottom: 0;
+}
+.model-fold-chevron {
+  display: inline-flex;
+  width: 1.35em;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #334155;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+.model-fold-title {
+  flex: 1;
+}
+.model-fold-body {
+  padding: 12px 14px 14px;
+  border-top: 1px solid #94a3b8;
+  background: #f8fafc;
 }
 .model-sql-surface {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
@@ -1273,6 +1572,11 @@ function closeWin() {
   font-size: 0.78rem;
   color: #64748b;
   padding-bottom: 4px;
+}
+.model-readonly-toggle {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
 }
 .model-data-actions {
   display: flex;

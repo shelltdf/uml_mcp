@@ -2,9 +2,9 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   MV_MAP_CANVAS_TITLE,
-  MV_MODEL_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
+  MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
   MV_VIEW_KIND_METADATA,
   isMermaidViewKind,
@@ -13,7 +13,7 @@ import {
   type MvFenceKind,
   type MvMapPayload,
   type MvModelKvPayload,
-  type MvModelPayload,
+  type MvModelSqlPayload,
   type MvModelStructPayload,
   type MvViewPayload,
   type ParsedFenceBlock,
@@ -400,12 +400,13 @@ const blocks = computed(() => {
   return r.blocks;
 });
 
-/** 索引行 / 子标签：围栏语言（mv-model 等）之外的子类型（如 mv-view 的 kind、表标题） */
+/** 索引行 / 子标签：围栏语言（mv-model-sql 等）之外的子类型（如 mv-view 的 kind、表标题） */
 function fenceBlockSubtypeLabel(b: ParsedFenceBlock): string {
-  if (b.kind === 'mv-model') {
-    const p = b.payload as MvModelPayload;
+  if (b.kind === 'mv-model-sql') {
+    const p = b.payload as MvModelSqlPayload;
     const t = p.title?.trim();
-    return t || 'SQL 表';
+    const ids = p.tables.map((x) => x.id).join(', ');
+    return t || `SQL · ${p.tables.length} 表 (${ids})`;
   }
   if (b.kind === 'mv-model-kv') {
     const p = b.payload as MvModelKvPayload;
@@ -481,12 +482,12 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
     { label: '围栏行', value: `L${b.startLine}–L${b.endLine}` },
     { label: '正文长度', value: `${b.rawInner.length} 字符` },
   ];
-  if (b.kind === 'mv-model') {
-    lines.push({ label: '代码块画布', value: MV_MODEL_CANVAS_TITLE });
-    const p = b.payload as MvModelPayload;
-    if (p.title) lines.push({ label: '标题', value: p.title });
-    lines.push({ label: '列数', value: String(p.columns.length) });
-    lines.push({ label: '行数', value: String(p.rows.length) });
+  if (b.kind === 'mv-model-sql') {
+    lines.push({ label: '代码块画布', value: MV_MODEL_SQL_CANVAS_TITLE });
+    const p = b.payload as MvModelSqlPayload;
+    if (p.title) lines.push({ label: '组标题', value: p.title });
+    lines.push({ label: '子表数', value: String(p.tables.length) });
+    lines.push({ label: '子表 id', value: p.tables.map((t) => t.id).join(', ') });
   } else if (b.kind === 'mv-model-kv') {
     lines.push({ label: '代码块画布', value: MV_MODEL_KV_CANVAS_TITLE });
     const p = b.payload as MvModelKvPayload;
@@ -530,8 +531,8 @@ const canvasPrimaryActionTitleForSelected = computed(() => {
 const selectedBlockCanvasHint = computed(() => {
   const b = selectedBlock.value;
   if (!b) return '';
-  if (b.kind === 'mv-model')
-    return 'Model 以文档内 mv-model 围栏存储：在 SQL 风格数据表代码块画布中编辑列与行（含 DDL 示意）。';
+  if (b.kind === 'mv-model-sql')
+    return 'Model：文档内 ``mv-model-sql`` 围栏，一块内多张 SQL 风格子表；在画布中对子表增删改查并编辑列/行。';
   if (b.kind === 'mv-model-kv') {
     return 'mv-model-kv：文档型集合（类比 MongoDB）；在 KV 数据表画布中按条编辑 JSON 对象。';
   }
@@ -647,7 +648,7 @@ function uiDesignOutlineLines(payload: string): string[] {
 }
 
 function canvasPrimaryActionLabel(b: ParsedFenceBlock): string {
-  if (b.kind === 'mv-model') return `打开${MV_MODEL_CANVAS_TITLE}`;
+  if (b.kind === 'mv-model-sql') return `打开${MV_MODEL_SQL_CANVAS_TITLE}`;
   if (b.kind === 'mv-model-kv') return `打开${MV_MODEL_KV_CANVAS_TITLE}`;
   if (b.kind === 'mv-model-struct') return `打开${MV_MODEL_STRUCT_CANVAS_TITLE}`;
   if (b.kind === 'mv-map') return `打开${MV_MAP_CANVAS_TITLE}`;
@@ -688,11 +689,14 @@ function collectStructOutlineLines(
 const dockSecondaryOutline = computed((): { heading: string; lines: string[] } | null => {
   const b = selectedBlock.value;
   if (!b) return null;
-  if (b.kind === 'mv-model') {
-    const p = b.payload as MvModelPayload;
-    const lines = p.columns.map((c) => `${c.name}${c.type ? ` · ${c.type}` : ''}${c.nullable ? ' · 可空' : ''}`);
-    lines.unshift(`行数: ${p.rows.length}`);
-    return { heading: '当前块 · 表', lines };
+  if (b.kind === 'mv-model-sql') {
+    const p = b.payload as MvModelSqlPayload;
+    const lines: string[] = [];
+    for (const tbl of p.tables) {
+      const colHead = tbl.columns.map((c) => c.name).join(', ');
+      lines.push(`· ${tbl.id}: 列 [${colHead}] · 行 ${tbl.rows.length}`);
+    }
+    return { heading: '当前块 · SQL Model 组', lines: lines.length ? lines.slice(0, 24) : ['（无子表）'] };
   }
   if (b.kind === 'mv-model-kv') {
     const p = b.payload as MvModelKvPayload;
@@ -889,13 +893,19 @@ function newMarkdownFile() {
   const initial = [
     '# 新文档',
     '',
-    `${fence}mv-model`,
+    `${fence}mv-model-sql`,
     JSON.stringify(
       {
         id: 'example_model',
-        title: '示例表',
-        columns: [{ name: 'id', type: 'string' }],
-        rows: [{ id: '1' }],
+        title: '示例 Model 组',
+        tables: [
+          {
+            id: 'main',
+            title: '主表',
+            columns: [{ name: 'id', type: 'string' }],
+            rows: [{ id: '1' }],
+          },
+        ],
       },
       null,
       2,
@@ -907,7 +917,7 @@ function newMarkdownFile() {
       {
         id: 'example_view',
         kind: 'table-readonly',
-        modelRefs: ['example_model'],
+        modelRefs: ['example_model#main'],
       },
       null,
       2,
@@ -1606,7 +1616,7 @@ onUnmounted(() => {
                     </button>
                   </li>
                 </ul>
-                <p v-else class="dock-muted">（当前文档无 mv-model* / mv-view / mv-map 围栏）</p>
+                <p v-else class="dock-muted">（当前文档无 mv-model-sql / mv-model-kv / mv-model-struct / mv-view / mv-map 围栏）</p>
               </section>
               <section v-if="dockSecondaryOutline" class="dock-section">
                 <h3 class="dock-subh">{{ dockSecondaryOutline.heading }}</h3>
@@ -1742,7 +1752,7 @@ onUnmounted(() => {
               </span>
             </h2>
             <p class="md-pane-hint">
-              <strong>预览</strong>为只读排版；<strong>富文本</strong>为 Vditor 所见即所得；<strong>原始文本</strong>为 Markdown 源码。标题旁三钮或编辑区<strong>右键</strong>可切换模式；<strong>插入代码块</strong>仅在富文本或原始文本下可用。Model / View 以文档内<strong>围栏代码块</strong>（<code>mv-model</code> /
+              <strong>预览</strong>为只读排版；<strong>富文本</strong>为 Vditor 所见即所得；<strong>原始文本</strong>为 Markdown 源码。标题旁三钮或编辑区<strong>右键</strong>可切换模式；<strong>插入代码块</strong>仅在富文本或原始文本下可用。Model / View 以文档内<strong>围栏代码块</strong>（<code>mv-model-sql</code> /
               <code>mv-model-kv</code> / <code>mv-model-struct</code> / <code>mv-view</code>）存储，块内可为 JSON、XML 或纯文本等；左侧「Model / View 围栏」索引可选中块，在中间列打开<strong>代码块画布</strong>编辑。光标在某一围栏块<strong>内</strong>移动时，右侧<strong>属性</strong> Dock
               会随当前块切换（仅富文本 / 原始文本）；在围栏外则为文档摘要。
             </p>

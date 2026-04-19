@@ -1,7 +1,7 @@
 /** Fence language tags supported by the workbench */
-export type MvFenceKind = 'mv-model' | 'mv-model-kv' | 'mv-model-struct' | 'mv-view' | 'mv-map';
+export type MvFenceKind = 'mv-model-sql' | 'mv-model-kv' | 'mv-model-struct' | 'mv-view' | 'mv-map';
 
-/** `` ```mv-model `` 单列 schema（设计元数据 + 行数据键名） */
+/** `` ```mv-model-sql `` 内单张表的列 schema（设计元数据 + 行数据键名） */
 export interface MvModelColumnDef {
   name: string;
   type?: string;
@@ -18,17 +18,25 @@ export interface MvModelColumnDef {
 }
 
 /**
- * 一个 `` ```mv-model `` 围栏 = **一张表**（固定列 schema + 行数据）。
- * 同一 Markdown 内可出现 **多个** `` ```mv-model `` 块，即多张表；以 `id` 区分并在文件内唯一。
+ * `` ```mv-model-sql `` 围栏内的 **一张物理表**（固定列 schema + 行数据）。
+ * 块级 `MvModelSqlPayload.id` 为该 Model 组 id；本对象的 `id` 为组内表 id（唯一）。
  */
-export interface MvModelPayload {
+export interface MvModelSqlTable {
   id: string;
-  /** 人类可读表名（可选，用于 UI） */
+  /** 人类可读表名（可选） */
   title?: string;
-  /** 固定列定义：每行只能包含此处声明的列名；非 `nullable` 的列在每一行中必须出现 */
   columns: MvModelColumnDef[];
-  /** 行数据：每元素为一行，键与 `columns[].name` 对齐 */
   rows: Array<Record<string, unknown>>;
+}
+
+/**
+ * 一个 `` ```mv-model-sql `` 围栏 = **Model（SQL 表组）**：可含多张表；围栏在文件内以块级 `id` 唯一。
+ * **View**（``mv-view``）通过 `modelRefs` 绑定本块：`块id#表id`；仅一块内一张表时可写 `块id`（省略表 id）。
+ */
+export interface MvModelSqlPayload {
+  id: string;
+  title?: string;
+  tables: MvModelSqlTable[];
 }
 
 /**
@@ -129,7 +137,7 @@ export const MV_VIEW_KIND_METADATA: Record<
 > = {
   'table-readonly': {
     canvasTitle: '只读表视图画布',
-    description: '编辑标题、modelRefs；表格数据请在关联的 mv-model 块画布中修改。',
+    description: '编辑标题、modelRefs；表格数据请在关联的 mv-model-sql（Model）块画布中修改。',
     payloadPlaceholder: '（可选；本类型一般无需 payload）',
   },
   'mermaid-architecture': {
@@ -274,8 +282,11 @@ export const MV_VIEW_KIND_METADATA: Record<
   },
 };
 
-/** 数据表（mv-model）块在 Workbench 中的画布名称（SQL 风格布局与 DDL 示意） */
-export const MV_MODEL_CANVAS_TITLE = 'SQL 风格数据表画布';
+/** ``mv-model-sql``（多表 Model 组）在 Workbench 中的画布名称 */
+export const MV_MODEL_SQL_CANVAS_TITLE = 'mv-model-sql 画布（Model · 多表）';
+
+/** @deprecated 使用 {@link MV_MODEL_SQL_CANVAS_TITLE} */
+export const MV_MODEL_CANVAS_TITLE = MV_MODEL_SQL_CANVAS_TITLE;
 
 /** KV 文档集（mv-model-kv）画布名称 */
 export const MV_MODEL_KV_CANVAS_TITLE = 'KV 数据表画布';
@@ -291,7 +302,7 @@ export const MV_MAP_CANVAS_TITLE = '映射规则画布';
  * 每个 `mv-view` 应在 `modelRefs` 中列出其依赖的 **Model 地址**：可多项。
  */
 export const MV_MODEL_REFS_SCHEME_DOC =
-  'modelRefs 每项指向一个 mv-model 块：与该 view 在同一 .md 时，填写该 model 的 JSON id；在其它 .md 时，填写 ref:相对路径.md#块id（# 后为对方文件中 model 的 id；相对路径相对于当前 view 所在 .md 的目录，用 /）。';
+  'modelRefs 每项指向 **Model** 围栏 ``mv-model-sql`` 内的一张表：同文件写 `块id#表id`；仅当该块只有一张表时可只写 `块id`。跨文件写 `ref:相对路径.md#块id#表id` 或（单表块）`ref:相对路径.md#块id`。相对路径相对于当前 mv-view 所在 .md 的目录，用 /。';
 
 /** PlantUML 系视图（细分 kind 与通用 uml-diagram） */
 export const MV_PLANTUML_VIEW_KINDS: ReadonlySet<MvViewKind> = new Set([
@@ -312,8 +323,7 @@ export function isPlantUmlViewKind(kind: MvViewKind): boolean {
 export interface MvViewPayload {
   id: string;
   kind: MvViewKind;
-  /** 同文件 model 的 `id`，或 `ref:相对路径.md#blockId` */
-  /** 绑定的 Model 地址列表：同文件为 ``mv-model`` 的 `id`；跨文件为 `ref:相对路径.md#块id`（见 `MV_MODEL_REFS_SCHEME_DOC`） */
+  /** 绑定的 Model 表地址：同文件 `块id#表id` 或 `块id`（单表）；跨文件 `ref:路径.md#块id#表id`（见 `MV_MODEL_REFS_SCHEME_DOC`） */
   modelRefs: string[];
   /** 可选视图标题（展示用） */
   title?: string;
@@ -337,7 +347,7 @@ export interface MvMapPayload {
 }
 
 export type MvBlockPayload =
-  | MvModelPayload
+  | MvModelSqlPayload
   | MvModelKvPayload
   | MvModelStructPayload
   | MvViewPayload
@@ -386,10 +396,12 @@ export interface ParseMdResult {
   errors: Array<{ message: string; line?: number }>;
 }
 
-/** ref:./path/to.md#blockId or ref:other.md#blockId */
+/** ref:./path/to.md#blockId 或 ref:./path/to.md#blockId#tableId（mv-model-sql 子表） */
 export interface ResolvedRef {
   ref: string;
   /** Normalized relative path from workspace root */
   fileRel: string;
   blockId: string;
+  /** ``mv-model-sql`` 内子表 `id`；单段 ref 时省略 */
+  tableId?: string;
 }
