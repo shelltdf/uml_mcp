@@ -27,3 +27,7 @@
 - **状态栏**：窗口最底行；就绪/脏提示、当前路径、点击打开 **Log** 等。
 
 详细几何以 `02-physical/uml-vue-sdi/spec.md` 为准；本仓库不将 `ui.svg` 作为权威线框时，以 **spec + 实现** 对齐为准。
+
+## 姊妹产品：Model-View MD Workbench（`model-view-workbench/`）
+
+与上文 **UML 同步工作台** 并列、**不替代**其定位：以 **Markdown 为唯一落盘**，用 `mv-model` / `mv-view` / `mv-map` 围栏块表达 **表式数据、观察视图、代码映射规则**；支持单文件多块与多文件引用（核心解析已备）。交付形态为 **浏览器 SPA + Electron + VS Code Webview**，实现见 `model-view-workbench/` 与 `02-physical/md-mv-*`。

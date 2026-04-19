@@ -1,0 +1,19 @@
+{
+  "name": "model-view-workbench",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MD-centric Model + View workbench (SPA, Electron, VS Code)",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "vscode-extension"
+  ],
+  "scripts": {
+    "build": "npm run build -w @mvwb/core && npm run build -w @mvwb/web",
+    "copy:vscode-media": "node scripts/copy-web-dist.mjs",
+    "build:vscode": "npm run build && npm run copy:vscode-media && npm run compile --workspace=mvwb-workbench",
+    "test": "npm run test -w @mvwb/core",
+    "dev:web": "npm run dev -w @mvwb/web",
+    "dev:electron": "npm run build -w @mvwb/web && npm run dev -w @mvwb/electron"
+  }
+}

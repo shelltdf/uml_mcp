@@ -1,0 +1,110 @@
+/**
+ * Electron shell: load Vite build from ../web/dist, optional workspace on disk.
+ */
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const { pathToFileURL } = require('url');
+
+/** @type {string | null} */
+let workspaceRoot = null;
+
+function collectMarkdownFiles(rootDir) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  function walk(dir, relBase) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const ent of entries) {
+      const rel = relBase ? `${relBase}/${ent.name}` : ent.name;
+      const abs = path.join(dir, ent.name);
+      if (ent.isDirectory()) walk(abs, rel);
+      else if (ent.isFile() && ent.name.endsWith('.md')) {
+        try {
+          out[rel] = fs.readFileSync(abs, 'utf8');
+        } catch {
+          /* skip */
+        }
+      }
+    }
+  }
+  walk(rootDir, '');
+  return out;
+}
+
+function createMainWindow() {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  const indexHtml = path.join(__dirname, '..', 'web', 'dist', 'index.html');
+  win.loadFile(indexHtml);
+  return win;
+}
+
+function createBlockWindow(relPath, blockId) {
+  const win = new BrowserWindow({
+    width: 720,
+    height: 640,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  const indexHtml = path.join(__dirname, '..', 'web', 'dist', 'index.html');
+  const u = pathToFileURL(indexHtml);
+  u.searchParams.set('mvwb_block', '1');
+  u.searchParams.set('path', relPath);
+  u.searchParams.set('blockId', blockId);
+  win.loadURL(u.href);
+  return win;
+}
+
+app.whenReady().then(() => {
+  ipcMain.handle('mvwb:pickWorkspace', async () => {
+    const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    workspaceRoot = r.filePaths[0];
+    return { root: workspaceRoot, files: collectMarkdownFiles(workspaceRoot) };
+  });
+
+  ipcMain.handle('mvwb:readFile', async (_e, relPath) => {
+    if (!workspaceRoot) throw new Error('no_workspace');
+    const abs = path.join(workspaceRoot, relPath);
+    if (!abs.startsWith(workspaceRoot)) throw new Error('path_escape');
+    return fs.readFileSync(abs, 'utf8');
+  });
+
+  ipcMain.handle('mvwb:writeFile', async (_e, relPath, text) => {
+    if (!workspaceRoot) throw new Error('no_workspace');
+    const abs = path.join(workspaceRoot, relPath);
+    if (!abs.startsWith(workspaceRoot)) throw new Error('path_escape');
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, text, 'utf8');
+    return true;
+  });
+
+  ipcMain.on('mvwb:openBlock', (_e, relPath, blockId) => {
+    createBlockWindow(relPath, blockId);
+  });
+
+  createMainWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});

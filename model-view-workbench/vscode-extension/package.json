@@ -1,0 +1,31 @@
+{
+  "name": "mvwb-workbench",
+  "displayName": "Model-View MD Workbench",
+  "description": "Markdown-centric Model + View workbench (Webview)",
+  "version": "0.1.0",
+  "publisher": "mvwb",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished", "onCommand:mvwb.open"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "mvwb.open",
+        "title": "MVWB: Open workbench"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.7.0"
+  }
+}

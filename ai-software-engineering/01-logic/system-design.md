@@ -29,6 +29,11 @@ flowchart LR
 - UI 组件与 Store 映射见该目标 `mapping.md`（含 `App.vue` 壳、`SyncConfigEditor`、`MermaidPreview` / `ClassDiagramCanvas`、`ClassClassMdCanvas`、`CodeMdCanvas`、`TextContentDock`、`PropertiesDock` 等）。
 - 字段级行为以 `spec.md` 为准。
 
+## 与 `model-view-workbench`（`02-physical/md-mv-*`）对应
+
+- 独立实现：MD 围栏内的 **model / view / map** 与块级回写；物理索引见 `02-physical/md-mv-core`、`md-mv-web`、`md-mv-electron`、`md-mv-vscode-ext`。
+- 逻辑侧展开见 `detailed-design-md-mv-workbench.md`。
+
 ## 一致性
 
 - 变更文件格式时，必须同步 `00-concept/database-design.md` 与本目录详细设计、`02-physical` spec、示例与 Cursor 规则 `uml-code-sync.mdc`。
