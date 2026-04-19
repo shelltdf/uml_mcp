@@ -3,14 +3,18 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   MV_MAP_CANVAS_TITLE,
   MV_MODEL_CANVAS_TITLE,
+  MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
+  MV_MODEL_STRUCT_CANVAS_TITLE,
   MV_VIEW_KIND_METADATA,
   isMermaidViewKind,
   parseMarkdownBlocks,
   replaceBlockInnerById,
   type MvFenceKind,
   type MvMapPayload,
+  type MvModelKvPayload,
   type MvModelPayload,
+  type MvModelStructPayload,
   type MvViewPayload,
   type ParsedFenceBlock,
 } from '@mvwb/core';
@@ -401,7 +405,17 @@ function fenceBlockSubtypeLabel(b: ParsedFenceBlock): string {
   if (b.kind === 'mv-model') {
     const p = b.payload as MvModelPayload;
     const t = p.title?.trim();
-    return t || '数据表';
+    return t || 'SQL 表';
+  }
+  if (b.kind === 'mv-model-kv') {
+    const p = b.payload as MvModelKvPayload;
+    const t = p.title?.trim();
+    return t || `KV · ${p.documents.length} 条`;
+  }
+  if (b.kind === 'mv-model-struct') {
+    const p = b.payload as MvModelStructPayload;
+    const t = p.title?.trim();
+    return t || `Struct · ${p.root.name}`;
   }
   if (b.kind === 'mv-view') {
     return (b.payload as MvViewPayload).kind;
@@ -473,6 +487,16 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
     if (p.title) lines.push({ label: '标题', value: p.title });
     lines.push({ label: '列数', value: String(p.columns.length) });
     lines.push({ label: '行数', value: String(p.rows.length) });
+  } else if (b.kind === 'mv-model-kv') {
+    lines.push({ label: '代码块画布', value: MV_MODEL_KV_CANVAS_TITLE });
+    const p = b.payload as MvModelKvPayload;
+    if (p.title) lines.push({ label: '标题', value: p.title });
+    lines.push({ label: '文档条数', value: String(p.documents.length) });
+  } else if (b.kind === 'mv-model-struct') {
+    lines.push({ label: '代码块画布', value: MV_MODEL_STRUCT_CANVAS_TITLE });
+    const p = b.payload as MvModelStructPayload;
+    if (p.title) lines.push({ label: '标题', value: p.title });
+    lines.push({ label: '根组名', value: p.root.name });
   } else if (b.kind === 'mv-view') {
     const p = b.payload as MvViewPayload;
     lines.push({ label: '代码块画布', value: MV_VIEW_KIND_METADATA[p.kind].canvasTitle });
@@ -506,7 +530,14 @@ const canvasPrimaryActionTitleForSelected = computed(() => {
 const selectedBlockCanvasHint = computed(() => {
   const b = selectedBlock.value;
   if (!b) return '';
-  if (b.kind === 'mv-model') return 'Model 以文档内 mv-model 围栏代码块存储：在数据表代码块画布中编辑列与行。';
+  if (b.kind === 'mv-model')
+    return 'Model 以文档内 mv-model 围栏存储：在 SQL 风格数据表代码块画布中编辑列与行（含 DDL 示意）。';
+  if (b.kind === 'mv-model-kv') {
+    return 'mv-model-kv：文档型集合（类比 MongoDB）；在 KV 数据表画布中按条编辑 JSON 对象。';
+  }
+  if (b.kind === 'mv-model-struct') {
+    return 'mv-model-struct：根下递归组与数据集（类比 HDF5）；在结构化层次画布中编辑整段 JSON。';
+  }
   if (b.kind === 'mv-map') return 'Map 以 mv-map 围栏代码块存储：在映射规则代码块画布中编辑 JSON。';
   if (b.kind === 'mv-view') {
     return MV_VIEW_KIND_METADATA[(b.payload as MvViewPayload).kind].description;
@@ -617,6 +648,8 @@ function uiDesignOutlineLines(payload: string): string[] {
 
 function canvasPrimaryActionLabel(b: ParsedFenceBlock): string {
   if (b.kind === 'mv-model') return `打开${MV_MODEL_CANVAS_TITLE}`;
+  if (b.kind === 'mv-model-kv') return `打开${MV_MODEL_KV_CANVAS_TITLE}`;
+  if (b.kind === 'mv-model-struct') return `打开${MV_MODEL_STRUCT_CANVAS_TITLE}`;
   if (b.kind === 'mv-map') return `打开${MV_MAP_CANVAS_TITLE}`;
   if (b.kind === 'mv-view') {
     const k = (b.payload as MvViewPayload).kind;
@@ -629,6 +662,29 @@ function canvasPrimaryActionTitle(b: ParsedFenceBlock): string {
   return `${canvasPrimaryActionLabel(b)} — 在中间列以标签打开 — 无全局快捷键`;
 }
 
+function collectStructOutlineLines(
+  node: { name: string; groups?: unknown[]; datasets?: Array<{ name: string; dtype?: string }> },
+  depth: number,
+  out: string[],
+  max: number,
+): void {
+  if (out.length >= max) return;
+  const pad = '  '.repeat(depth);
+  out.push(`${pad}组 ${node.name}`);
+  if (node.datasets?.length) {
+    for (const ds of node.datasets) {
+      if (out.length >= max) return;
+      out.push(`${pad}  数据集 ${ds.name}${ds.dtype ? ` · ${ds.dtype}` : ''}`);
+    }
+  }
+  if (node.groups?.length) {
+    for (const g of node.groups as Array<{ name: string; groups?: unknown[]; datasets?: Array<{ name: string; dtype?: string }> }>) {
+      collectStructOutlineLines(g, depth + 1, out, max);
+      if (out.length >= max) return;
+    }
+  }
+}
+
 const dockSecondaryOutline = computed((): { heading: string; lines: string[] } | null => {
   const b = selectedBlock.value;
   if (!b) return null;
@@ -637,6 +693,24 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
     const lines = p.columns.map((c) => `${c.name}${c.type ? ` · ${c.type}` : ''}${c.nullable ? ' · 可空' : ''}`);
     lines.unshift(`行数: ${p.rows.length}`);
     return { heading: '当前块 · 表', lines };
+  }
+  if (b.kind === 'mv-model-kv') {
+    const p = b.payload as MvModelKvPayload;
+    const lines = p.documents.map((d, i) => {
+      const keys = Object.keys(d).slice(0, 8);
+      const head = keys.join(', ');
+      return `文档 ${i + 1}: ${head || '（空对象）'}${Object.keys(d).length > 8 ? '…' : ''}`;
+    });
+    return {
+      heading: '当前块 · KV 文档集',
+      lines: lines.length ? lines.slice(0, 22) : ['（无文档）'],
+    };
+  }
+  if (b.kind === 'mv-model-struct') {
+    const p = b.payload as MvModelStructPayload;
+    const lines: string[] = [];
+    collectStructOutlineLines(p.root, 0, lines, 26);
+    return { heading: '当前块 · 层次结构', lines: lines.length ? lines : ['（空根）'] };
   }
   if (b.kind === 'mv-view') {
     const p = b.payload as MvViewPayload;
@@ -1532,7 +1606,7 @@ onUnmounted(() => {
                     </button>
                   </li>
                 </ul>
-                <p v-else class="dock-muted">（当前文档无 mv-model / mv-view / mv-map 围栏）</p>
+                <p v-else class="dock-muted">（当前文档无 mv-model* / mv-view / mv-map 围栏）</p>
               </section>
               <section v-if="dockSecondaryOutline" class="dock-section">
                 <h3 class="dock-subh">{{ dockSecondaryOutline.heading }}</h3>
@@ -1668,7 +1742,8 @@ onUnmounted(() => {
               </span>
             </h2>
             <p class="md-pane-hint">
-              <strong>预览</strong>为只读排版；<strong>富文本</strong>为 Vditor 所见即所得；<strong>原始文本</strong>为 Markdown 源码。标题旁三钮或编辑区<strong>右键</strong>可切换模式；<strong>插入代码块</strong>仅在富文本或原始文本下可用。Model / View 以文档内<strong>围栏代码块</strong>（<code>mv-model</code> / <code>mv-view</code>）存储，块内可为 JSON、XML 或纯文本等；左侧「Model / View 围栏」索引可选中块，在中间列打开<strong>代码块画布</strong>编辑。光标在某一围栏块<strong>内</strong>移动时，右侧<strong>属性</strong> Dock
+              <strong>预览</strong>为只读排版；<strong>富文本</strong>为 Vditor 所见即所得；<strong>原始文本</strong>为 Markdown 源码。标题旁三钮或编辑区<strong>右键</strong>可切换模式；<strong>插入代码块</strong>仅在富文本或原始文本下可用。Model / View 以文档内<strong>围栏代码块</strong>（<code>mv-model</code> /
+              <code>mv-model-kv</code> / <code>mv-model-struct</code> / <code>mv-view</code>）存储，块内可为 JSON、XML 或纯文本等；左侧「Model / View 围栏」索引可选中块，在中间列打开<strong>代码块画布</strong>编辑。光标在某一围栏块<strong>内</strong>移动时，右侧<strong>属性</strong> Dock
               会随当前块切换（仅富文本 / 原始文本）；在围栏外则为文档摘要。
             </p>
             <ul v-if="parseErrors.length" class="errors md-parse-errors">
@@ -1876,7 +1951,7 @@ onUnmounted(() => {
               ? '请先打开或新建文档 — 无全局快捷键'
               : mdPaneMode === 'preview'
                 ? '预览模式下不可用：请先切换到富文本或原始文本 — 无全局快捷键'
-                : '选择代码块类型并插入 mv-view / mv-model 围栏 — 无全局快捷键'
+                : '选择代码块类型并插入 mv-view / mv-model* 围栏 — 无全局快捷键'
           "
           @click="openInsertCodeBlockModal"
         >

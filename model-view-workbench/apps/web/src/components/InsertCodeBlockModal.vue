@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import {
   MV_MODEL_CANVAS_TITLE,
+  MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
+  MV_MODEL_STRUCT_CANVAS_TITLE,
   MV_VIEW_KIND_METADATA,
   getMermaidViewKinds,
 } from '@mvwb/core';
@@ -19,7 +21,10 @@ const mermaidInsertKinds = getMermaidViewKinds() as InsertCodeBlockKind[];
 
 /** 插入代码块弹窗分组（顺序即展示顺序） */
 const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
-  { title: '数据模型', kinds: ['mv-model'] },
+  {
+    title: '数据模型',
+    kinds: ['mv-model', 'mv-model-kv', 'mv-model-struct'],
+  },
   { title: 'UI 相关', kinds: ['table-readonly', 'mindmap-ui', 'ui-design'] },
   { title: 'Mermaid 相关', kinds: mermaidInsertKinds },
   { title: 'PlantUML', kinds: ['uml-class', 'uml-sequence', 'uml-activity'] },
@@ -28,14 +33,26 @@ const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
 
 function titleFor(kind: InsertCodeBlockKind): string {
   if (kind === 'mv-model') return MV_MODEL_CANVAS_TITLE;
+  if (kind === 'mv-model-kv') return MV_MODEL_KV_CANVAS_TITLE;
+  if (kind === 'mv-model-struct') return MV_MODEL_STRUCT_CANVAS_TITLE;
   return MV_VIEW_KIND_METADATA[kind].canvasTitle;
 }
 
 function descFor(kind: InsertCodeBlockKind): string {
   if (kind === 'mv-model') {
-    return '插入 ```mv-model``` 围栏代码块，块内为表数据（常用 JSON）；在数据表画布中结构化编辑列与行。';
+    return '插入 ```mv-model``` 围栏代码块，块内为表数据（常用 JSON）；在 SQL 风格数据表画布中编辑列与行（含 DDL 示意）。';
   }
-  return MV_VIEW_KIND_METADATA[kind].description;
+  if (kind === 'mv-model-kv') {
+    return '插入 ```mv-model-kv``` 围栏：文档型集合（类比 MongoDB），每条为自由键的 JSON 对象；在 KV 数据表画布中编辑。';
+  }
+  if (kind === 'mv-model-struct') {
+    return '插入 ```mv-model-struct``` 围栏：根下递归「组 / 数据集」（类比 HDF5）；在结构化层次画布中编辑 JSON。';
+  }
+  const base = MV_VIEW_KIND_METADATA[kind].description;
+  if (typeof kind === 'string' && kind.startsWith('mermaid-')) {
+    return `${base} 插入后在 mv-view 围栏之后附带标准 mermaid 围栏镜像段，正文与 JSON 内 payload 一致，便于 GitHub 等仅识别 Mermaid 的编辑器出图。`;
+  }
+  return base;
 }
 
 function pick(kind: InsertCodeBlockKind) {
@@ -68,7 +85,8 @@ function onKeydown(ev: KeyboardEvent) {
         <header class="icb-head">
           <h2 id="icb-title" class="icb-title">插入代码块</h2>
           <p class="icb-lead">
-            Model 与 View 在 Markdown 中以<strong>围栏代码块</strong>落盘（围栏语言为 <code>mv-model</code> / <code>mv-view</code>）；块内正文可为
+            Model 与 View 在 Markdown 中以<strong>围栏代码块</strong>落盘（围栏语言含 <code>mv-model</code> / <code>mv-model-kv</code> /
+            <code>mv-model-struct</code> / <code>mv-view</code>）；块内正文可为
             <strong>JSON</strong>、<strong>XML</strong> 或<strong>纯文本</strong>等，由对应类型解释。选择下方类型后，将在光标处插入一整段围栏；插入后可在左侧围栏索引选中块，并打开<strong>代码块画布</strong>做结构化或所见即所得编辑（须为「富文本」或「原始文本」模式）。
           </p>
           <p class="icb-lead icb-lead--scheme">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>

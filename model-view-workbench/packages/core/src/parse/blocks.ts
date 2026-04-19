@@ -1,15 +1,18 @@
 import type {
   MvFenceKind,
   MvMapPayload,
+  MvModelKvPayload,
   MvModelPayload,
+  MvModelStructPayload,
   MvViewKind,
   MvViewPayload,
   ParseMdResult,
   ParsedFenceBlock,
+  ParsedMermaidMirrorFence,
 } from '../types.js';
-import { MV_VIEW_KINDS } from '../types.js';
+import { MV_VIEW_KINDS, isMermaidViewKind } from '../types.js';
 
-const FENCE = /^```(mv-model|mv-view|mv-map)\s*$/m;
+const FENCE = /^```(mv-model|mv-model-kv|mv-model-struct|mv-view|mv-map)\s*$/m;
 
 function lineNumberAt(source: string, offset: number): number {
   let n = 1;
@@ -17,6 +20,39 @@ function lineNumberAt(source: string, offset: number): number {
     if (source[i] === '\n') n++;
   }
   return n;
+}
+
+/**
+ * 从 `mv-view` 围栏结束偏移起，跳过空白后尝试识别标准 `` ```mermaid ... ``` ``（与 GitHub 等兼容）。
+ */
+function tryParseTrailingMermaidFence(
+  source: string,
+  fromOffset: number,
+): ParsedMermaidMirrorFence | null {
+  let i = fromOffset;
+  while (i < source.length) {
+    const c = source[i];
+    if (c === '\n' || c === '\r' || c === ' ' || c === '\t') i++;
+    else break;
+  }
+  if (!source.startsWith('```mermaid', i)) return null;
+  let j = i + '```mermaid'.length;
+  while (j < source.length && (source[j] === ' ' || source[j] === '\t')) j++;
+  if (j < source.length && source[j] === '\r') j++;
+  if (j >= source.length || source[j] !== '\n') return null;
+  j++;
+  const innerStartOffset = j;
+  const closeIdx = source.indexOf('\n```', innerStartOffset);
+  if (closeIdx === -1) return null;
+  const innerEndOffset = closeIdx;
+  let closeFenceEnd = closeIdx + '\n```'.length;
+  if (closeFenceEnd < source.length && source[closeFenceEnd] === '\n') closeFenceEnd++;
+  return {
+    fenceStartOffset: i,
+    innerStartOffset,
+    innerEndOffset,
+    endOffset: closeFenceEnd,
+  };
 }
 
 function parseJsonPayload<T extends object>(inner: string, kind: MvFenceKind): { ok: true; value: T } | { ok: false; error: string } {
@@ -33,7 +69,7 @@ function parseJsonPayload<T extends object>(inner: string, kind: MvFenceKind): {
 }
 
 /**
- * 校验 mv-model：一张表 = 非空 columns + rows 中每行仅允许声明列，且非 nullable 列必须出现。
+ * 校验 mv-model：一张表 = 非空 columns（列上可选元数据类型合法）+ rows 中每行仅允许声明列，且非 nullable 列必须出现。
  */
 function validateMvModel(obj: Record<string, unknown>): { ok: true; model: MvModelPayload } | { ok: false; message: string } {
   if (typeof obj.id !== 'string' || !obj.id.trim()) {
@@ -62,6 +98,27 @@ function validateMvModel(obj: Record<string, unknown>): { ok: true; model: MvMod
       return { ok: false, message: `mv-model: duplicate column name "${o.name}"` };
     }
     names.add(o.name);
+
+    if ('primaryKey' in o && o.primaryKey !== undefined && typeof o.primaryKey !== 'boolean') {
+      return { ok: false, message: `mv-model: columns[${i}].primaryKey must be boolean when present` };
+    }
+    if ('unique' in o && o.unique !== undefined && typeof o.unique !== 'boolean') {
+      return { ok: false, message: `mv-model: columns[${i}].unique must be boolean when present` };
+    }
+    if ('defaultValue' in o && o.defaultValue !== undefined) {
+      const dv = o.defaultValue;
+      const dvOk =
+        dv === null || typeof dv === 'string' || typeof dv === 'number' || typeof dv === 'boolean';
+      if (!dvOk) {
+        return {
+          ok: false,
+          message: `mv-model: columns[${i}].defaultValue must be string, number, boolean, or null`,
+        };
+      }
+    }
+    if ('comment' in o && o.comment !== undefined && typeof o.comment !== 'string') {
+      return { ok: false, message: `mv-model: columns[${i}].comment must be a string when present` };
+    }
   }
 
   const rowsRaw = obj.rows;
@@ -93,6 +150,88 @@ function validateMvModel(obj: Record<string, unknown>): { ok: true; model: MvMod
   }
 
   return { ok: true, model: obj as unknown as MvModelPayload };
+}
+
+function validateMvModelKv(obj: Record<string, unknown>): { ok: true; data: MvModelKvPayload } | { ok: false; message: string } {
+  if (typeof obj.id !== 'string' || !obj.id.trim()) {
+    return { ok: false, message: 'mv-model-kv: id must be a non-empty string' };
+  }
+  if ('title' in obj && obj.title !== undefined && typeof obj.title !== 'string') {
+    return { ok: false, message: 'mv-model-kv: title must be a string when present' };
+  }
+  const docs = obj.documents;
+  if (!Array.isArray(docs)) {
+    return { ok: false, message: 'mv-model-kv: documents must be an array' };
+  }
+  for (let i = 0; i < docs.length; i++) {
+    const d = docs[i];
+    if (!d || typeof d !== 'object' || Array.isArray(d)) {
+      return { ok: false, message: `mv-model-kv: documents[${i}] must be a JSON object (not array or null)` };
+    }
+  }
+  return { ok: true, data: obj as unknown as MvModelKvPayload };
+}
+
+function validateStructGroup(
+  g: unknown,
+  path: string,
+): { ok: true } | { ok: false; message: string } {
+  if (!g || typeof g !== 'object' || Array.isArray(g)) {
+    return { ok: false, message: `${path} must be an object` };
+  }
+  const o = g as Record<string, unknown>;
+  if (typeof o.name !== 'string' || !o.name.trim()) {
+    return { ok: false, message: `${path}.name must be a non-empty string` };
+  }
+  if ('attributes' in o && o.attributes !== undefined) {
+    if (!o.attributes || typeof o.attributes !== 'object' || Array.isArray(o.attributes)) {
+      return { ok: false, message: `${path}.attributes must be an object when present` };
+    }
+  }
+  if ('groups' in o && o.groups !== undefined) {
+    if (!Array.isArray(o.groups)) {
+      return { ok: false, message: `${path}.groups must be an array when present` };
+    }
+    for (let i = 0; i < o.groups.length; i++) {
+      const r = validateStructGroup(o.groups[i], `${path}.groups[${i}]`);
+      if (!r.ok) return r;
+    }
+  }
+  if ('datasets' in o && o.datasets !== undefined) {
+    if (!Array.isArray(o.datasets)) {
+      return { ok: false, message: `${path}.datasets must be an array when present` };
+    }
+    for (let i = 0; i < o.datasets.length; i++) {
+      const d = o.datasets[i];
+      if (!d || typeof d !== 'object' || Array.isArray(d)) {
+        return { ok: false, message: `${path}.datasets[${i}] must be an object` };
+      }
+      const dd = d as Record<string, unknown>;
+      if (typeof dd.name !== 'string' || !dd.name.trim()) {
+        return { ok: false, message: `${path}.datasets[${i}].name must be a non-empty string` };
+      }
+      if ('dtype' in dd && dd.dtype !== undefined && typeof dd.dtype !== 'string') {
+        return { ok: false, message: `${path}.datasets[${i}].dtype must be a string when present` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+function validateMvModelStruct(
+  obj: Record<string, unknown>,
+): { ok: true; data: MvModelStructPayload } | { ok: false; message: string } {
+  if (typeof obj.id !== 'string' || !obj.id.trim()) {
+    return { ok: false, message: 'mv-model-struct: id must be a non-empty string' };
+  }
+  if ('title' in obj && obj.title !== undefined && typeof obj.title !== 'string') {
+    return { ok: false, message: 'mv-model-struct: title must be a string when present' };
+  }
+  const vg = validateStructGroup(obj.root, 'root');
+  if (!vg.ok) {
+    return { ok: false, message: `mv-model-struct: ${vg.message}` };
+  }
+  return { ok: true, data: obj as unknown as MvModelStructPayload };
 }
 
 function isMvViewKind(k: unknown): k is MvViewKind {
@@ -185,6 +324,26 @@ export function parseMarkdownBlocks(source: string): ParseMdResult {
       } else {
         payload = mv.model;
       }
+    } else if (kind === 'mv-model-kv') {
+      const kv = validateMvModelKv(obj);
+      if (!kv.ok) {
+        errors.push({
+          message: kv.message,
+          line: lineNumberAt(source, innerStartOffset),
+        });
+      } else {
+        payload = kv.data;
+      }
+    } else if (kind === 'mv-model-struct') {
+      const st = validateMvModelStruct(obj);
+      if (!st.ok) {
+        errors.push({
+          message: st.message,
+          line: lineNumberAt(source, innerStartOffset),
+        });
+      } else {
+        payload = st.data;
+      }
     } else if (kind === 'mv-view') {
       const vv = validateMvView(obj);
       if (!vv.ok) {
@@ -206,21 +365,43 @@ export function parseMarkdownBlocks(source: string): ParseMdResult {
       }
     }
 
+    let nextPos = endOffset;
     if (payload) {
+      let blockEndOffset = endOffset;
+      let endLine = lineNumberAt(source, closeIdx);
+      let mermaidMirror: ParsedMermaidMirrorFence | undefined;
+
+      if (kind === 'mv-view') {
+        const view = payload as MvViewPayload;
+        const mirror = tryParseTrailingMermaidFence(source, endOffset);
+        if (mirror && isMermaidViewKind(view.kind)) {
+          mermaidMirror = mirror;
+          const mBody = source.slice(mirror.innerStartOffset, mirror.innerEndOffset);
+          const jp = typeof view.payload === 'string' ? view.payload : '';
+          if (!jp.trim() && mBody.trim()) {
+            (payload as MvViewPayload).payload = mBody;
+          }
+          blockEndOffset = mirror.endOffset;
+          endLine = lineNumberAt(source, mirror.endOffset - 1);
+        }
+      }
+
       blocks.push({
         kind,
         startLine: lineNumberAt(source, openStart),
-        endLine: lineNumberAt(source, closeIdx),
+        endLine,
         startOffset: openStart,
         innerStartOffset,
         innerEndOffset,
-        endOffset,
+        endOffset: blockEndOffset,
         rawInner,
         payload,
+        ...(mermaidMirror ? { mermaidMirror } : {}),
       });
+      nextPos = blockEndOffset;
     }
 
-    pos = endOffset;
+    pos = nextPos;
   }
 
   const seen = new Set<string>();
@@ -246,7 +427,28 @@ export function replaceBlockInnerById(source: string, blockId: string, newInnerJ
   const block = blocks.find((b) => b.payload.id === blockId);
   if (!block) return null;
   const formatted = newInnerJson.endsWith('\n') ? newInnerJson : `${newInnerJson}\n`;
-  return source.slice(0, block.innerStartOffset) + formatted + source.slice(block.innerEndOffset);
+  let s = source.slice(0, block.innerStartOffset) + formatted + source.slice(block.innerEndOffset);
+
+  if (block.kind === 'mv-view' && block.mermaidMirror) {
+    try {
+      const view = JSON.parse(formatted.replace(/^\uFEFF/, '').trim()) as MvViewPayload;
+      if (isMermaidViewKind(view.kind) && typeof view.payload === 'string') {
+        const r2 = parseMarkdownBlocks(s);
+        const b2 = r2.blocks.find((b) => b.payload.id === blockId);
+        if (b2?.kind === 'mv-view' && b2.mermaidMirror) {
+          const body = view.payload;
+          s =
+            s.slice(0, b2.mermaidMirror.innerStartOffset) +
+            body +
+            s.slice(b2.mermaidMirror.innerEndOffset);
+        }
+      }
+    } catch {
+      /* 仅写 mv-view 内层，不强制改镜像 */
+    }
+  }
+
+  return s;
 }
 
 export function getBlockFenceSlice(source: string, block: ParsedFenceBlock): string {

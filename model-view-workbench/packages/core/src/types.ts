@@ -1,5 +1,21 @@
 /** Fence language tags supported by the workbench */
-export type MvFenceKind = 'mv-model' | 'mv-view' | 'mv-map';
+export type MvFenceKind = 'mv-model' | 'mv-model-kv' | 'mv-model-struct' | 'mv-view' | 'mv-map';
+
+/** `` ```mv-model `` 单列 schema（设计元数据 + 行数据键名） */
+export interface MvModelColumnDef {
+  name: string;
+  type?: string;
+  /** 为 true 时行对象可省略该键（与 SQL NULL 语义接近，见解析校验） */
+  nullable?: boolean;
+  /** 主键列；多列为 true 时表示联合主键（设计/文档用，解析不强制行级唯一） */
+  primaryKey?: boolean;
+  /** 唯一约束（设计/文档用，解析不校验行数据唯一） */
+  unique?: boolean;
+  /** 新增行或补全非空缺键时使用的 JSON 字面量 */
+  defaultValue?: string | number | boolean | null;
+  /** 列说明 / 注释 */
+  comment?: string;
+}
 
 /**
  * 一个 `` ```mv-model `` 围栏 = **一张表**（固定列 schema + 行数据）。
@@ -10,9 +26,44 @@ export interface MvModelPayload {
   /** 人类可读表名（可选，用于 UI） */
   title?: string;
   /** 固定列定义：每行只能包含此处声明的列名；非 `nullable` 的列在每一行中必须出现 */
-  columns: Array<{ name: string; type?: string; nullable?: boolean }>;
+  columns: MvModelColumnDef[];
   /** 行数据：每元素为一行，键与 `columns[].name` 对齐 */
   rows: Array<Record<string, unknown>>;
+}
+
+/**
+ * 一个 `` ```mv-model-kv `` 围栏 = **文档型数据集合**（类比 MongoDB collection：每条为 JSON 对象，键集合可不固定）。
+ */
+export interface MvModelKvPayload {
+  id: string;
+  title?: string;
+  /** 各元素须为 **JSON 对象**（非数组）；键值结构自由 */
+  documents: Array<Record<string, unknown>>;
+}
+
+/** 结构化层次中的数据集节点（类比 HDF5 Dataset） */
+export interface MvStructDataset {
+  name: string;
+  dtype?: string;
+  /** 任意 JSON：标量、数组、小矩阵等 */
+  data?: unknown;
+}
+
+/** 结构化层次中的组节点（类比 HDF5 Group） */
+export interface MvStructGroup {
+  name: string;
+  attributes?: Record<string, unknown>;
+  groups?: MvStructGroup[];
+  datasets?: MvStructDataset[];
+}
+
+/**
+ * 一个 `` ```mv-model-struct `` 围栏 = **单根层次结构**（类比 HDF5：根下递归组 + 数据集）。
+ */
+export interface MvModelStructPayload {
+  id: string;
+  title?: string;
+  root: MvStructGroup;
 }
 
 /**
@@ -223,8 +274,14 @@ export const MV_VIEW_KIND_METADATA: Record<
   },
 };
 
-/** 数据表（mv-model）块在 Workbench 中的画布名称 */
-export const MV_MODEL_CANVAS_TITLE = '数据表画布';
+/** 数据表（mv-model）块在 Workbench 中的画布名称（SQL 风格布局与 DDL 示意） */
+export const MV_MODEL_CANVAS_TITLE = 'SQL 风格数据表画布';
+
+/** KV 文档集（mv-model-kv）画布名称 */
+export const MV_MODEL_KV_CANVAS_TITLE = 'KV 数据表画布';
+
+/** 结构化层次（mv-model-struct）画布名称 */
+export const MV_MODEL_STRUCT_CANVAS_TITLE = '结构化层次画布';
 
 /** 映射块画布名称 */
 export const MV_MAP_CANVAS_TITLE = '映射规则画布';
@@ -262,6 +319,7 @@ export interface MvViewPayload {
   title?: string;
   /**
    * 子类型载荷：如各 `mermaid-*` / `uml-diagram` 的图源、`mindmap-ui` 的序列化快照等（由对应 `kind` 的渲染器解释）。
+   * 对 **`mermaid-*`**：可与紧随 `` ```mv-view `` 后的标准 `` ```mermaid`` 围栏**镜像同文**（见 `ParsedMermaidMirrorFence`），便于 GitHub 等普通 Markdown 渲染图；工作台保存时会同步两段正文。
    */
   payload?: string;
 }
@@ -278,13 +336,33 @@ export interface MvMapPayload {
   rules: MvMapRule[];
 }
 
-export type MvBlockPayload = MvModelPayload | MvViewPayload | MvMapPayload;
+export type MvBlockPayload =
+  | MvModelPayload
+  | MvModelKvPayload
+  | MvModelStructPayload
+  | MvViewPayload
+  | MvMapPayload;
+
+/**
+ * 紧随 `` ```mv-view ``（且 `kind` 为 `mermaid-*`）的标准 `` ```mermaid `` 围栏，与 JSON 内 `payload` 同源，供普通 Markdown 预览 Mermaid。
+ * 解析时若 JSON 中 `payload` 为空而镜像非空，则用镜像正文填充 `payload`。
+ */
+export interface ParsedMermaidMirrorFence {
+  /** `` ```mermaid`` 行首第一个 `` ` `` 的偏移 */
+  fenceStartOffset: number;
+  /** Mermaid 正文起始（开围栏换行后） */
+  innerStartOffset: number;
+  /** Mermaid 正文结束（闭合 `` ``` `` 前） */
+  innerEndOffset: number;
+  /** 闭合围栏之后（与块级 `endOffset` 语义一致，可含末尾换行） */
+  endOffset: number;
+}
 
 export interface ParsedFenceBlock {
   kind: MvFenceKind;
   /** 1-based line of opening ``` */
   startLine: number;
-  /** 1-based line of closing ``` */
+  /** 1-based line of closing ```（含可选尾随 `` ```mermaid`` 时取该段闭合行） */
   endLine: number;
   /** Character offset in source of opening ` */
   startOffset: number;
@@ -292,11 +370,15 @@ export interface ParsedFenceBlock {
   innerStartOffset: number;
   /** Offset where inner body ends (before closing newline+```) */
   innerEndOffset: number;
-  /** Character offset after closing fence newline */
+  /**
+   * 该逻辑块在源码中的结束偏移：无镜像时为 mv-view 围栏结束；有 `mermaidMirror` 时为镜像 Mermaid 围栏结束（便于光标落在整块内）。
+   */
   endOffset: number;
   /** Raw inner text between fences (trimmed for JSON parse) */
   rawInner: string;
   payload: MvBlockPayload;
+  /** 仅 `mv-view` 且 `kind` 为 `mermaid-*` 且源码紧随标准 `` ```mermaid`` 时出现 */
+  mermaidMirror?: ParsedMermaidMirrorFence;
 }
 
 export interface ParseMdResult {

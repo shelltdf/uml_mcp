@@ -131,6 +131,138 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('missing required'))).toBe(true);
   });
 
+  it('parses mv-model with extended column metadata', () => {
+    const payload = {
+      id: 'tbl',
+      columns: [
+        {
+          name: 'id',
+          type: 'int',
+          primaryKey: true,
+          defaultValue: 0,
+          comment: ' surrogate ',
+        },
+        { name: 'code', type: 'string', unique: true, nullable: true, defaultValue: null },
+      ],
+      rows: [{ id: 1, code: 'a' }],
+    };
+    const md = '\`\`\`mv-model\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0].kind).toBe('mv-model');
+    expect(r.blocks[0].payload).toMatchObject(payload);
+  });
+
+  it('rejects mv-model column with invalid primaryKey type', () => {
+    const md =
+      '\`\`\`mv-model\n' +
+      JSON.stringify({
+        id: 't',
+        columns: [{ name: 'a', primaryKey: 'yes' }],
+        rows: [{ a: 1 }],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('primaryKey'))).toBe(true);
+  });
+
+  it('parses mv-model-kv', () => {
+    const payload = { id: 'c1', title: 'col', documents: [{ a: 1 }, { b: 'x' }] };
+    const md = '\`\`\`mv-model-kv\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks[0].kind).toBe('mv-model-kv');
+    expect(r.blocks[0].payload).toMatchObject(payload);
+  });
+
+  it('rejects mv-model-kv document that is array', () => {
+    const md =
+      '\`\`\`mv-model-kv\n' + JSON.stringify({ id: 'x', documents: [[1, 2]] }) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('documents[0]'))).toBe(true);
+  });
+
+  it('parses mv-model-struct', () => {
+    const payload = {
+      id: 'h1',
+      root: {
+        name: '/',
+        groups: [{ name: 'g1', datasets: [{ name: 'd1', dtype: 'float', data: [1] }] }],
+      },
+    };
+    const md = '\`\`\`mv-model-struct\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks[0].kind).toBe('mv-model-struct');
+    expect(r.blocks[0].payload).toMatchObject(payload);
+  });
+
+  it('parses mv-view mermaid-flowchart with trailing mermaid mirror and fills empty payload', () => {
+    const mer = 'flowchart TD\n  A --> B';
+    const md =
+      '\`\`\`mv-view\n' +
+      JSON.stringify({ id: 'mf2', kind: 'mermaid-flowchart', modelRefs: [], payload: '' }) +
+      '\n\`\`\`\n\n\`\`\`mermaid\n' +
+      mer +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks).toHaveLength(1);
+    expect((r.blocks[0].payload as { payload?: string }).payload).toBe(mer);
+    expect(r.blocks[0].mermaidMirror).toMatchObject({
+      innerStartOffset: expect.any(Number),
+      innerEndOffset: expect.any(Number),
+    });
+    expect(r.blocks[0].endOffset).toBeGreaterThan(r.blocks[0].innerEndOffset);
+  });
+
+  it('prefers mv-view JSON payload over trailing mermaid when both non-empty', () => {
+    const md =
+      '\`\`\`mv-view\n' +
+      JSON.stringify({
+        id: 'mf3',
+        kind: 'mermaid-flowchart',
+        modelRefs: [],
+        payload: 'from-json',
+      }) +
+      '\n\`\`\`\n\n\`\`\`mermaid\nfrom-mer\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(1);
+    expect((r.blocks[0].payload as { payload?: string }).payload).toBe('from-json');
+    expect(r.blocks[0].mermaidMirror).toBeDefined();
+  });
+
+  it('replaceBlockInnerById syncs trailing mermaid mirror for mermaid-* mv-view', () => {
+    const mer0 = 'flowchart TD\n  X';
+    const md =
+      'pre\n\`\`\`mv-view\n' +
+      JSON.stringify({
+        id: 'sync1',
+        kind: 'mermaid-flowchart',
+        modelRefs: [],
+        payload: mer0,
+      }) +
+      '\n\`\`\`\n\n\`\`\`mermaid\n' +
+      mer0 +
+      '\n\`\`\`\npost';
+    const mer1 = 'flowchart TD\n  Y';
+    const next = JSON.stringify(
+      { id: 'sync1', kind: 'mermaid-flowchart', modelRefs: [], payload: mer1 },
+      null,
+      2,
+    );
+    const out = replaceBlockInnerById(md, 'sync1', next);
+    expect(out).toBeTruthy();
+    expect(out).toContain(mer1);
+    expect(out!.indexOf(mer0)).toBe(-1);
+    const r = parseMarkdownBlocks(out!);
+    expect(r.errors).toEqual([]);
+    expect((r.blocks[0].payload as { payload?: string }).payload).toBe(mer1);
+  });
+
   it('replaceBlockInnerById', () => {
     const md = 'x\n\`\`\`mv-model\n{"id":"u","columns":[{"name":"n"}],"rows":[]}\n\`\`\`\ny';
     const next = JSON.stringify({ id: 'u', columns: [{ name: 'n' }], rows: [{ n: 2 }] }, null, 2);

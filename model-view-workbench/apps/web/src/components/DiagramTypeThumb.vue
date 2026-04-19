@@ -16,6 +16,19 @@ const markerId = ref(`dtt-arr-${Math.random().toString(36).slice(2, 11)}`);
       <line x1="28" y1="10" x2="28" y2="42" stroke="#94a3b8" stroke-width="0.8" />
       <line x1="50" y1="10" x2="50" y2="42" stroke="#94a3b8" stroke-width="0.8" />
     </g>
+    <!-- mv-model-kv：文档卡片叠放 -->
+    <g v-else-if="variant === 'mv-model-kv'">
+      <rect x="12" y="8" width="56" height="22" rx="2" fill="#ecfdf5" stroke="#059669" stroke-width="1" />
+      <rect x="18" y="14" width="56" height="22" rx="2" fill="#d1fae5" stroke="#047857" stroke-width="1" />
+      <text x="46" y="28" text-anchor="middle" font-size="9" fill="#065f46" font-family="system-ui,sans-serif">KV</text>
+    </g>
+    <!-- mv-model-struct：树块 -->
+    <g v-else-if="variant === 'mv-model-struct'">
+      <rect x="36" y="6" width="40" height="14" rx="2" fill="#fef3c7" stroke="#b45309" stroke-width="1" />
+      <rect x="10" y="26" width="32" height="14" rx="2" fill="#fffbeb" stroke="#d97706" stroke-width="1" />
+      <rect x="48" y="26" width="32" height="14" rx="2" fill="#fffbeb" stroke="#d97706" stroke-width="1" />
+      <path d="M56 20 L56 24 M26 26 L26 24 M64 26 L64 24" stroke="#b45309" stroke-width="1" fill="none" />
+    </g>
     <!-- table-readonly -->
     <g v-else-if="variant === 'table-readonly'">
       <rect x="10" y="12" width="68" height="28" rx="2" fill="#f1f5f9" stroke="#475569" stroke-width="1" />
