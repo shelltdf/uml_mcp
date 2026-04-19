@@ -22,7 +22,8 @@ const insertGroups: { title: string; kinds: InsertCodeBlockKind[] }[] = [
   { title: '数据模型', kinds: ['mv-model'] },
   { title: 'UI 相关', kinds: ['table-readonly', 'mindmap-ui', 'ui-design'] },
   { title: 'Mermaid 相关', kinds: mermaidInsertKinds },
-  { title: 'PlantUML 与其它', kinds: ['uml-class', 'uml-sequence', 'uml-activity', 'uml-diagram'] },
+  { title: 'PlantUML', kinds: ['uml-class', 'uml-sequence', 'uml-activity'] },
+  { title: '其它', kinds: ['uml-diagram'] },
 ];
 
 function titleFor(kind: InsertCodeBlockKind): string {

@@ -50,11 +50,17 @@ const chromeRef = ref<HTMLElement | null>(null);
 const layoutRootRef = ref<HTMLElement | null>(null);
 const appIsFullscreen = ref(false);
 const folderInputRef = ref<HTMLInputElement | null>(null);
+/** 浏览器：单文件 .md（无 webkitdirectory） */
+const singleFileInputRef = ref<HTMLInputElement | null>(null);
+/** 与各打开文档内容比对，用于未保存提示与保存后清零 */
+const savedBaseline = ref<Map<string, string>>(new Map());
+/** 浏览器 File System Access：路径键 → 文件句柄（可重复保存） */
+const browserSaveHandles = new Map<string, FileSystemFileHandle>();
 const logLines = ref<string[]>([]);
 const logOpen = ref(false);
 const lastParseErrSig = ref('');
 /** 预览=只读渲染；富文本=Vditor 所见即所得；原始文本=textarea */
-const mdPaneMode = ref<'preview' | 'rich' | 'source'>('rich');
+const mdPaneMode = ref<'preview' | 'rich' | 'source'>('preview');
 const sourceEditorText = ref('');
 const mdCtxOpen = ref(false);
 const mdCtxX = ref(0);
@@ -102,6 +108,42 @@ function closeMenus() {
   openMenu.value = null;
 }
 
+function syncBaselineForPath(path: string, content: string) {
+  const m = new Map(savedBaseline.value);
+  m.set(path, content);
+  savedBaseline.value = m;
+}
+
+function replaceAllBaselinesFromFiles(fm: Map<string, string>) {
+  savedBaseline.value = new Map(fm);
+}
+
+function isDirty(path: string | null | undefined): boolean {
+  if (!path) return false;
+  const cur = files.value.get(path);
+  if (cur === undefined) return false;
+  if (!savedBaseline.value.has(path)) return true;
+  return cur !== savedBaseline.value.get(path);
+}
+
+function renameOpenDocumentKey(oldPath: string, newPath: string, text: string) {
+  const fm = new Map(files.value);
+  fm.delete(oldPath);
+  fm.set(newPath, text);
+  files.value = fm;
+  if (browserSaveHandles.has(oldPath)) {
+    const h = browserSaveHandles.get(oldPath)!;
+    browserSaveHandles.delete(oldPath);
+    browserSaveHandles.set(newPath, h);
+  }
+  const bm = new Map(savedBaseline.value);
+  bm.delete(oldPath);
+  bm.set(newPath, text);
+  savedBaseline.value = bm;
+  canvasTabs.value = canvasTabs.value.map((t) => (t.relPath === oldPath ? { ...t, relPath: newPath } : t));
+  if (selectedPath.value === oldPath) selectedPath.value = newPath;
+}
+
 function openFolderDialog() {
   closeMenus();
   folderInputRef.value?.click();
@@ -114,7 +156,23 @@ function newFromMenu() {
 
 function saveFromMenu() {
   closeMenus();
-  saveCurrentToFile();
+  void saveCurrentDocument();
+}
+
+function saveAsFromMenu() {
+  closeMenus();
+  void saveCurrentDocumentAs();
+}
+
+function openMarkdownFileFromMenu() {
+  closeMenus();
+  void openMarkdownFileUnified();
+}
+
+function closeCurrentDocumentFromMenu() {
+  closeMenus();
+  const p = selectedPath.value;
+  if (p) closeTab(p);
 }
 
 async function pickFromMenu() {
@@ -227,19 +285,6 @@ function setMdPaneMode(mode: 'preview' | 'rich' | 'source') {
   }
 }
 
-const mdPaneModeLabel = computed(() => {
-  switch (mdPaneMode.value) {
-    case 'preview':
-      return '预览';
-    case 'rich':
-      return '富文本';
-    case 'source':
-      return '原始文本';
-    default:
-      return '';
-  }
-});
-
 function onMdSourceInput() {
   const p = selectedPath.value;
   if (!p) return;
@@ -260,11 +305,51 @@ function scheduleElectronWrite(path: string, text: string) {
   if (!api?.writeWorkspaceFile) return;
   clearTimeout(electronWriteTimer);
   electronWriteTimer = setTimeout(() => {
-    void api.writeWorkspaceFile(path, text);
+    void api.writeWorkspaceFile(path, text).then(
+      () => {
+        syncBaselineForPath(path, text);
+      },
+      (err: unknown) => {
+        logLine(`自动写盘失败：${String(err)}`, 'error');
+      },
+    );
   }, 400);
 }
 
+async function flushPendingElectronWrite(): Promise<void> {
+  clearTimeout(electronWriteTimer);
+  electronWriteTimer = undefined;
+  const api = electronApi.value;
+  const p = selectedPath.value;
+  if (!api?.writeWorkspaceFile || !p) return;
+  const text = files.value.get(p);
+  if (text === undefined) return;
+  await api.writeWorkspaceFile(p, text);
+  syncBaselineForPath(p, text);
+}
+
 function onGlobalKeyDown(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null;
+  const tag = t?.tagName;
+  const inField = tag === 'INPUT' || tag === 'TEXTAREA' || t?.isContentEditable;
+
+  if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
+    e.preventDefault();
+    void saveCurrentDocument();
+    return;
+  }
+  if (e.ctrlKey && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+    e.preventDefault();
+    void saveCurrentDocumentAs();
+    return;
+  }
+  if (e.ctrlKey && (e.key === 'w' || e.key === 'W') && !inField) {
+    e.preventDefault();
+    const p = selectedPath.value;
+    if (p) closeTab(p);
+    return;
+  }
+
   if (e.key === 'Escape') {
     if (insertCodeBlockOpen.value) {
       insertCodeBlockOpen.value = false;
@@ -625,6 +710,13 @@ function tabLabel(path: string): string {
 /** 关闭标签：从工作区移除；若关的是当前文档则选中右侧或左侧相邻。 */
 function closeTab(path: string) {
   if (!files.value.has(path)) return;
+  if (isDirty(path)) {
+    if (!window.confirm(`「${tabLabel(path)}」有未保存的更改，确定关闭？`)) return;
+  }
+  browserSaveHandles.delete(path);
+  const bm0 = new Map(savedBaseline.value);
+  bm0.delete(path);
+  savedBaseline.value = bm0;
   canvasTabs.value = canvasTabs.value.filter((t) => t.relPath !== path);
   if (activeEditorTab.value !== 'markdown' && !canvasTabs.value.some((t) => t.id === activeEditorTab.value)) {
     activeEditorTab.value = 'markdown';
@@ -670,7 +762,9 @@ function onPickFolder(e: Event) {
         }),
     ),
   ).then(() => {
+    browserSaveHandles.clear();
     files.value = next;
+    replaceAllBaselinesFromFiles(next);
     const keys = [...next.keys()].sort();
     selectedPath.value = keys[0] ?? null;
     logLine(`已打开文件夹：${keys.length} 个 .md 文件`, 'info');
@@ -718,20 +812,182 @@ function newMarkdownFile() {
   ].join('\n');
   files.value = new Map(files.value).set(name, initial);
   selectedPath.value = name;
+  syncBaselineForPath(name, initial);
   logLine(`新建文档：${name}`, 'info');
 }
 
-function saveCurrentToFile() {
-  const p = selectedPath.value;
-  const c = currentContent.value;
-  if (!p || !c) return;
-  const blob = new Blob([c], { type: 'text/markdown;charset=utf-8' });
+function fsaSupported(): boolean {
+  return typeof window !== 'undefined' && 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
+}
+
+function fallbackDownloadMarkdown(suggestedName: string, text: string) {
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = p.split('/').pop() ?? 'doc.md';
+  a.download = suggestedName || 'doc.md';
   a.click();
   URL.revokeObjectURL(a.href);
-  logLine(`已导出：${a.download}`, 'info');
+}
+
+async function saveCurrentDocument(): Promise<void> {
+  const p = selectedPath.value;
+  if (!p) {
+    logLine('没有选中的文档', 'warn');
+    return;
+  }
+  const text = currentContent.value;
+
+  if (electronApi.value?.writeWorkspaceFile) {
+    try {
+      await flushPendingElectronWrite();
+      logLine(`已保存：${p}`, 'info');
+    } catch {
+      /* flush 已记录 */
+    }
+    return;
+  }
+
+  const handle = browserSaveHandles.get(p);
+  if (handle && fsaSupported()) {
+    try {
+      const w = await handle.createWritable();
+      await w.write(text);
+      await w.close();
+      syncBaselineForPath(p, text);
+      logLine(`已保存：${tabLabel(p)}`, 'info');
+    } catch (e) {
+      logLine(`保存失败：${String(e)}`, 'error');
+    }
+    return;
+  }
+
+  await saveCurrentDocumentAs(true);
+}
+
+async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<void> {
+  const p = selectedPath.value;
+  if (!p) {
+    logLine('没有选中的文档', 'warn');
+    return;
+  }
+  const text = currentContent.value;
+
+  if (electronApi.value?.saveFileAs) {
+    const r = await electronApi.value.saveFileAs(p, text);
+    if (!r) return;
+    if ('error' in r) {
+      if (r.error === 'no_workspace') window.alert('请先用菜单「文件 → 打开磁盘工作区」选择工作区目录。');
+      else if (r.error === 'outside_workspace') window.alert('只能保存到当前工作区目录内。');
+      return;
+    }
+    const newPath = r.relPath;
+    if (newPath !== p) {
+      renameOpenDocumentKey(p, newPath, text);
+    } else {
+      files.value = new Map(files.value).set(p, text);
+      syncBaselineForPath(p, text);
+    }
+    logLine(fromSaveWithoutTarget ? `已保存：${newPath}` : `另存为：${newPath}`, 'info');
+    return;
+  }
+
+  if (fsaSupported()) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: tabLabel(p),
+        types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
+      });
+      const w = await handle.createWritable();
+      await w.write(text);
+      await w.close();
+      const newKey = handle.name;
+      if (newKey !== p) {
+        renameOpenDocumentKey(p, newKey, text);
+      } else {
+        files.value = new Map(files.value).set(p, text);
+        syncBaselineForPath(p, text);
+      }
+      const tabKey = selectedPath.value;
+      if (tabKey) browserSaveHandles.set(tabKey, handle);
+      logLine(fromSaveWithoutTarget ? `已保存：${selectedPath.value}` : `另存为：${selectedPath.value}`, 'info');
+    } catch (e) {
+      if (String(e).includes('abort')) return;
+      logLine(`另存为失败，改为下载：${String(e)}`, 'warn');
+      fallbackDownloadMarkdown(tabLabel(p), text);
+      syncBaselineForPath(p, text);
+    }
+    return;
+  }
+
+  fallbackDownloadMarkdown(tabLabel(p), text);
+  syncBaselineForPath(p, text);
+  logLine(
+    fromSaveWithoutTarget
+      ? `已触发下载保存（浏览器不支持 File System Access 时无法写回原路径）：${tabLabel(p)}`
+      : `已触发下载（另存为）：${tabLabel(p)}`,
+    'info',
+  );
+}
+
+async function openMarkdownFileUnified(): Promise<void> {
+  if (electronApi.value?.openMarkdownInWorkspace) {
+    const r = await electronApi.value.openMarkdownInWorkspace();
+    if (!r) return;
+    if ('error' in r) {
+      if (r.error === 'no_workspace') window.alert('请先用「文件 → 打开磁盘工作区」选择工作区，再打开其中的 .md 文件。');
+      else if (r.error === 'outside_workspace') window.alert('只能选择当前工作区目录内的文件。');
+      return;
+    }
+    files.value = new Map(files.value).set(r.relPath, r.text);
+    syncBaselineForPath(r.relPath, r.text);
+    selectedPath.value = r.relPath;
+    logLine(`已打开：${r.relPath}`, 'info');
+    return;
+  }
+
+  if (fsaSupported()) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
+      });
+      const file = await handle.getFile();
+      const name = file.name;
+      const text = await file.text();
+      files.value = new Map(files.value).set(name, text);
+      browserSaveHandles.set(name, handle);
+      syncBaselineForPath(name, text);
+      selectedPath.value = name;
+      logLine(`已打开：${name}`, 'info');
+    } catch (e) {
+      if (String(e).includes('abort')) return;
+      logLine(`打开文件失败：${String(e)}，改用传统文件选择`, 'warn');
+      singleFileInputRef.value?.click();
+    }
+    return;
+  }
+
+  singleFileInputRef.value?.click();
+}
+
+function onPickSingleMdFile(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const f = input.files?.[0];
+  if (!f || !f.name.toLowerCase().endsWith('.md')) {
+    input.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = String(reader.result ?? '');
+    const name = f.name;
+    files.value = new Map(files.value).set(name, text);
+    syncBaselineForPath(name, text);
+    selectedPath.value = name;
+    logLine(`已打开：${name}（无写盘句柄时请用「另存为」或换用 Chrome/Edge）`, 'info');
+  };
+  reader.readAsText(f);
+  input.value = '';
 }
 
 function openEdit(block: ParsedFenceBlock) {
@@ -758,6 +1014,7 @@ function applyEdit() {
   files.value = new Map(files.value).set(p, out);
   sourceEditorText.value = out;
   editOpen.value = false;
+  syncBaselineForPath(p, out);
   void electronApi.value?.writeWorkspaceFile(p, out);
 }
 
@@ -766,7 +1023,10 @@ async function pickWorkspaceElectron() {
   if (!api?.pickWorkspace) return;
   const r = await api.pickWorkspace();
   if (!r?.files) return;
-  files.value = new Map(Object.entries(r.files));
+  browserSaveHandles.clear();
+  const fm = new Map(Object.entries(r.files));
+  files.value = fm;
+  replaceAllBaselinesFromFiles(fm);
   const keys = [...files.value.keys()].sort();
   selectedPath.value = keys[0] ?? null;
   logLine(`Electron 工作区已加载：${keys.length} 个文件`, 'info');
@@ -838,7 +1098,8 @@ async function onEmbeddedCanvasSaved(payload: { markdown: string; relPath: strin
   if (electronApi.value?.writeWorkspaceFile) {
     await electronApi.value.writeWorkspaceFile(payload.relPath, payload.markdown);
   }
-    logLine(`代码块画布已保存：${payload.relPath}`, 'info');
+  syncBaselineForPath(payload.relPath, payload.markdown);
+  logLine(`代码块画布已保存：${payload.relPath}`, 'info');
 }
 
 async function onCanvasSavedInPopup(payload: { markdown: string; relPath: string }) {
@@ -878,7 +1139,8 @@ function onOpenerCanvasSaved(ev: MessageEvent) {
   if (selectedPath.value === relPath) {
     sourceEditorText.value = markdown;
   }
-    logLine(`已从代码块画布窗口合并保存：${relPath}`, 'info');
+  syncBaselineForPath(relPath, markdown);
+  logLine(`已从代码块画布窗口合并保存：${relPath}`, 'info');
 }
 
 watch(
@@ -1009,6 +1271,13 @@ onUnmounted(() => {
       multiple
       @change="onPickFolder"
     />
+    <input
+      ref="singleFileInputRef"
+      type="file"
+      class="hidden"
+      accept=".md,text/markdown"
+      @change="onPickSingleMdFile"
+    />
     <header v-if="!blockOnly" ref="chromeRef" class="win-chrome">
       <div class="title-strip">
         <span class="app-title">MV Workbench</span>
@@ -1019,14 +1288,30 @@ onUnmounted(() => {
           <button type="button" class="menu-top" @click.stop="toggleMenu('file')">文件(F)</button>
           <ul v-show="openMenu === 'file'" class="menu-dropdown" role="menu" @click.stop>
             <li role="none">
+              <button type="button" class="menu-item" role="menuitem" @click="newFromMenu">新建</button>
+            </li>
+            <li class="menu-sep" role="separator" />
+            <li role="none">
+              <button type="button" class="menu-item" role="menuitem" @click="openMarkdownFileFromMenu">打开…</button>
+            </li>
+            <li role="none">
               <button type="button" class="menu-item" role="menuitem" @click="openFolderDialog">打开文件夹…</button>
             </li>
-            <li role="none">
-              <button type="button" class="menu-item" role="menuitem" @click="newFromMenu">新建 MD</button>
-            </li>
+            <li class="menu-sep" role="separator" />
             <li role="none">
               <button type="button" class="menu-item" role="menuitem" :disabled="!selectedPath" @click="saveFromMenu">
-                导出当前…
+                保存
+              </button>
+            </li>
+            <li role="none">
+              <button type="button" class="menu-item" role="menuitem" :disabled="!selectedPath" @click="saveAsFromMenu">
+                另存为…
+              </button>
+            </li>
+            <li class="menu-sep" role="separator" />
+            <li role="none">
+              <button type="button" class="menu-item" role="menuitem" :disabled="!selectedPath" @click="closeCurrentDocumentFromMenu">
+                关闭
               </button>
             </li>
             <template v-if="electronApi?.pickWorkspace">
@@ -1067,17 +1352,39 @@ onUnmounted(() => {
       </nav>
       <div class="toolbar-row" aria-label="工具栏">
         <div class="toolbar-start">
-          <button type="button" class="tb-btn" title="打开文件夹 — 无全局快捷键" @click="openFolderDialog">打开文件夹</button>
+          <button type="button" class="tb-btn" title="新建 Markdown — 无全局快捷键" @click="newMarkdownFile">新建</button>
           <span class="tb-sep" aria-hidden="true" />
-          <button type="button" class="tb-btn" title="新建 MD — 无全局快捷键" @click="newMarkdownFile">新建 MD</button>
+          <button type="button" class="tb-btn" title="打开单个 .md（Chrome/Edge 可获写盘句柄）— 无全局快捷键" @click="openMarkdownFileUnified">
+            打开
+          </button>
+          <button type="button" class="tb-btn" title="打开文件夹（批量 .md）— 无全局快捷键" @click="openFolderDialog">打开文件夹</button>
+          <span class="tb-sep" aria-hidden="true" />
           <button
             type="button"
             class="tb-btn"
             :disabled="!selectedPath"
-            title="导出当前 — 无全局快捷键"
-            @click="saveCurrentToFile"
+            title="保存 Ctrl+S — 无全局快捷键"
+            @click="saveCurrentDocument"
           >
-            导出当前
+            保存
+          </button>
+          <button
+            type="button"
+            class="tb-btn"
+            :disabled="!selectedPath"
+            title="另存为 Ctrl+Shift+S — 无全局快捷键"
+            @click="saveCurrentDocumentAs"
+          >
+            另存为
+          </button>
+          <button
+            type="button"
+            class="tb-btn"
+            :disabled="!selectedPath"
+            title="关闭当前文档 Ctrl+W — 无全局快捷键"
+            @click="closeCurrentDocumentFromMenu"
+          >
+            关闭
           </button>
           <template v-if="electronApi?.pickWorkspace">
             <span class="tb-sep" aria-hidden="true" />
@@ -1274,10 +1581,44 @@ onUnmounted(() => {
           <section class="md-pane" @contextmenu.prevent="onMdPaneContextMenu">
             <h2 class="md-pane-head">
               Markdown
-              <span class="md-mode-badge" :class="`md-mode--${mdPaneMode}`">{{ mdPaneModeLabel }}</span>
+              <span class="md-mode-switch" role="radiogroup" aria-label="Markdown 显示模式">
+                <button
+                  type="button"
+                  class="md-mode-btn"
+                  :class="{ 'md-mode-btn--active': mdPaneMode === 'preview' }"
+                  role="radio"
+                  :aria-checked="mdPaneMode === 'preview'"
+                  title="预览（只读）— 无全局快捷键"
+                  @click="setMdPaneMode('preview')"
+                >
+                  预览
+                </button>
+                <button
+                  type="button"
+                  class="md-mode-btn"
+                  :class="{ 'md-mode-btn--active': mdPaneMode === 'rich' }"
+                  role="radio"
+                  :aria-checked="mdPaneMode === 'rich'"
+                  title="富文本（Vditor）— 无全局快捷键"
+                  @click="setMdPaneMode('rich')"
+                >
+                  富文本
+                </button>
+                <button
+                  type="button"
+                  class="md-mode-btn"
+                  :class="{ 'md-mode-btn--active': mdPaneMode === 'source' }"
+                  role="radio"
+                  :aria-checked="mdPaneMode === 'source'"
+                  title="原始文本 — 无全局快捷键"
+                  @click="setMdPaneMode('source')"
+                >
+                  原始文本
+                </button>
+              </span>
             </h2>
             <p class="md-pane-hint">
-              <strong>预览</strong>为只读排版；<strong>富文本</strong>为 Vditor 所见即所得；<strong>原始文本</strong>为 Markdown 源码。在编辑区<strong>右键</strong>可切换三种状态；<strong>插入代码块</strong>仅在富文本或原始文本下可用。Model / View 以文档内<strong>围栏代码块</strong>（<code>mv-model</code> / <code>mv-view</code>）存储，块内可为 JSON、XML 或纯文本等；左侧「Model / View 围栏」索引可选中块，在中间列打开<strong>代码块画布</strong>编辑。光标在某一围栏块<strong>内</strong>移动时，右侧<strong>属性</strong> Dock
+              <strong>预览</strong>为只读排版；<strong>富文本</strong>为 Vditor 所见即所得；<strong>原始文本</strong>为 Markdown 源码。标题旁三钮或编辑区<strong>右键</strong>可切换模式；<strong>插入代码块</strong>仅在富文本或原始文本下可用。Model / View 以文档内<strong>围栏代码块</strong>（<code>mv-model</code> / <code>mv-view</code>）存储，块内可为 JSON、XML 或纯文本等；左侧「Model / View 围栏」索引可选中块，在中间列打开<strong>代码块画布</strong>编辑。光标在某一围栏块<strong>内</strong>移动时，右侧<strong>属性</strong> Dock
               会随当前块切换（仅富文本 / 原始文本）；在围栏外则为文档摘要。
             </p>
             <ul v-if="parseErrors.length" class="errors md-parse-errors">
@@ -2248,28 +2589,47 @@ onUnmounted(() => {
   margin: 0 0 4px;
   font-size: 1rem;
 }
-.md-mode-badge {
+.md-mode-switch {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.md-mode-btn {
+  margin: 0;
+  padding: 3px 10px;
   font-size: 0.68rem;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid #c5c9d4;
-  background: #eef1f8;
-  color: #475569;
+  border: none;
+  border-right: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 1.35;
 }
-.md-mode--preview {
+.md-mode-btn:last-child {
+  border-right: none;
+}
+.md-mode-btn:hover:not(.md-mode-btn--active) {
+  background: #f1f5f9;
+  color: #334155;
+}
+.md-mode-btn--active {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.md-mode-btn--active:nth-child(1) {
   background: #eff6ff;
-  border-color: #93c5fd;
   color: #1d4ed8;
 }
-.md-mode--rich {
+.md-mode-btn--active:nth-child(2) {
   background: #ecfdf5;
-  border-color: #86efac;
   color: #166534;
 }
-.md-mode--source {
+.md-mode-btn--active:nth-child(3) {
   background: #fff7ed;
-  border-color: #fdba74;
   color: #9a3412;
 }
 .md-preview-outer {
