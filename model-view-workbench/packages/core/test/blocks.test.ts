@@ -11,6 +11,22 @@ describe('parseMarkdownBlocks', () => {
     expect(r.blocks[0].payload.id).toBe('t1');
   });
 
+  it('parses mv-view mermaid-flowchart kind', () => {
+    const md =
+      '\`\`\`mv-view\n' +
+      JSON.stringify({
+        id: 'mf1',
+        kind: 'mermaid-flowchart',
+        modelRefs: [],
+        payload: 'flowchart TD\n  A --> B',
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks).toHaveLength(1);
+    expect((r.blocks[0].payload as { kind: string }).kind).toBe('mermaid-flowchart');
+  });
+
   it('parses mv-view with refs', () => {
     const md =
       '\`\`\`mv-view\n' +

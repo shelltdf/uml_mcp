@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
-/** 插入图对话框用：示意性缩略图（非真实渲染） */
+/** 插入代码块对话框用：示意性缩略图（非真实渲染） */
 defineProps<{ variant: string }>();
 /** 避免同页多个 SVG 的 marker id 冲突 */
 const markerId = ref(`dtt-arr-${Math.random().toString(36).slice(2, 11)}`);
@@ -23,8 +23,8 @@ const markerId = ref(`dtt-arr-${Math.random().toString(36).slice(2, 11)}`);
       <circle cx="18" cy="30" r="2" fill="#94a3b8" />
       <rect x="24" y="28" width="40" height="4" rx="1" fill="#cbd5e1" />
     </g>
-    <!-- mermaid-class：类框 + 连线 -->
-    <g v-else-if="variant === 'mermaid-class'">
+    <!-- mermaid-*：共用示意（类框 + 连线） -->
+    <g v-else-if="variant.startsWith('mermaid-')">
       <rect x="8" y="8" width="32" height="22" rx="2" fill="#dbeafe" stroke="#2563eb" stroke-width="1" />
       <rect x="48" y="22" width="32" height="22" rx="2" fill="#dbeafe" stroke="#2563eb" stroke-width="1" />
       <path :marker-end="`url(#${markerId})`" d="M40 19 L48 33" stroke="#2563eb" stroke-width="1.5" fill="none" />

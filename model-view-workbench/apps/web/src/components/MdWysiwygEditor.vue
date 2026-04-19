@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
   vditor = null;
 });
 
-/** 在光标处插入 Markdown（wysiwyg）；由主窗口「插入图」等调用 */
+/** 在光标处插入 Markdown（wysiwyg）；由主窗口「插入代码块」等调用 */
 function insertMarkdown(fragment: string) {
   if (!vditor || !fragment) return;
   try {

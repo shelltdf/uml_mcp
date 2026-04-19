@@ -21,7 +21,28 @@ export interface MvModelPayload {
  */
 export const MV_VIEW_KINDS = [
   'table-readonly',
+  /** Mermaid：各图类型独立 kind，payload 均为对应 Mermaid 语法片段（由渲染器解释） */
+  'mermaid-architecture',
+  'mermaid-block',
+  'mermaid-c4',
   'mermaid-class',
+  'mermaid-er',
+  'mermaid-flowchart',
+  'mermaid-gantt',
+  'mermaid-gitgraph',
+  'mermaid-journey',
+  'mermaid-kanban',
+  'mermaid-mindmap',
+  'mermaid-packet',
+  'mermaid-pie',
+  'mermaid-quadrant',
+  'mermaid-requirement',
+  'mermaid-sankey',
+  'mermaid-sequence',
+  'mermaid-state',
+  'mermaid-timeline',
+  'mermaid-xychart',
+  'mermaid-zenuml',
   'mindmap-ui',
   'uml-diagram',
   /** PlantUML：类图专用画布（payload 为 @startuml … class … @enduml 等） */
@@ -36,6 +57,20 @@ export const MV_VIEW_KINDS = [
 
 export type MvViewKind = (typeof MV_VIEW_KINDS)[number];
 
+/** Mermaid 系视图 kind（`mermaid-*`）；与 `mindmap-ui`（应用脑图 JSON）区分 */
+export const MV_MERMAID_VIEW_KINDS: ReadonlySet<MvViewKind> = new Set(
+  MV_VIEW_KINDS.filter((k): k is MvViewKind => k.startsWith('mermaid-')),
+);
+
+export function isMermaidViewKind(kind: MvViewKind): boolean {
+  return MV_MERMAID_VIEW_KINDS.has(kind);
+}
+
+/** 与 `MV_VIEW_KINDS` 顺序一致的全部 Mermaid 视图 kind（供插入代码块 UI 等复用） */
+export function getMermaidViewKinds(): readonly MvViewKind[] {
+  return MV_VIEW_KINDS.filter((k): k is MvViewKind => k.startsWith('mermaid-'));
+}
+
 /** 各视图 kind 对应独立「画布」的人类可读标题与说明（Workbench UI 与文档可共用） */
 export const MV_VIEW_KIND_METADATA: Record<
   MvViewKind,
@@ -46,10 +81,115 @@ export const MV_VIEW_KIND_METADATA: Record<
     description: '编辑标题、modelRefs；表格数据请在关联的 mv-model 块画布中修改。',
     payloadPlaceholder: '（可选；本类型一般无需 payload）',
   },
+  'mermaid-architecture': {
+    canvasTitle: 'Mermaid 架构图画布',
+    description: '编辑 Mermaid architecture-beta 等源码（写入 payload）。',
+    payloadPlaceholder:
+      'architecture-beta\n    group api(cloud)[API] {\n        service s(server)[Service]\n    }',
+  },
+  'mermaid-block': {
+    canvasTitle: 'Mermaid 块图画布',
+    description: '编辑 Mermaid block-beta 等源码（写入 payload）。',
+    payloadPlaceholder: 'block-beta\ncolumns 1\n  block:a["Block A"]',
+  },
+  'mermaid-c4': {
+    canvasTitle: 'Mermaid C4 图画布',
+    description: '编辑 Mermaid C4Context / C4Container 等源码（写入 payload）。',
+    payloadPlaceholder:
+      'C4Context\n    title System Context\n    Person(user, "User")\n    System(sys, "System")\n    Rel(user, sys, "Uses")',
+  },
   'mermaid-class': {
     canvasTitle: 'Mermaid Class 图画布',
     description: '编辑 Mermaid classDiagram 等源码（写入 payload）。',
     payloadPlaceholder: 'classDiagram\n  class Example',
+  },
+  'mermaid-er': {
+    canvasTitle: 'Mermaid ER 图画布',
+    description: '编辑 Mermaid erDiagram 源码（写入 payload）。',
+    payloadPlaceholder: 'erDiagram\n    CUSTOMER ||--o{ ORDER : places',
+  },
+  'mermaid-flowchart': {
+    canvasTitle: 'Mermaid 流程图画布',
+    description: '编辑 Mermaid flowchart / graph 源码（写入 payload）。',
+    payloadPlaceholder: 'flowchart TD\n    A[Start] --> B{Choice}\n    B -->|Yes| C[OK]\n    B -->|No| D[End]',
+  },
+  'mermaid-gantt': {
+    canvasTitle: 'Mermaid 甘特图画布',
+    description: '编辑 Mermaid gantt 源码（写入 payload）。',
+    payloadPlaceholder: 'gantt\n    title Example\n    dateFormat YYYY-MM-DD\n    section A\n    Task1 :a1, 2024-01-01, 3d',
+  },
+  'mermaid-gitgraph': {
+    canvasTitle: 'Mermaid Git 图画布',
+    description: '编辑 Mermaid gitGraph 源码（写入 payload）。',
+    payloadPlaceholder: 'gitGraph\n    commit\n    branch develop\n    checkout develop\n    commit',
+  },
+  'mermaid-journey': {
+    canvasTitle: 'Mermaid 用户旅程图画布',
+    description: '编辑 Mermaid journey 源码（写入 payload）。',
+    payloadPlaceholder: 'journey\n    title My day\n    section Morning\n      Make tea: 5: Me',
+  },
+  'mermaid-kanban': {
+    canvasTitle: 'Mermaid 看板图画布',
+    description: '编辑 Mermaid kanban 源码（写入 payload）。',
+    payloadPlaceholder: 'kanban\n  Todo\n    [Task A]\n    [Task B]\n  Done[]',
+  },
+  'mermaid-mindmap': {
+    canvasTitle: 'Mermaid 脑图画布',
+    description: '编辑 Mermaid mindmap 语法（写入 payload）；与应用 JSON 脑图 `mindmap-ui` 不同。',
+    payloadPlaceholder: 'mindmap\n  root((Topic))\n    A\n      A1\n    B',
+  },
+  'mermaid-packet': {
+    canvasTitle: 'Mermaid 分组位段图画布',
+    description: '编辑 Mermaid packet-beta 等源码（写入 payload）。',
+    payloadPlaceholder: 'packet-beta\n0-15: "Source Port"\n16-31: "Destination Port"',
+  },
+  'mermaid-pie': {
+    canvasTitle: 'Mermaid 饼图画布',
+    description: '编辑 Mermaid pie 源码（写入 payload）。',
+    payloadPlaceholder: 'pie title Example\n    "A" : 40\n    "B" : 35\n    "C" : 25',
+  },
+  'mermaid-quadrant': {
+    canvasTitle: 'Mermaid 象限图画布',
+    description: '编辑 Mermaid quadrantChart 源码（写入 payload）。',
+    payloadPlaceholder:
+      'quadrantChart\n    title Reach vs engagement\n    x-axis Low --> High\n    y-axis Low --> High\n    Campaign: [0.3, 0.6]',
+  },
+  'mermaid-requirement': {
+    canvasTitle: 'Mermaid 需求图画布',
+    description: '编辑 Mermaid requirementDiagram 源码（写入 payload）。',
+    payloadPlaceholder:
+      'requirementDiagram\n    requirement req1 {\n    id: 1\n    text: requirement text\n    risk: high\n    verifymethod: test\n    }\n    element e1 {\n    type: simulation\n    }\n    e1 - satisfies -> req1',
+  },
+  'mermaid-sankey': {
+    canvasTitle: 'Mermaid Sankey 图画布',
+    description: '编辑 Mermaid sankey-beta 等源码（写入 payload）。',
+    payloadPlaceholder: 'sankey-beta\n\nSource,A,100\nA,B,50\nA,C,50',
+  },
+  'mermaid-sequence': {
+    canvasTitle: 'Mermaid 序列图画布',
+    description: '编辑 Mermaid sequenceDiagram 源码（写入 payload）。',
+    payloadPlaceholder: 'sequenceDiagram\n    Alice->>Bob: Hello\n    Bob-->>Alice: Hi',
+  },
+  'mermaid-state': {
+    canvasTitle: 'Mermaid 状态图画布',
+    description: '编辑 Mermaid stateDiagram-v2 源码（写入 payload）。',
+    payloadPlaceholder: 'stateDiagram-v2\n    [*] --> Idle\n    Idle --> [*]',
+  },
+  'mermaid-timeline': {
+    canvasTitle: 'Mermaid 时间线图画布',
+    description: '编辑 Mermaid timeline 源码（写入 payload）。',
+    payloadPlaceholder: 'timeline\n    title History\n    2020 : Milestone A\n    2021 : Milestone B',
+  },
+  'mermaid-xychart': {
+    canvasTitle: 'Mermaid XY 图表画布',
+    description: '编辑 Mermaid xychart-beta 源码（写入 payload）。',
+    payloadPlaceholder:
+      'xychart-beta\n    title "Example"\n    x-axis [jan, feb, mar]\n    y-axis "y" 0 --> 10\n    bar [2, 5, 8]',
+  },
+  'mermaid-zenuml': {
+    canvasTitle: 'Mermaid ZenUML 图画布',
+    description: '编辑 Mermaid zenuml 源码（写入 payload）。',
+    payloadPlaceholder: 'zenuml\n    Alice->Bob: Hello',
   },
   'mindmap-ui': {
     canvasTitle: '脑图画布',
@@ -110,7 +250,7 @@ export function isPlantUmlViewKind(kind: MvViewKind): boolean {
 
 /**
  * **mv-view**：JSON 中的「视图基类」——公共字段为 `id`、`kind`、`modelRefs`（及可选 `title`）；
- * 具体语义由 `kind` 决定（表只读、Mermaid 类图、脑图 UI、PlantUML 各图、UI 设计等）。
+ * 具体语义由 `kind` 决定（表只读、Mermaid 各图、脑图 UI、PlantUML 各图、UI 设计等）。
  */
 export interface MvViewPayload {
   id: string;
@@ -121,7 +261,7 @@ export interface MvViewPayload {
   /** 可选视图标题（展示用） */
   title?: string;
   /**
-   * 子类型载荷：如 `mermaid-class` / `uml-diagram` 的图源、`mindmap-ui` 的序列化快照等（由对应 `kind` 的渲染器解释）。
+   * 子类型载荷：如各 `mermaid-*` / `uml-diagram` 的图源、`mindmap-ui` 的序列化快照等（由对应 `kind` 的渲染器解释）。
    */
   payload?: string;
 }

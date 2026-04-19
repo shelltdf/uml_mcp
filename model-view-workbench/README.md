@@ -1,6 +1,6 @@
 # Model-View Workbench（MD-centric）
 
-以 **Markdown 为唯一落盘格式**，用围栏块表达 **model / view / map**，支持浏览器 SPA、Electron、VS Code Webview 三壳共用 `packages/core` 与 `apps/web` 构建产物。其中 **`mv-model`：每个围栏块是一张表（固定列 + 行）**，同一 `.md` 内可写多个 `mv-model` 即多张表。**`mv-view`** 在契约上视为 **视图基类**，由 JSON 字段 **`kind`** 区分具体子类型；Workbench 为 **每个 kind 约定独立画布窗口**（表视图画布、Mermaid Class、脑图、通用/分类 PlantUML、UI 设计等）。详见 `packages/core` 的 `MV_VIEW_KINDS`、`MV_VIEW_KIND_METADATA` 与 `02-physical/md-mv-core/spec.md`。
+以 **Markdown 为唯一落盘格式**，用围栏块表达 **model / view / map**，支持浏览器 SPA、Electron、VS Code Webview 三壳共用 `packages/core` 与 `apps/web` 构建产物。其中 **`mv-model`：每个围栏块是一张表（固定列 + 行）**，同一 `.md` 内可写多个 `mv-model` 即多张表。**`mv-view`** 在契约上视为 **视图基类**，由 JSON 字段 **`kind`** 区分具体子类型；Workbench 为 **每个 kind 约定独立画布窗口**（表视图画布、各 `mermaid-*` 图源画布、脑图、通用/分类 PlantUML、UI 设计等）。详见 `packages/core` 的 `MV_VIEW_KINDS`、`MV_VIEW_KIND_METADATA` 与 `02-physical/md-mv-core/spec.md`。
 
 ## 结构
 

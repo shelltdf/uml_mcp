@@ -5,6 +5,7 @@ import {
   MV_MODEL_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
   MV_VIEW_KIND_METADATA,
+  isMermaidViewKind,
   isPlantUmlViewKind,
   parseMarkdownBlocks,
   parseRefUri,
@@ -188,7 +189,7 @@ function closeWin() {
   <div class="canvas-root" :class="{ 'canvas-root--embedded': embedded }">
     <header class="canvas-toolbar">
       <div class="canvas-title">
-        <span class="canvas-badge">画布</span>
+        <span class="canvas-badge">代码块画布</span>
         <template v-if="block">
           <strong>{{ canvasSurfaceTitle }}</strong>
           <span class="canvas-sep">·</span>
@@ -202,7 +203,7 @@ function closeWin() {
         <button
           type="button"
           class="tb"
-          :title="embedded ? '关闭画布标签 — 无全局快捷键' : '关闭窗口 — 无全局快捷键'"
+          :title="embedded ? '关闭代码块画布标签 — 无全局快捷键' : '关闭窗口 — 无全局快捷键'"
           @click="closeWin"
         >
           关闭
@@ -212,10 +213,12 @@ function closeWin() {
     </header>
 
     <main v-if="block" class="canvas-body">
-      <div class="canvas-surface" aria-label="可视化编辑画布">
+      <div class="canvas-surface" aria-label="Markdown 围栏代码块编辑画布">
         <template v-if="block.kind === 'mv-model' && modelDraft">
           <p v-if="modelDraft.title" class="canvas-hint title">{{ modelDraft.title }}</p>
-          <p class="canvas-hint">{{ MV_MODEL_CANVAS_TITLE }}：在下方直接编辑列与行；保存后写回 <code>mv-model</code> 围栏 JSON。</p>
+          <p class="canvas-hint">
+            {{ MV_MODEL_CANVAS_TITLE }}：对应文档中的 <code>mv-model</code> 围栏代码块（常用 JSON）；在下方结构化编辑列与行，保存后写回 Markdown。
+          </p>
           <div class="canvas-table-wrap">
             <table class="canvas-table">
               <thead>
@@ -247,6 +250,9 @@ function closeWin() {
 
         <template v-else-if="block.kind === 'mv-view' && viewDraft">
           <p class="canvas-hint title">{{ canvasSurfaceTitle }}</p>
+          <p class="canvas-hint canvas-hint--compact">
+            对应文档中的 <code>mv-view</code> 围栏代码块；块内为视图 JSON，<code>payload</code> 可为 JSON、XML、PlantUML/Mermaid 文本等。
+          </p>
           <p class="canvas-hint">类型 <code>{{ viewDraft.kind }}</code> — {{ viewKindDescription }}</p>
           <label class="field">
             <span>标题 title</span>
@@ -281,7 +287,15 @@ function closeWin() {
           </template>
 
           <label class="field">
-            <span>payload（{{ isPlantUmlViewKind(viewDraft.kind) ? 'PlantUML / 图源' : '子类型载荷' }}）</span>
+            <span
+              >payload（{{
+                isPlantUmlViewKind(viewDraft.kind)
+                  ? 'PlantUML / 图源'
+                  : isMermaidViewKind(viewDraft.kind)
+                    ? 'Mermaid 图源'
+                    : '子类型载荷'
+              }}）</span
+            >
             <textarea
               v-model="viewDraft.payload"
               class="payload-ta"
@@ -294,7 +308,7 @@ function closeWin() {
 
         <template v-else-if="block.kind === 'mv-map'">
           <p class="canvas-hint title">{{ MV_MAP_CANVAS_TITLE }}</p>
-          <p class="canvas-hint">编辑映射规则 JSON；保存后写回 <code>mv-map</code> 围栏。</p>
+          <p class="canvas-hint">编辑 <code>mv-map</code> 围栏代码块内的映射规则 JSON；保存后写回 Markdown。</p>
           <textarea v-model="mapJsonText" class="payload-ta" spellcheck="false" rows="20" />
         </template>
       </div>

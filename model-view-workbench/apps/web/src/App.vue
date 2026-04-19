@@ -5,6 +5,7 @@ import {
   MV_MODEL_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
   MV_VIEW_KIND_METADATA,
+  isMermaidViewKind,
   parseMarkdownBlocks,
   replaceBlockInnerById,
   type MvMapPayload,
@@ -13,10 +14,11 @@ import {
   type ParsedFenceBlock,
 } from '@mvwb/core';
 import { detectShell } from './platform';
+import MdMarkdownPreview from './components/MdMarkdownPreview.vue';
 import MdWysiwygEditor from './components/MdWysiwygEditor.vue';
 import BlockCanvasPage from './components/BlockCanvasPage.vue';
-import InsertDiagramModal from './components/InsertDiagramModal.vue';
-import { buildFenceMarkdownForInsert, type InsertDiagramKind } from './utils/diagram-insert';
+import InsertCodeBlockModal from './components/InsertCodeBlockModal.vue';
+import { buildFenceMarkdownForInsert, type InsertCodeBlockKind } from './utils/code-block-insert';
 
 const shell = computed(() => detectShell());
 const files = ref<Map<string, string>>(new Map());
@@ -51,7 +53,8 @@ const folderInputRef = ref<HTMLInputElement | null>(null);
 const logLines = ref<string[]>([]);
 const logOpen = ref(false);
 const lastParseErrSig = ref('');
-const mdPaneMode = ref<'preview' | 'source'>('preview');
+/** 预览=只读渲染；富文本=Vditor 所见即所得；原始文本=textarea */
+const mdPaneMode = ref<'preview' | 'rich' | 'source'>('rich');
 const sourceEditorText = ref('');
 const mdCtxOpen = ref(false);
 const mdCtxX = ref(0);
@@ -59,7 +62,7 @@ const mdCtxY = ref(0);
 const mdCtxMenuRef = ref<HTMLElement | null>(null);
 const mdWysiwygRef = ref<InstanceType<typeof MdWysiwygEditor> | null>(null);
 const mdSourceTextareaRef = ref<HTMLTextAreaElement | null>(null);
-const insertDiagramOpen = ref(false);
+const insertCodeBlockOpen = ref(false);
 let electronWriteTimer: ReturnType<typeof setTimeout> | undefined;
 
 
@@ -146,13 +149,17 @@ function onMdPaneContextMenu(e: MouseEvent) {
   mdCtxY.value = Math.max(4, y);
 }
 
-function openInsertDiagramModal() {
+function openInsertCodeBlockModal() {
   closeMdContextMenu();
   if (!selectedPath.value) {
     logLine('请先打开或新建一个 Markdown 文档', 'warn');
     return;
   }
-  insertDiagramOpen.value = true;
+  if (mdPaneMode.value === 'preview') {
+    logLine('插入代码块请先将 Markdown 区切换到「富文本」或「原始文本」', 'warn');
+    return;
+  }
+  insertCodeBlockOpen.value = true;
 }
 
 function insertIntoSourceAtCursor(fragment: string) {
@@ -173,20 +180,24 @@ function insertIntoSourceAtCursor(fragment: string) {
   });
 }
 
-function onInsertDiagramSelect(kind: InsertDiagramKind) {
+function onInsertCodeBlockSelect(kind: InsertCodeBlockKind) {
   const p = selectedPath.value;
   if (!p) return;
+  if (mdPaneMode.value === 'preview') {
+    insertCodeBlockOpen.value = false;
+    return;
+  }
   const fence = buildFenceMarkdownForInsert(kind, {
     currentFileRel: p,
     currentMarkdown: files.value.get(p) ?? '',
   });
-  insertDiagramOpen.value = false;
-  if (mdPaneMode.value === 'preview') {
+  insertCodeBlockOpen.value = false;
+  if (mdPaneMode.value === 'rich') {
     mdWysiwygRef.value?.insertMarkdown(fence);
   } else {
     insertIntoSourceAtCursor(fence);
   }
-  logLine(`已插入图块：${kind}`, 'info');
+  logLine(`已插入围栏代码块：${kind}`, 'info');
 }
 
 function closeMdContextMenu() {
@@ -201,8 +212,10 @@ function flushSourceToFiles() {
   scheduleElectronWrite(p, sourceEditorText.value);
 }
 
-function setMdPaneMode(mode: 'preview' | 'source') {
-  if (mdPaneMode.value === 'source' && mode === 'preview') flushSourceToFiles();
+function setMdPaneMode(mode: 'preview' | 'rich' | 'source') {
+  if (mdPaneMode.value === 'source' && mode !== 'source') {
+    flushSourceToFiles();
+  }
   if (mode === 'source') {
     const p = selectedPath.value;
     sourceEditorText.value = p ? files.value.get(p) ?? '' : '';
@@ -213,6 +226,19 @@ function setMdPaneMode(mode: 'preview' | 'source') {
     void nextTick(() => onMdSourceSelectionSync());
   }
 }
+
+const mdPaneModeLabel = computed(() => {
+  switch (mdPaneMode.value) {
+    case 'preview':
+      return '预览';
+    case 'rich':
+      return '富文本';
+    case 'source':
+      return '原始文本';
+    default:
+      return '';
+  }
+});
 
 function onMdSourceInput() {
   const p = selectedPath.value;
@@ -240,8 +266,8 @@ function scheduleElectronWrite(path: string, text: string) {
 
 function onGlobalKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    if (insertDiagramOpen.value) {
-      insertDiagramOpen.value = false;
+    if (insertCodeBlockOpen.value) {
+      insertCodeBlockOpen.value = false;
       return;
     }
     closeMdContextMenu();
@@ -325,14 +351,14 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
     { label: '正文长度', value: `${b.rawInner.length} 字符` },
   ];
   if (b.kind === 'mv-model') {
-    lines.push({ label: '对应画布', value: MV_MODEL_CANVAS_TITLE });
+    lines.push({ label: '代码块画布', value: MV_MODEL_CANVAS_TITLE });
     const p = b.payload as MvModelPayload;
     if (p.title) lines.push({ label: '标题', value: p.title });
     lines.push({ label: '列数', value: String(p.columns.length) });
     lines.push({ label: '行数', value: String(p.rows.length) });
   } else if (b.kind === 'mv-view') {
     const p = b.payload as MvViewPayload;
-    lines.push({ label: '对应画布', value: MV_VIEW_KIND_METADATA[p.kind].canvasTitle });
+    lines.push({ label: '代码块画布', value: MV_VIEW_KIND_METADATA[p.kind].canvasTitle });
     if (p.title) lines.push({ label: '标题', value: p.title });
     lines.push({ label: '视图 kind', value: p.kind });
     lines.push({
@@ -345,7 +371,7 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
     }
   } else if (b.kind === 'mv-map') {
     const p = b.payload as MvMapPayload;
-    lines.push({ label: '对应画布', value: MV_MAP_CANVAS_TITLE });
+    lines.push({ label: '代码块画布', value: MV_MAP_CANVAS_TITLE });
     lines.push({ label: '映射规则', value: `${p.rules.length} 条` });
   }
   return lines;
@@ -353,19 +379,19 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
 
 const canvasPrimaryActionLabelForSelected = computed(() => {
   const b = selectedBlock.value;
-  return b ? canvasPrimaryActionLabel(b) : '打开画布编辑';
+  return b ? canvasPrimaryActionLabel(b) : '打开代码块画布';
 });
 
 const canvasPrimaryActionTitleForSelected = computed(() => {
   const b = selectedBlock.value;
-  return b ? canvasPrimaryActionTitle(b) : '打开画布 — 无全局快捷键';
+  return b ? canvasPrimaryActionTitle(b) : '打开代码块画布 — 无全局快捷键';
 });
 
 const selectedBlockCanvasHint = computed(() => {
   const b = selectedBlock.value;
   if (!b) return '';
-  if (b.kind === 'mv-model') return 'Model 块即「数据表」：在数据表画布中编辑列与行。';
-  if (b.kind === 'mv-map') return 'Map 块在映射规则画布中编辑 JSON。';
+  if (b.kind === 'mv-model') return 'Model 以文档内 mv-model 围栏代码块存储：在数据表代码块画布中编辑列与行。';
+  if (b.kind === 'mv-map') return 'Map 以 mv-map 围栏代码块存储：在映射规则代码块画布中编辑 JSON。';
   if (b.kind === 'mv-view') {
     return MV_VIEW_KIND_METADATA[(b.payload as MvViewPayload).kind].description;
   }
@@ -455,7 +481,7 @@ function extractActivityOutline(src: string): string[] {
     }
     if (out.length >= 14) break;
   }
-  return out.length ? out : ['（未从 payload 识别活动步骤，可在画布中编辑）'];
+  return out.length ? out : ['（未从 payload 识别活动步骤，可在代码块画布中编辑）'];
 }
 
 function uiDesignOutlineLines(payload: string): string[] {
@@ -480,7 +506,7 @@ function canvasPrimaryActionLabel(b: ParsedFenceBlock): string {
     const k = (b.payload as MvViewPayload).kind;
     return `打开${MV_VIEW_KIND_METADATA[k].canvasTitle}`;
   }
-  return '打开画布编辑';
+  return '打开代码块画布';
 }
 
 function canvasPrimaryActionTitle(b: ParsedFenceBlock): string {
@@ -498,11 +524,23 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
   }
   if (b.kind === 'mv-view') {
     const p = b.payload as MvViewPayload;
-    if (p.kind === 'mermaid-class') {
-      const cls = extractMermaidClassNames(p.payload ?? '');
+    if (isMermaidViewKind(p.kind)) {
+      if (p.kind === 'mermaid-class') {
+        const cls = extractMermaidClassNames(p.payload ?? '');
+        return {
+          heading: '当前块 · classDiagram',
+          lines: cls.length ? cls : ['（未匹配到 class 关键字）'],
+        };
+      }
+      const excerpt = (p.payload ?? '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .slice(0, 12);
+      const shortTitle = MV_VIEW_KIND_METADATA[p.kind].canvasTitle.replace(/画布$/, '').trim();
       return {
-        heading: '当前块 · classDiagram',
-        lines: cls.length ? cls : ['（未匹配到 class 关键字）'],
+        heading: `当前块 · ${shortTitle}`,
+        lines: excerpt.length ? excerpt : ['（payload 为空）'],
       };
     }
     if (p.kind === 'mindmap-ui') {
@@ -559,7 +597,7 @@ function applyCaretOffsetToSelectedBlock(offset: number) {
 }
 
 function onMdWysiwygCaretOffset(offset: number) {
-  if (mdPaneMode.value !== 'preview') return;
+  if (mdPaneMode.value !== 'rich') return;
   applyCaretOffsetToSelectedBlock(offset);
 }
 
@@ -776,13 +814,13 @@ function openVisualCanvas(block: ParsedFenceBlock) {
   const existing = canvasTabs.value.find((t) => t.relPath === p && t.blockId === block.payload.id);
   if (existing) {
     activeEditorTab.value = existing.id;
-    logLine(`已切换到画布标签：${block.payload.id}`, 'info');
+    logLine(`已切换到代码块画布标签：${block.payload.id}`, 'info');
     return;
   }
   const id = makeCanvasTabId();
   canvasTabs.value = [...canvasTabs.value, { id, relPath: p, blockId: block.payload.id }];
   activeEditorTab.value = id;
-  logLine(`已打开画布标签：${block.payload.id}`, 'info');
+  logLine(`已打开代码块画布标签：${block.payload.id}`, 'info');
 }
 
 function closeCanvasTab(tabId: string) {
@@ -800,7 +838,7 @@ async function onEmbeddedCanvasSaved(payload: { markdown: string; relPath: strin
   if (electronApi.value?.writeWorkspaceFile) {
     await electronApi.value.writeWorkspaceFile(payload.relPath, payload.markdown);
   }
-  logLine(`画布已保存：${payload.relPath}`, 'info');
+    logLine(`代码块画布已保存：${payload.relPath}`, 'info');
 }
 
 async function onCanvasSavedInPopup(payload: { markdown: string; relPath: string }) {
@@ -840,7 +878,7 @@ function onOpenerCanvasSaved(ev: MessageEvent) {
   if (selectedPath.value === relPath) {
     sourceEditorText.value = markdown;
   }
-  logLine(`已从画布窗口合并保存：${relPath}`, 'info');
+    logLine(`已从代码块画布窗口合并保存：${relPath}`, 'info');
 }
 
 watch(
@@ -888,9 +926,9 @@ onMounted(async () => {
       try {
         canvasMarkdown.value = await electronApi.value.readWorkspaceFile(rel);
         canvasOnly.value = true;
-        logLine('画布编辑窗口（Electron）', 'info');
+        logLine('代码块画布编辑窗口（Electron）', 'info');
       } catch {
-        workspaceHint.value = '无法读取文件（画布）。';
+        workspaceHint.value = '无法读取文件（代码块画布）。';
         logLine(workspaceHint.value, 'error');
       }
       return;
@@ -909,15 +947,15 @@ onMounted(async () => {
           canvasWorkspaceFiles.value = o.workspaceFiles && typeof o.workspaceFiles === 'object' ? o.workspaceFiles : {};
           canvasOnly.value = true;
           sessionStorage.removeItem('mvwb_canvas_launch');
-          logLine('画布编辑窗口（浏览器）', 'info');
+          logLine('代码块画布编辑窗口（浏览器）', 'info');
         } else {
-          logLine('画布启动数据与 URL 不一致', 'warn');
+          logLine('代码块画布启动数据与 URL 不一致', 'warn');
         }
       } catch {
-        logLine('画布启动数据无效', 'error');
+        logLine('代码块画布启动数据无效', 'error');
       }
     } else {
-      logLine('缺少画布数据：请从主窗口「可视化」按钮打开', 'error');
+      logLine('缺少代码块画布数据：请从主窗口属性区「打开…画布」按钮打开', 'error');
     }
     return;
   }
@@ -1014,7 +1052,7 @@ onUnmounted(() => {
             </li>
             <li class="menu-sep" role="separator" />
             <li class="menu-info" role="none">
-              文档标签在**中间编辑区**顶部切换；同一文档下打开「画布」后在文档标签下方出现**文档 / 画布**子标签。关闭标签用 ×。中间列**仅 Markdown**；**Model / View 围栏**索引在**左侧大纲 Dock**。其左右为大纲 Dock 与属性 Dock（各自标题栏可**折叠/展开**为窄条；视图菜单可整侧隐藏）。Markdown 富文本可右键切原始文本或插入图。
+              文档标签在**中间编辑区**顶部切换；同一文档下打开「代码块画布」后在文档标签下方出现**文档 / 代码块**子标签。关闭标签用 ×。中间列**仅 Markdown**；**Model / View 围栏**索引在**左侧大纲 Dock**。其左右为大纲 Dock 与属性 Dock（各自标题栏可**折叠/展开**为窄条；视图菜单可整侧隐藏）。Markdown 支持<strong>预览 / 富文本 / 原始文本</strong>（右键切换）；插入代码块仅在富文本或原始文本下可用。
             </li>
           </ul>
         </div>
@@ -1114,7 +1152,7 @@ onUnmounted(() => {
               <section class="dock-section">
                 <h3 class="dock-subh">Model / View 围栏</h3>
                 <p class="dock-muted dock-hint dock-hint--tight">
-                  中间列仅 Markdown；光标在围栏内时右侧属性会随动；亦可在此选中下列块，行末「画布」打开画布子标签。
+                  中间列仅 Markdown；光标在围栏内时右侧属性会随动；亦可在此选中下列块，行末「代码块」打开代码块画布子标签。
                 </p>
                 <ul v-if="blocks.length" class="dock-fence-list" role="list">
                   <li
@@ -1138,7 +1176,7 @@ onUnmounted(() => {
                       :title="canvasPrimaryActionTitle(b)"
                       @click.stop="openVisualCanvas(b)"
                     >
-                      画布
+                      代码块
                     </button>
                   </li>
                 </ul>
@@ -1189,7 +1227,7 @@ onUnmounted(() => {
               v-if="selectedPath && canvasTabsForCurrentFile.length"
               class="editor-subtabs"
               role="tablist"
-              aria-label="文档与画布"
+              aria-label="文档与代码块画布"
             >
               <button
                 type="button"
@@ -1216,13 +1254,13 @@ onUnmounted(() => {
                   :title="`${t.relPath} · ${t.blockId}`"
                   @click="activeEditorTab = t.id"
                 >
-                  画布 <code class="subtab-code">{{ t.blockId }}</code>
+                  代码块 <code class="subtab-code">{{ t.blockId }}</code>
                 </button>
                 <button
                   type="button"
                   class="subtab-close"
-                  title="关闭画布标签 — 无全局快捷键"
-                  :aria-label="`关闭画布 ${t.blockId}`"
+                  title="关闭代码块画布标签 — 无全局快捷键"
+                  :aria-label="`关闭代码块画布 ${t.blockId}`"
                   @click.stop="closeCanvasTab(t.id)"
                 >
                   ×
@@ -1236,17 +1274,19 @@ onUnmounted(() => {
           <section class="md-pane" @contextmenu.prevent="onMdPaneContextMenu">
             <h2 class="md-pane-head">
               Markdown
-              <span class="md-mode-badge" :class="mdPaneMode">{{ mdPaneMode === 'preview' ? '富文本' : '原始文本' }}</span>
+              <span class="md-mode-badge" :class="`md-mode--${mdPaneMode}`">{{ mdPaneModeLabel }}</span>
             </h2>
             <p class="md-pane-hint">
-              「预览」为可编辑的所见即所得（Vditor）；在编辑区<strong>右键</strong>可切换模式或<strong>插入图</strong>（围栏块）。Model / View
-              围栏不在此列展示卡片；左侧「Model / View 围栏」可手动选中块。光标在某一围栏块<strong>内</strong>移动时，右侧<strong>属性</strong> Dock
-              会随当前块切换；在围栏外则为文档摘要。
+              <strong>预览</strong>为只读排版；<strong>富文本</strong>为 Vditor 所见即所得；<strong>原始文本</strong>为 Markdown 源码。在编辑区<strong>右键</strong>可切换三种状态；<strong>插入代码块</strong>仅在富文本或原始文本下可用。Model / View 以文档内<strong>围栏代码块</strong>（<code>mv-model</code> / <code>mv-view</code>）存储，块内可为 JSON、XML 或纯文本等；左侧「Model / View 围栏」索引可选中块，在中间列打开<strong>代码块画布</strong>编辑。光标在某一围栏块<strong>内</strong>移动时，右侧<strong>属性</strong> Dock
+              会随当前块切换（仅富文本 / 原始文本）；在围栏外则为文档摘要。
             </p>
             <ul v-if="parseErrors.length" class="errors md-parse-errors">
               <li v-for="(e, i) in parseErrors" :key="i">{{ e }}</li>
             </ul>
-            <div v-if="mdPaneMode === 'preview'" class="md-wysiwyg-scroll">
+            <div v-if="mdPaneMode === 'preview'" class="md-preview-outer">
+              <MdMarkdownPreview :key="selectedPath ?? ''" :markdown="currentContent" />
+            </div>
+            <div v-else-if="mdPaneMode === 'rich'" class="md-wysiwyg-scroll">
               <MdWysiwygEditor
                 ref="mdWysiwygRef"
                 :key="selectedPath ?? ''"
@@ -1409,10 +1449,20 @@ onUnmounted(() => {
           class="ctx-item"
           role="menuitemradio"
           :aria-checked="mdPaneMode === 'preview'"
-          title="切换到预览 — 无全局快捷键"
+          title="切换到只读预览 — 无全局快捷键"
           @click="setMdPaneMode('preview')"
         >
-          富文本预览（Vditor）
+          预览（只读）
+        </button>
+        <button
+          type="button"
+          class="ctx-item"
+          role="menuitemradio"
+          :aria-checked="mdPaneMode === 'rich'"
+          title="切换到富文本（Vditor）— 无全局快捷键"
+          @click="setMdPaneMode('rich')"
+        >
+          富文本（Vditor）
         </button>
         <button
           type="button"
@@ -1429,22 +1479,24 @@ onUnmounted(() => {
           type="button"
           class="ctx-item"
           role="menuitem"
-          :disabled="!selectedPath"
+          :disabled="!selectedPath || mdPaneMode === 'preview'"
           :title="
-            selectedPath
-              ? '选择图类型并插入 mv-view / mv-model 围栏 — 无全局快捷键'
-              : '请先打开或新建文档 — 无全局快捷键'
+            !selectedPath
+              ? '请先打开或新建文档 — 无全局快捷键'
+              : mdPaneMode === 'preview'
+                ? '预览模式下不可用：请先切换到富文本或原始文本 — 无全局快捷键'
+                : '选择代码块类型并插入 mv-view / mv-model 围栏 — 无全局快捷键'
           "
-          @click="openInsertDiagramModal"
+          @click="openInsertCodeBlockModal"
         >
-          插入图…
+          插入代码块…
         </button>
       </div>
     </Teleport>
-    <InsertDiagramModal
-      :open="insertDiagramOpen"
-      @close="insertDiagramOpen = false"
-      @select="onInsertDiagramSelect"
+    <InsertCodeBlockModal
+      :open="insertCodeBlockOpen"
+      @close="insertCodeBlockOpen = false"
+      @select="onInsertCodeBlockSelect"
     />
     <div v-if="logOpen" class="modal-back log-modal-back" @click.self="logOpen = false">
       <div class="modal log-modal">
@@ -2205,15 +2257,27 @@ onUnmounted(() => {
   background: #eef1f8;
   color: #475569;
 }
-.md-mode-badge.preview {
+.md-mode--preview {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+.md-mode--rich {
   background: #ecfdf5;
   border-color: #86efac;
   color: #166534;
 }
-.md-mode-badge.source {
+.md-mode--source {
   background: #fff7ed;
   border-color: #fdba74;
   color: #9a3412;
+}
+.md-preview-outer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .md-pane-hint {
   margin: 0 0 8px;

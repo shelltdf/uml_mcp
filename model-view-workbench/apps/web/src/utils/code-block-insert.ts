@@ -1,7 +1,8 @@
 import type { MvViewKind, MvViewPayload } from '@mvwb/core';
 import { MV_VIEW_KIND_METADATA, parseMarkdownBlocks, resolveRefPath } from '@mvwb/core';
 
-export type InsertDiagramKind = MvViewKind | 'mv-model';
+/** 可通过「插入代码块」对话框插入的围栏类型（mv-model 或各 mv-view kind） */
+export type InsertCodeBlockKind = MvViewKind | 'mv-model';
 
 export interface InsertFenceContext {
   /** 当前 view 将写入的 .md 工作区相对路径（用于生成 ref: 示例路径） */
@@ -25,7 +26,7 @@ export function inferDefaultModelRefs(ctx: InsertFenceContext): string[] {
 }
 
 /** 在光标处插入的围栏 Markdown（前后各留空行，便于解析） */
-export function buildFenceMarkdownForInsert(kind: InsertDiagramKind, ctx: InsertFenceContext): string {
+export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: InsertFenceContext): string {
   if (kind === 'mv-model') {
     const id = newBlockId('m');
     const body = {
