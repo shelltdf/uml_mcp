@@ -11,6 +11,8 @@ export interface MvwbElectronAPI {
   readWorkspaceFile(rel: string): Promise<string>;
   writeWorkspaceFile(rel: string, text: string): Promise<boolean>;
   openBlockEditor(rel: string, blockId: string): void;
+  /** 打开独立窗口：画布可视化编辑（`?mvwb_canvas=1`） */
+  openBlockCanvas(rel: string, blockId: string): void;
 }
 
 declare global {

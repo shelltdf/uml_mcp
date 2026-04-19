@@ -1,4 +1,13 @@
-import type { MvFenceKind, MvMapPayload, MvModelPayload, MvViewPayload, ParseMdResult, ParsedFenceBlock } from '../types.js';
+import type {
+  MvFenceKind,
+  MvMapPayload,
+  MvModelPayload,
+  MvViewKind,
+  MvViewPayload,
+  ParseMdResult,
+  ParsedFenceBlock,
+} from '../types.js';
+import { MV_VIEW_KINDS } from '../types.js';
 
 const FENCE = /^```(mv-model|mv-view|mv-map)\s*$/m;
 
@@ -23,17 +32,93 @@ function parseJsonPayload<T extends object>(inner: string, kind: MvFenceKind): {
   }
 }
 
-function validateModel(v: Record<string, unknown>): boolean {
-  return typeof v.id === 'string' && Array.isArray(v.columns) && Array.isArray(v.rows);
+/**
+ * 校验 mv-model：一张表 = 非空 columns + rows 中每行仅允许声明列，且非 nullable 列必须出现。
+ */
+function validateMvModel(obj: Record<string, unknown>): { ok: true; model: MvModelPayload } | { ok: false; message: string } {
+  if (typeof obj.id !== 'string' || !obj.id.trim()) {
+    return { ok: false, message: 'mv-model: id must be a non-empty string' };
+  }
+  if ('title' in obj && obj.title !== undefined && typeof obj.title !== 'string') {
+    return { ok: false, message: 'mv-model: title must be a string when present' };
+  }
+
+  const colsRaw = obj.columns;
+  if (!Array.isArray(colsRaw) || colsRaw.length === 0) {
+    return { ok: false, message: 'mv-model: columns must be a non-empty array (fixed table schema)' };
+  }
+
+  const names = new Set<string>();
+  for (let i = 0; i < colsRaw.length; i++) {
+    const c = colsRaw[i];
+    if (!c || typeof c !== 'object' || Array.isArray(c)) {
+      return { ok: false, message: `mv-model: columns[${i}] must be an object` };
+    }
+    const o = c as Record<string, unknown>;
+    if (typeof o.name !== 'string' || !o.name.trim()) {
+      return { ok: false, message: `mv-model: columns[${i}].name must be a non-empty string` };
+    }
+    if (names.has(o.name)) {
+      return { ok: false, message: `mv-model: duplicate column name "${o.name}"` };
+    }
+    names.add(o.name);
+  }
+
+  const rowsRaw = obj.rows;
+  if (!Array.isArray(rowsRaw)) {
+    return { ok: false, message: 'mv-model: rows must be an array' };
+  }
+
+  for (let ri = 0; ri < rowsRaw.length; ri++) {
+    const row = rowsRaw[ri];
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      return { ok: false, message: `mv-model: rows[${ri}] must be an object (one table row)` };
+    }
+    const r = row as Record<string, unknown>;
+    for (const key of Object.keys(r)) {
+      if (!names.has(key)) {
+        return {
+          ok: false,
+          message: `mv-model: rows[${ri}] has unknown property "${key}" (not among declared columns)`,
+        };
+      }
+    }
+    for (const c of colsRaw as Array<Record<string, unknown>>) {
+      const colName = c.name as string;
+      const nullable = c.nullable === true;
+      if (!(colName in r) && !nullable) {
+        return { ok: false, message: `mv-model: rows[${ri}] missing required column "${colName}"` };
+      }
+    }
+  }
+
+  return { ok: true, model: obj as unknown as MvModelPayload };
 }
 
-function validateView(v: Record<string, unknown>): boolean {
-  return (
-    typeof v.id === 'string' &&
-    Array.isArray(v.modelRefs) &&
-    v.modelRefs.every((x) => typeof x === 'string') &&
-    (v.kind === 'table-readonly' || v.kind === 'mermaid-class')
-  );
+function isMvViewKind(k: unknown): k is MvViewKind {
+  return typeof k === 'string' && (MV_VIEW_KINDS as readonly string[]).includes(k);
+}
+
+function validateMvView(obj: Record<string, unknown>): { ok: true; view: MvViewPayload } | { ok: false; message: string } {
+  if (typeof obj.id !== 'string' || !obj.id.trim()) {
+    return { ok: false, message: 'mv-view: id must be a non-empty string' };
+  }
+  if ('title' in obj && obj.title !== undefined && typeof obj.title !== 'string') {
+    return { ok: false, message: 'mv-view: title must be a string when present' };
+  }
+  if (!isMvViewKind(obj.kind)) {
+    return {
+      ok: false,
+      message: `mv-view: unknown kind "${String(obj.kind)}" (expected one of: ${MV_VIEW_KINDS.join(', ')})`,
+    };
+  }
+  if (!Array.isArray(obj.modelRefs) || !obj.modelRefs.every((x) => typeof x === 'string')) {
+    return { ok: false, message: 'mv-view: modelRefs must be an array of strings' };
+  }
+  if ('payload' in obj && obj.payload !== undefined && typeof obj.payload !== 'string') {
+    return { ok: false, message: 'mv-view: payload must be a string when present' };
+  }
+  return { ok: true, view: obj as unknown as MvViewPayload };
 }
 
 function validateMap(v: Record<string, unknown>): boolean {
@@ -91,22 +176,24 @@ export function parseMarkdownBlocks(source: string): ParseMdResult {
     const obj = parsed.value;
     let payload: ParsedFenceBlock['payload'] | null = null;
     if (kind === 'mv-model') {
-      if (!validateModel(obj)) {
+      const mv = validateMvModel(obj);
+      if (!mv.ok) {
         errors.push({
-          message: 'mv-model: require id (string), columns (array), rows (array)',
+          message: mv.message,
           line: lineNumberAt(source, innerStartOffset),
         });
       } else {
-        payload = obj as unknown as MvModelPayload;
+        payload = mv.model;
       }
     } else if (kind === 'mv-view') {
-      if (!validateView(obj)) {
+      const vv = validateMvView(obj);
+      if (!vv.ok) {
         errors.push({
-          message: 'mv-view: require id, kind (table-readonly|mermaid-class), modelRefs (string[])',
+          message: vv.message,
           line: lineNumberAt(source, innerStartOffset),
         });
       } else {
-        payload = obj as unknown as MvViewPayload;
+        payload = vv.view;
       }
     } else {
       if (!validateMap(obj)) {

@@ -51,10 +51,11 @@ function createMainWindow() {
   return win;
 }
 
-function createBlockWindow(relPath, blockId) {
+function createBlockWindow(relPath, blockId, mode) {
+  const isCanvas = mode === 'canvas';
   const win = new BrowserWindow({
-    width: 720,
-    height: 640,
+    width: isCanvas ? 1280 : 720,
+    height: isCanvas ? 860 : 640,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -63,7 +64,11 @@ function createBlockWindow(relPath, blockId) {
   });
   const indexHtml = path.join(__dirname, '..', 'web', 'dist', 'index.html');
   const u = pathToFileURL(indexHtml);
-  u.searchParams.set('mvwb_block', '1');
+  if (isCanvas) {
+    u.searchParams.set('mvwb_canvas', '1');
+  } else {
+    u.searchParams.set('mvwb_block', '1');
+  }
   u.searchParams.set('path', relPath);
   u.searchParams.set('blockId', blockId);
   win.loadURL(u.href);
@@ -95,7 +100,11 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('mvwb:openBlock', (_e, relPath, blockId) => {
-    createBlockWindow(relPath, blockId);
+    createBlockWindow(relPath, blockId, 'json');
+  });
+
+  ipcMain.on('mvwb:openBlockCanvas', (_e, relPath, blockId) => {
+    createBlockWindow(relPath, blockId, 'canvas');
   });
 
   createMainWindow();

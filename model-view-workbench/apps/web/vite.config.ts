@@ -8,6 +8,9 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 export default defineConfig({
   plugins: [vue()],
   base: './',
+  optimizeDeps: {
+    include: ['vditor'],
+  },
   resolve: {
     alias: {
       '@': path.join(root, 'src'),
