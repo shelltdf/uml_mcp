@@ -8,6 +8,7 @@ import {
   type ParsedFenceBlock,
 } from '@mvwb/core';
 import { detectShell } from './platform';
+import { renderMarkdownSafe } from './markdownPreview';
 
 const shell = computed(() => detectShell());
 const files = ref<Map<string, string>>(new Map());
@@ -25,6 +26,15 @@ const folderInputRef = ref<HTMLInputElement | null>(null);
 const logLines = ref<string[]>([]);
 const logOpen = ref(false);
 const lastParseErrSig = ref('');
+const mdPaneMode = ref<'preview' | 'source'>('preview');
+const sourceEditorText = ref('');
+const mdCtxOpen = ref(false);
+const mdCtxX = ref(0);
+const mdCtxY = ref(0);
+const mdCtxMenuRef = ref<HTMLElement | null>(null);
+let electronWriteTimer: ReturnType<typeof setTimeout> | undefined;
+
+const mdPreviewHtml = computed(() => renderMarkdownSafe(currentContent.value));
 
 function logLine(message: string, level: 'info' | 'warn' | 'error' = 'info') {
   const ts = new Date().toISOString().slice(11, 19);
@@ -92,6 +102,66 @@ function onGlobalPointerDown(ev: PointerEvent) {
   const el = chromeRef.value;
   const t = ev.target as Node;
   if (el && !el.contains(t)) closeMenus();
+  const menu = mdCtxMenuRef.value;
+  if (mdCtxOpen.value && menu && !menu.contains(t)) closeMdContextMenu();
+}
+
+function onMdPaneContextMenu(e: MouseEvent) {
+  e.preventDefault();
+  mdCtxOpen.value = true;
+  const mw = 220;
+  const mh = 100;
+  let x = e.clientX;
+  let y = e.clientY;
+  x = Math.min(x, window.innerWidth - mw - 6);
+  y = Math.min(y, window.innerHeight - mh - 6);
+  mdCtxX.value = Math.max(4, x);
+  mdCtxY.value = Math.max(4, y);
+}
+
+function closeMdContextMenu() {
+  mdCtxOpen.value = false;
+}
+
+function flushSourceToFiles() {
+  const p = selectedPath.value;
+  if (!p) return;
+  if (sourceEditorText.value === (files.value.get(p) ?? '')) return;
+  files.value = new Map(files.value).set(p, sourceEditorText.value);
+  scheduleElectronWrite(p, sourceEditorText.value);
+}
+
+function setMdPaneMode(mode: 'preview' | 'source') {
+  if (mdPaneMode.value === 'source' && mode === 'preview') flushSourceToFiles();
+  if (mode === 'source') {
+    const p = selectedPath.value;
+    sourceEditorText.value = p ? files.value.get(p) ?? '' : '';
+  }
+  mdPaneMode.value = mode;
+  closeMdContextMenu();
+}
+
+function onMdSourceInput() {
+  const p = selectedPath.value;
+  if (!p) return;
+  files.value = new Map(files.value).set(p, sourceEditorText.value);
+  scheduleElectronWrite(p, sourceEditorText.value);
+}
+
+function scheduleElectronWrite(path: string, text: string) {
+  const api = electronApi.value;
+  if (!api?.writeWorkspaceFile) return;
+  clearTimeout(electronWriteTimer);
+  electronWriteTimer = setTimeout(() => {
+    void api.writeWorkspaceFile(path, text);
+  }, 400);
+}
+
+function onGlobalKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    closeMdContextMenu();
+    closeMenus();
+  }
 }
 
 const sortedPaths = computed(() => [...files.value.keys()].sort());
@@ -248,6 +318,7 @@ function applyEdit() {
   const out = replaceBlockInnerById(cur, id, nextInner);
   if (!out) return;
   files.value = new Map(files.value).set(p, out);
+  sourceEditorText.value = out;
   editOpen.value = false;
   void electronApi.value?.writeWorkspaceFile(p, out);
 }
@@ -283,9 +354,15 @@ function openBlockInShell(block: ParsedFenceBlock) {
   }
 }
 
-watch(selectedPath, () => {
-  editOpen.value = false;
-});
+watch(
+  selectedPath,
+  () => {
+    editOpen.value = false;
+    const p = selectedPath.value;
+    sourceEditorText.value = p ? files.value.get(p) ?? '' : '';
+  },
+  { immediate: true },
+);
 
 watch(
   () => parseErrors.value.join('\n'),
@@ -303,6 +380,7 @@ watch(
 onMounted(async () => {
   logLine('MV Workbench 已启动', 'info');
   document.addEventListener('pointerdown', onGlobalPointerDown, true);
+  document.addEventListener('keydown', onGlobalKeyDown, true);
   const u = new URLSearchParams(window.location.search);
   const rel = u.get('path') ?? '';
   const bid = u.get('blockId') ?? '';
@@ -328,6 +406,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('pointerdown', onGlobalPointerDown, true);
+  document.removeEventListener('keydown', onGlobalKeyDown, true);
+  clearTimeout(electronWriteTimer);
 });
 </script>
 
@@ -440,9 +520,24 @@ onUnmounted(() => {
       </header>
       <template v-if="selectedPath">
         <div class="split">
-          <section class="md-pane">
-            <h2>Markdown 原文</h2>
-            <pre class="md-src">{{ currentContent }}</pre>
+          <section class="md-pane" @contextmenu.prevent="onMdPaneContextMenu">
+            <h2 class="md-pane-head">
+              Markdown
+              <span class="md-mode-badge" :class="mdPaneMode">{{ mdPaneMode === 'preview' ? '预览' : '原始文本' }}</span>
+            </h2>
+            <p class="md-pane-hint">右键菜单可切换「预览」与「原始文本」。</p>
+            <div v-show="mdPaneMode === 'preview'" class="md-preview-scroll">
+              <div class="md-preview" v-html="mdPreviewHtml" />
+            </div>
+            <textarea
+              v-show="mdPaneMode === 'source'"
+              v-model="sourceEditorText"
+              class="md-source"
+              spellcheck="false"
+              aria-label="Markdown 原始文本"
+              title="原始文本编辑 — 无全局快捷键"
+              @input="onMdSourceInput"
+            />
           </section>
           <section class="blocks-pane">
             <h2>Model / View 块</h2>
@@ -527,6 +622,39 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    <Teleport to="body">
+      <div
+        v-show="mdCtxOpen"
+        ref="mdCtxMenuRef"
+        class="md-ctx-menu"
+        role="menu"
+        aria-label="Markdown 区域"
+        :style="{ left: mdCtxX + 'px', top: mdCtxY + 'px' }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button
+          type="button"
+          class="ctx-item"
+          role="menuitemradio"
+          :aria-checked="mdPaneMode === 'preview'"
+          title="切换到预览 — 无全局快捷键"
+          @click="setMdPaneMode('preview')"
+        >
+          预览（所见即所得）
+        </button>
+        <button
+          type="button"
+          class="ctx-item"
+          role="menuitemradio"
+          :aria-checked="mdPaneMode === 'source'"
+          title="切换到原始文本 — 无全局快捷键"
+          @click="setMdPaneMode('source')"
+        >
+          原始文本
+        </button>
+      </div>
+    </Teleport>
     <div v-if="logOpen" class="modal-back log-modal-back" @click.self="logOpen = false">
       <div class="modal log-modal">
         <h3>日志</h3>
@@ -853,20 +981,153 @@ onUnmounted(() => {
   grid-template-columns: 1fr 1fr;
   min-height: 0;
 }
-.md-pane,
+.md-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px;
+}
 .blocks-pane {
   overflow: auto;
   padding: 12px;
   min-height: 0;
 }
-.md-src {
-  white-space: pre-wrap;
-  font-size: 0.78rem;
-  background: #fff;
-  border: 1px solid #e5e5e5;
-  padding: 8px;
+.md-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+.md-mode-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #c5c9d4;
+  background: #eef1f8;
+  color: #475569;
+}
+.md-mode-badge.preview {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+.md-mode-badge.source {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+.md-pane-hint {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.md-preview-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
   border-radius: 6px;
-  max-height: calc(100vh - 120px);
+  background: #fff;
+}
+.md-preview {
+  padding: 12px 14px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #1e293b;
+}
+.md-preview :deep(h1),
+.md-preview :deep(h2),
+.md-preview :deep(h3) {
+  margin: 0.6em 0 0.35em;
+  line-height: 1.25;
+}
+.md-preview :deep(h1) {
+  font-size: 1.35rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.25em;
+}
+.md-preview :deep(p) {
+  margin: 0.5em 0;
+}
+.md-preview :deep(pre) {
+  margin: 0.75em 0;
+  padding: 10px 12px;
+  overflow: auto;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+.md-preview :deep(code) {
+  font-family: ui-monospace, Consolas, 'Cascadia Code', monospace;
+  font-size: 0.82em;
+}
+.md-preview :deep(p code),
+.md-preview :deep(li code) {
+  padding: 1px 5px;
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+.md-preview :deep(ul),
+.md-preview :deep(ol) {
+  margin: 0.5em 0;
+  padding-left: 1.35em;
+}
+.md-preview :deep(blockquote) {
+  margin: 0.6em 0;
+  padding: 4px 12px;
+  border-left: 4px solid #94a3b8;
+  color: #475569;
+  background: #f8fafc;
+}
+.md-source {
+  flex: 1;
+  min-height: 160px;
+  width: 100%;
+  margin: 0;
+  resize: none;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-family: ui-monospace, Consolas, 'Cascadia Code', monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #0f172a;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+.md-ctx-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 208px;
+  padding: 4px 0;
+  background: #fff;
+  border: 1px solid #a8b0c4;
+  border-radius: 4px;
+  box-shadow: 2px 4px 12px rgba(15, 23, 42, 0.15);
+}
+.md-ctx-menu .ctx-item {
+  display: block;
+  width: 100%;
+  margin: 0;
+  border: none;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  color: #0f172a;
+  background: transparent;
+}
+.md-ctx-menu .ctx-item:hover {
+  background: #2563eb;
+  color: #fff;
 }
 .card {
   border: 1px solid #ddd;
