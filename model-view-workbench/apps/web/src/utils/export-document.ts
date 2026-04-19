@@ -1,18 +1,8 @@
 import * as htmlToImage from 'html-to-image';
 import Vditor from 'vditor';
+import { mvwbVditorPreviewOptions } from './vditor-mvwb-preview-options';
 
 const VDITOR_VER = '3.11.2';
-
-const previewOpts = {
-  mode: 'light' as const,
-  lang: 'zh_CN' as const,
-  markdown: {
-    toc: true,
-    mark: false,
-    footnotes: true,
-    autoSpace: true,
-  },
-};
 
 export function stripMdExtension(rel: string): string {
   const base = rel.split(/[/\\]/).pop() || 'document';
@@ -60,7 +50,7 @@ export async function renderMarkdownOffscreen(markdown: string): Promise<{
   const inner = document.createElement('div');
   inner.className = 'md-preview-root mvwb-export-inner';
   host.appendChild(inner);
-  await Vditor.preview(inner, markdown, previewOpts);
+  await Vditor.preview(inner, markdown, mvwbVditorPreviewOptions);
   const captureRoot = (inner.querySelector('.vditor-reset') as HTMLElement) ?? inner;
   return {
     captureRoot,
@@ -69,8 +59,28 @@ export async function renderMarkdownOffscreen(markdown: string): Promise<{
   };
 }
 
-export async function exportStandaloneHtml(markdown: string, baseName: string, pageTitle: string): Promise<void> {
-  const { bodyHtml, cleanup } = await renderMarkdownOffscreen(markdown);
+export type ExportVisualOpts = {
+  /** 已用 Vditor.preview 渲染好的 `.vditor-reset`（与中间列预览 DOM 一致）；不传则离屏渲染 `markdown` */
+  previewRoot?: HTMLElement | null;
+};
+
+export async function exportStandaloneHtml(
+  markdown: string,
+  baseName: string,
+  pageTitle: string,
+  visual?: ExportVisualOpts,
+): Promise<void> {
+  let bodyHtml: string;
+  let cleanup: () => void;
+  const root = visual?.previewRoot ?? null;
+  if (root) {
+    bodyHtml = root.outerHTML;
+    cleanup = () => {};
+  } else {
+    const r = await renderMarkdownOffscreen(markdown);
+    bodyHtml = r.bodyHtml;
+    cleanup = r.cleanup;
+  }
   try {
     const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -105,30 +115,117 @@ function expandForCapture(el: HTMLElement): () => void {
   };
 }
 
-export async function exportPng(markdown: string, baseName: string): Promise<void> {
-  const { captureRoot, cleanup } = await renderMarkdownOffscreen(markdown);
-  const restore = expandForCapture(captureRoot);
+/**
+ * Vditor.preview 会异步插入 Mermaid SVG，scrollHeight 会阶跃增大；稳定后再截图才完整。
+ */
+async function waitForStableScrollBox(
+  node: HTMLElement,
+  opts?: { timeoutMs?: number; pollMs?: number; stableRounds?: number },
+): Promise<void> {
+  const timeoutMs = opts?.timeoutMs ?? 12000;
+  const pollMs = opts?.pollMs ?? 160;
+  const stableRounds = opts?.stableRounds ?? 5;
+  const t0 = performance.now();
+  let last = -1;
+  let stable = 0;
+  while (performance.now() - t0 < timeoutMs) {
+    void node.offsetHeight;
+    const h = node.scrollHeight;
+    if (h === last) stable += 1;
+    else {
+      stable = 0;
+      last = h;
+    }
+    if (last >= 0 && stable >= stableRounds) return;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
+function capturePixelSize(el: HTMLElement): { width: number; height: number } {
+  const width = Math.ceil(Math.max(el.scrollWidth, el.clientWidth, 400));
+  const height = Math.ceil(Math.max(el.scrollHeight, el.clientHeight, 1));
+  return { width, height };
+}
+
+async function flushLayout(): Promise<void> {
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+}
+
+export async function exportPng(
+  markdown: string,
+  baseName: string,
+  visual?: ExportVisualOpts,
+): Promise<void> {
+  let captureRoot: HTMLElement;
+  let cleanup: () => void;
+  const live = visual?.previewRoot ?? null;
+  if (live) {
+    captureRoot = live;
+    cleanup = () => {};
+  } else {
+    const r = await renderMarkdownOffscreen(markdown);
+    captureRoot = r.captureRoot;
+    cleanup = r.cleanup;
+  }
   try {
-    const dataUrl = await htmlToImage.toPng(captureRoot, { pixelRatio: 2, cacheBust: true });
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    triggerDownload(`${baseName}.png`, blob);
+    await waitForStableScrollBox(captureRoot);
+    const restore = expandForCapture(captureRoot);
+    try {
+      await flushLayout();
+      const { width, height } = capturePixelSize(captureRoot);
+      const dataUrl = await htmlToImage.toPng(captureRoot, {
+        pixelRatio: 2,
+        cacheBust: true,
+        width,
+        height,
+      });
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      triggerDownload(`${baseName}.png`, blob);
+    } finally {
+      restore();
+    }
   } finally {
-    restore();
     cleanup();
   }
 }
 
-export async function exportSvg(markdown: string, baseName: string): Promise<void> {
-  const { captureRoot, cleanup } = await renderMarkdownOffscreen(markdown);
-  const restore = expandForCapture(captureRoot);
+export async function exportSvg(
+  markdown: string,
+  baseName: string,
+  visual?: ExportVisualOpts,
+): Promise<void> {
+  let captureRoot: HTMLElement;
+  let cleanup: () => void;
+  const live = visual?.previewRoot ?? null;
+  if (live) {
+    captureRoot = live;
+    cleanup = () => {};
+  } else {
+    const r = await renderMarkdownOffscreen(markdown);
+    captureRoot = r.captureRoot;
+    cleanup = r.cleanup;
+  }
   try {
-    const dataUrl = await htmlToImage.toSvg(captureRoot, { pixelRatio: 2, cacheBust: true });
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    triggerDownload(`${baseName}.svg`, blob);
+    await waitForStableScrollBox(captureRoot);
+    const restore = expandForCapture(captureRoot);
+    try {
+      await flushLayout();
+      const { width, height } = capturePixelSize(captureRoot);
+      const dataUrl = await htmlToImage.toSvg(captureRoot, {
+        pixelRatio: 2,
+        cacheBust: true,
+        width,
+        height,
+      });
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      triggerDownload(`${baseName}.svg`, blob);
+    } finally {
+      restore();
+    }
   } finally {
-    restore();
     cleanup();
   }
 }

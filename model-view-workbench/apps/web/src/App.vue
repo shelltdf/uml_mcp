@@ -29,6 +29,7 @@ import BlockCanvasPage from './components/BlockCanvasPage.vue';
 import InsertCodeBlockModal from './components/InsertCodeBlockModal.vue';
 import { buildFenceMarkdownForInsert, type InsertCodeBlockKind } from './utils/code-block-insert';
 import {
+  type ExportVisualOpts,
   exportMarkdownFile,
   exportPng,
   exportStandaloneHtml,
@@ -85,6 +86,7 @@ const mdCtxX = ref(0);
 const mdCtxY = ref(0);
 const mdCtxMenuRef = ref<HTMLElement | null>(null);
 const mdWysiwygRef = ref<InstanceType<typeof MdWysiwygEditor> | null>(null);
+const mdPreviewRef = ref<InstanceType<typeof MdMarkdownPreview> | null>(null);
 const mdSourceTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const insertCodeBlockOpen = ref(false);
 let electronWriteTimer: ReturnType<typeof setTimeout> | undefined;
@@ -193,6 +195,14 @@ function closeCurrentDocumentFromMenu() {
   if (p) closeTab(p);
 }
 
+/** 预览模式下导出 HTML/图：用可见预览 DOM；否则离屏 Vditor.preview（参数与预览一致） */
+function getExportVisualOpts(): ExportVisualOpts | undefined {
+  if (mdPaneMode.value !== 'preview') return undefined;
+  const el = mdPreviewRef.value?.getVditorResetElement?.() ?? null;
+  if (!el) return undefined;
+  return { previewRoot: el };
+}
+
 function exportMarkdownFromMenu() {
   closeMenus();
   const p = selectedPath.value;
@@ -208,7 +218,7 @@ async function exportHtmlFromMenu() {
   if (!p) return;
   const base = stripMdExtension(p);
   try {
-    await exportStandaloneHtml(currentContent.value, base, base);
+    await exportStandaloneHtml(currentContent.value, base, base, getExportVisualOpts());
     logLine(`已导出：${base}.html`, 'info');
   } catch (e) {
     const msg = String(e);
@@ -223,7 +233,7 @@ async function exportSvgFromMenu() {
   if (!p) return;
   const base = stripMdExtension(p);
   try {
-    await exportSvg(currentContent.value, base);
+    await exportSvg(currentContent.value, base, getExportVisualOpts());
     logLine(`已导出：${base}.svg`, 'info');
   } catch (e) {
     const msg = String(e);
@@ -238,7 +248,7 @@ async function exportPngFromMenu() {
   if (!p) return;
   const base = stripMdExtension(p);
   try {
-    await exportPng(currentContent.value, base);
+    await exportPng(currentContent.value, base, getExportVisualOpts());
     logLine(`已导出：${base}.png`, 'info');
   } catch (e) {
     const msg = String(e);
@@ -1538,7 +1548,7 @@ onUnmounted(() => {
                 class="menu-item"
                 role="menuitem"
                 :disabled="!selectedPath"
-                title="导出独立 HTML（含 Vditor 样式外链）— 无全局快捷键"
+                title="导出独立 HTML（Vditor 样式外链）。预览模式用可见预览 DOM；富文本/原始文本为同参数离屏 Vditor.preview — 无全局快捷键"
                 @click="exportHtmlFromMenu"
               >
                 导出 HTML…
@@ -1550,7 +1560,7 @@ onUnmounted(() => {
                 class="menu-item"
                 role="menuitem"
                 :disabled="!selectedPath"
-                title="将预览渲染导出为 SVG — 无全局快捷键"
+                title="导出 SVG：预览模式截取可见预览；否则离屏 Vditor.preview — 无全局快捷键"
                 @click="exportSvgFromMenu"
               >
                 导出 SVG…
@@ -1562,7 +1572,7 @@ onUnmounted(() => {
                 class="menu-item"
                 role="menuitem"
                 :disabled="!selectedPath"
-                title="将预览渲染导出为 PNG — 无全局快捷键"
+                title="导出 PNG：预览模式截取可见预览；否则离屏 Vditor.preview — 无全局快捷键"
                 @click="exportPngFromMenu"
               >
                 导出 PNG…
@@ -1889,7 +1899,7 @@ onUnmounted(() => {
               <li v-for="(e, i) in parseErrors" :key="i">{{ e }}</li>
             </ul>
             <div v-if="mdPaneMode === 'preview'" class="md-preview-outer">
-              <MdMarkdownPreview :key="selectedPath ?? ''" :markdown="currentContent" />
+              <MdMarkdownPreview ref="mdPreviewRef" :key="selectedPath ?? ''" :markdown="currentContent" />
             </div>
             <div v-else-if="mdPaneMode === 'rich'" class="md-wysiwyg-scroll">
               <MdWysiwygEditor

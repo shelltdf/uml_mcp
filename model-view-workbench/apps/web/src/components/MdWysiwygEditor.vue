@@ -197,8 +197,21 @@ defineExpose({ insertMarkdown });
   overflow: auto;
 }
 
+/* Vditor 默认给 wysiwyg 下围栏 pre 设 height:100%，在 flex 里会把块压扁并出现块内滚动条；改为随内容增高，由 .vditor-content 统一滚动 */
+.vditor-host :deep(.vditor-wysiwyg > .vditor-reset) {
+  overflow: visible !important;
+}
+.vditor-host :deep(.vditor-wysiwyg pre.vditor-reset > code),
+.vditor-host :deep(.vditor-wysiwyg__block pre > code) {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
 /* 围栏代码块：明显边界，便于识别与点击选择（wysiwyg 下块级 pre） */
 .vditor-host :deep(.vditor-wysiwyg pre.vditor-reset) {
+  height: auto !important;
+  min-height: 0;
+  overflow: visible !important;
   border: 2px solid #64748b;
   border-radius: 8px;
   padding: 10px 12px !important;
