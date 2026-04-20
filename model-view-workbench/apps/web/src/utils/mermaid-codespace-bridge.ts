@@ -4,7 +4,10 @@
 import {
   parseMarkdownBlocks,
   slug,
-  type MvCodespaceMember,
+  type MvCodespaceClassEnum,
+  type MvCodespaceClassMember,
+  type MvCodespaceClassMethod,
+  type MvCodespaceClassifier,
   type MvCodespaceNamespaceNode,
   type MvCodespaceProperty,
   type MvModelCodespacePayload,
@@ -76,7 +79,7 @@ function visLead(v?: string): string {
   return '+';
 }
 
-function memberToAttrLine(m: MvCodespaceMember): string {
+function fieldToAttrLine(m: MvCodespaceClassMember): string {
   const lead = visLead(m.visibility);
   const st = m.static ? '$' : '';
   const n = (m.name ?? '').trim() || 'member';
@@ -85,7 +88,7 @@ function memberToAttrLine(m: MvCodespaceMember): string {
   return `${lead}${st}${n}`;
 }
 
-function memberToEnumLine(m: MvCodespaceMember): string {
+function enumToLine(m: MvCodespaceClassEnum): string {
   const n = (m.name ?? '').trim() || 'ENUM';
   const ty = (m.type ?? '').trim();
   const grp = (m.enumGroup ?? '').trim();
@@ -93,7 +96,7 @@ function memberToEnumLine(m: MvCodespaceMember): string {
   return grp ? `[${grp}] ${body}` : body;
 }
 
-function memberToMethodLine(m: MvCodespaceMember): string {
+function methodToLine(m: MvCodespaceClassMethod): string {
   const lead = visLead(m.visibility);
   const st = m.static ? '$' : '';
   const sig = (m.signature ?? '').trim();
@@ -107,6 +110,17 @@ function memberToMethodLine(m: MvCodespaceMember): string {
   }
   const n = (m.name ?? '').trim() || 'method';
   return ret ? `${lead}${st}${kindPrefix}${n}(): ${ret}` : `${lead}${st}${kindPrefix}${n}()`;
+}
+
+function collectClassifierMemberLines(c: MvCodespaceClassifier): {
+  attrs: string[];
+  enums: string[];
+  meths: string[];
+} {
+  const attrs = (c.member ?? []).map(fieldToAttrLine);
+  const enums = (c.enum ?? []).map(enumToLine);
+  const meths = (c.method ?? []).map(methodToLine);
+  return { attrs, enums, meths };
 }
 
 function propertyToLine(p: MvCodespaceProperty): string {
@@ -185,20 +199,8 @@ export function listCodespaceClassesForMermaidClass(
         for (const n of nodes) {
           const curPath = [...nsPath, n.name];
           for (const c of n.classes ?? []) {
-            const members = c.members ?? [];
-            const attrs: string[] = [];
+            const { attrs, enums, meths } = collectClassifierMemberLines(c);
             const props: string[] = [];
-            const enums: string[] = [];
-            const meths: string[] = [];
-            for (const m of members) {
-              if (m.kind === 'method') {
-                meths.push(memberToMethodLine(m));
-              } else if (m.kind === 'enumLiteral') {
-                enums.push(memberToEnumLine(m));
-              } else {
-                attrs.push(memberToAttrLine(m));
-              }
-            }
             for (const p of c.properties ?? []) {
               props.push(propertyToLine(p));
             }

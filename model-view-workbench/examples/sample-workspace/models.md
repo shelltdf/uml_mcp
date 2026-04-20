@@ -103,7 +103,8 @@
               "id": "cls_placeholder",
               "name": "Placeholder",
               "kind": "class",
-              "members": []
+              "member": [],
+              "method": []
             }
           ]
         }

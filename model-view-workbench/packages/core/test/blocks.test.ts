@@ -342,7 +342,7 @@ describe('parseMarkdownBlocks', () => {
                   name: 'Base',
                   kind: 'class',
                   abstract: true,
-                  members: [{ name: 'x', kind: 'field', type: 'int' }],
+                  member: [{ name: 'x', type: 'int' }],
                 },
                 {
                   id: 'cls-derived',
@@ -389,12 +389,11 @@ describe('parseMarkdownBlocks', () => {
                 {
                   id: 'cls_a',
                   name: 'ClassA',
-                  members: [
-                    { name: 'state', kind: 'field', visibility: 'private', accessor: 'getset', type: 'int' },
-                    { name: 'ctor', kind: 'method', methodKind: 'constructor', signature: 'ClassA()' },
+                  member: [{ name: 'state', visibility: 'private', accessor: 'getset', type: 'int' }],
+                  method: [
+                    { name: 'ctor', methodKind: 'constructor', signature: 'ClassA()' },
                     {
                       name: 'index',
-                      kind: 'method',
                       methodKind: 'operator',
                       operatorSymbol: '[]',
                       signature: 'operator[](int i)',
@@ -550,7 +549,7 @@ describe('parseMarkdownBlocks', () => {
               {
                 id: 'n1',
                 name: 'NsA',
-                classes: [{ id: 'c1', name: 'C1', members: [{ name: 'f', kind: 'method', accessor: 'get' }] }],
+                classes: [{ id: 'c1', name: 'C1', method: [{ name: 'f', accessor: 'get' }] }],
               },
             ],
           },
@@ -559,7 +558,7 @@ describe('parseMarkdownBlocks', () => {
       '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.blocks).toHaveLength(0);
-    expect(r.errors.some((e) => e.message.includes('accessor is only allowed'))).toBe(true);
+    expect(r.errors.some((e) => e.message.includes('accessor') && e.message.includes('not allowed'))).toBe(true);
   });
 
   it('rejects mv-model-codespace duplicate id between module and namespace', () => {

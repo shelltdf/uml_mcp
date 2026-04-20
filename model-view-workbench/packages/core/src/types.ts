@@ -87,8 +87,6 @@ export type MvCodespaceClassifierKind = 'class' | 'interface' | 'struct';
 /** 泛化 / 实现（对应 UML Generalization / InterfaceRealization） */
 export type MvCodespaceBaseRelation = 'generalization' | 'realization';
 
-/** 成员行种类（示意，非 AST） */
-export type MvCodespaceMemberKind = 'field' | 'method' | 'enumLiteral';
 /** 方法语义细分（用于构造/析构/仿函数/操作符等文档化标记） */
 export type MvCodespaceMethodKind = 'normal' | 'constructor' | 'destructor' | 'functor' | 'operator';
 /** 字段访问器策略（私有字段 + get/set 包装语义） */
@@ -109,26 +107,37 @@ export interface MvCodespaceClassifierBase {
   relation: MvCodespaceBaseRelation;
 }
 
-/** Classifier 成员（字段 / 方法 / 枚举字面量） */
-export interface MvCodespaceMember {
+/** Classifier 普通成员变量（原 `members` 中 `kind: field`） */
+export interface MvCodespaceClassMember {
   name: string;
-  kind: MvCodespaceMemberKind;
   static?: boolean;
   /** 如 public / private / protected / package */
   visibility?: string;
-  virtual?: boolean;
-  /** kind=field 时可选：getter/setter 包装策略 */
   accessor?: MvCodespaceFieldAccessor;
-  /** kind=method 时可选：方法语义类别（默认 normal） */
+  typeFromAssociation?: boolean;
+  type?: string;
+  notes?: string;
+}
+
+/** Classifier 方法 */
+export interface MvCodespaceClassMethod {
+  name: string;
+  static?: boolean;
+  visibility?: string;
+  virtual?: boolean;
   methodKind?: MvCodespaceMethodKind;
-  /** kind=method 且 methodKind=operator 时可选：操作符，如 + / [] / () */
   operatorSymbol?: string;
-  /** kind=enumLiteral 时可选：枚举分组名（用于同一枚举按组组织） */
-  enumGroup?: string;
-  /** type 是否由关联关系自动推导（只读语义开关） */
   typeFromAssociation?: boolean;
   type?: string;
   signature?: string;
+  notes?: string;
+}
+
+/** Classifier 枚举字面量（JSON 键名 `enum`） */
+export interface MvCodespaceClassEnum {
+  name: string;
+  enumGroup?: string;
+  type?: string;
   notes?: string;
 }
 
@@ -164,10 +173,14 @@ export interface MvCodespaceClassifier {
   /** 模板形参名列表（示意，如 `["T","U"]`） */
   templateParams?: string[];
   bases?: MvCodespaceClassifierBase[];
-  /** 独立属性组：私有字段 + 访问器；不与 members/methods 混用 */
+  /** 独立属性组：私有字段 + 访问器；不与 member/method 混用 */
   properties?: MvCodespaceProperty[];
-  /** 兼容旧结构：普通成员（可含 field/method/enumLiteral） */
-  members?: MvCodespaceMember[];
+  /** 普通成员变量 */
+  member?: MvCodespaceClassMember[];
+  /** 方法 */
+  method?: MvCodespaceClassMethod[];
+  /** 枚举字面量（JSON 中写作 `enum`） */
+  'enum'?: MvCodespaceClassEnum[];
 }
 
 export interface MvCodespaceVariable {

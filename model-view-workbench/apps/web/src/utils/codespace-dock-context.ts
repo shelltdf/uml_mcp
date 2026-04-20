@@ -161,7 +161,10 @@ function formatLines(s: CsDockSelection, p: MvModelCodespacePayload, M: Codespac
     const tp = c.templateParams?.filter(Boolean).join(', ');
     push('templateParams', emptyLabel(tp, M.dockUnset));
     push('bases', basesSummary(c.bases, M));
-    push(M.dockMembersCount, String(c.members?.length ?? 0));
+    push(
+      M.dockMembersCount,
+      String((c.member?.length ?? 0) + (c.method?.length ?? 0) + (c['enum']?.length ?? 0)),
+    );
     return lines;
   }
 

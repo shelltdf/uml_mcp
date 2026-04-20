@@ -2,9 +2,11 @@
 import { computed, inject, watch } from 'vue';
 import type {
   MvCodespaceAccessorVisibility,
+  MvCodespaceClassEnum,
+  MvCodespaceClassMember,
+  MvCodespaceClassMethod,
   MvCodespaceClassifier,
   MvCodespaceClassifierBase,
-  MvCodespaceMember,
   MvCodespaceMethodKind,
   MvCodespaceProperty,
   MvModelCodespacePayload,
@@ -64,20 +66,12 @@ const selectedNamespace = computed(() => getNamespaceAtPath(props.modelValue, pr
 
 const classifierOptions = computed(() => collectClassifierIds(props.modelValue));
 const fieldRows = computed(() =>
-  (selectedClass.value?.members ?? [])
+  (selectedClass.value?.member ?? [])
     .map((mem, idx) => ({ mem, idx }))
-    .filter((r) => r.mem.kind === 'field' && (r.mem.accessor === undefined || r.mem.accessor === 'none')),
+    .filter((r) => r.mem.accessor === undefined || r.mem.accessor === 'none'),
 );
-const methodRows = computed(() =>
-  (selectedClass.value?.members ?? [])
-    .map((mem, idx) => ({ mem, idx }))
-    .filter((r) => r.mem.kind === 'method'),
-);
-const enumRows = computed(() =>
-  (selectedClass.value?.members ?? [])
-    .map((mem, idx) => ({ mem, idx }))
-    .filter((r) => r.mem.kind === 'enumLiteral'),
-);
+const methodRows = computed(() => (selectedClass.value?.method ?? []).map((mem, idx) => ({ mem, idx })));
+const enumRows = computed(() => (selectedClass.value?.['enum'] ?? []).map((mem, idx) => ({ mem, idx })));
 const propertyRows = computed(() => selectedClass.value?.properties ?? []);
 
 const classifierNameById = computed(() => {
@@ -145,31 +139,35 @@ function patchClassField(key: keyof MvCodespaceClassifier, value: unknown) {
   });
 }
 
-function normalizeMemberByKind(mem: MvCodespaceMember): void {
-  if (mem.kind === 'field') {
-    delete mem.signature;
-    delete mem.methodKind;
-    delete mem.operatorSymbol;
-    if (!mem.visibility) mem.visibility = 'private';
-    // members 语义收敛为“普通成员变量”，不承载 accessor 关系
-    delete mem.accessor;
-    delete mem.enumGroup;
-    return;
-  }
-  if (mem.kind === 'method') {
-    delete mem.accessor;
-    if (!mem.methodKind) mem.methodKind = 'normal';
-    if (!mem.signature) mem.signature = '()';
-    if (!mem.type) mem.type = 'int';
-    if (mem.methodKind !== 'operator') delete mem.operatorSymbol;
-    delete mem.enumGroup;
-    return;
-  }
-  delete mem.type;
-  delete mem.signature;
+function normalizeFieldMember(mem: MvCodespaceClassMember): void {
+  const m = mem as MvCodespaceClassMember & Record<string, unknown>;
+  delete m.signature;
+  delete m.methodKind;
+  delete m.operatorSymbol;
+  delete m.enumGroup;
+  if (!mem.visibility) mem.visibility = 'private';
   delete mem.accessor;
-  delete mem.methodKind;
-  delete mem.operatorSymbol;
+}
+
+function normalizeMethodMember(mem: MvCodespaceClassMethod): void {
+  const m = mem as MvCodespaceClassMethod & Record<string, unknown>;
+  delete m.accessor;
+  delete m.enumGroup;
+  if (!mem.methodKind) mem.methodKind = 'normal';
+  if (!mem.signature) mem.signature = '()';
+  if (!mem.type) mem.type = 'int';
+  if (mem.methodKind !== 'operator') delete mem.operatorSymbol;
+}
+
+function normalizeEnumMember(mem: MvCodespaceClassEnum): void {
+  const m = mem as MvCodespaceClassEnum & Record<string, unknown>;
+  delete m.signature;
+  delete m.accessor;
+  delete m.methodKind;
+  delete m.operatorSymbol;
+  delete m.virtual;
+  delete m.static;
+  delete m.typeFromAssociation;
 }
 
 function setClassTemplateParams(raw: string) {
@@ -213,9 +211,9 @@ function addMember() {
   props.runPatch((d) => {
     const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
     if (!c) return;
-    if (!c.members) c.members = [];
-    const name = ensureUniqueMemberName(c.members, csMsg.value.newMemberName);
-    c.members.push({ name, kind: 'field', visibility: 'public', type: 'int' });
+    if (!c.member) c.member = [];
+    const name = ensureUniqueClassifierItemName(c, csMsg.value.newMemberName);
+    c.member.push({ name, visibility: 'public', type: 'int' });
   });
 }
 
@@ -238,9 +236,17 @@ function addProperty() {
   });
 }
 
-function ensureUniqueMemberName(members: MvCodespaceMember[], preferred: string): string {
+function allNamesInClassifier(c: MvCodespaceClassifier): Set<string> {
+  const used = new Set<string>();
+  for (const m of c.member ?? []) used.add((m.name ?? '').trim());
+  for (const m of c.method ?? []) used.add((m.name ?? '').trim());
+  for (const m of c['enum'] ?? []) used.add((m.name ?? '').trim());
+  return used;
+}
+
+function ensureUniqueClassifierItemName(c: MvCodespaceClassifier, preferred: string): string {
   const base = (preferred || 'member').trim() || 'member';
-  const used = new Set(members.map((m) => (m.name ?? '').trim()).filter(Boolean));
+  const used = allNamesInClassifier(c);
   if (!used.has(base)) return base;
   let i = 2;
   while (used.has(`${base}_${i}`)) i++;
@@ -265,9 +271,9 @@ function addMethodMember() {
   props.runPatch((d) => {
     const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
     if (!c) return;
-    if (!c.members) c.members = [];
-    const name = ensureUniqueMemberName(c.members, 'method');
-    c.members.push({ name, kind: 'method', methodKind: 'normal', signature: '()', type: 'int' });
+    if (!c.method) c.method = [];
+    const name = ensureUniqueClassifierItemName(c, 'method');
+    c.method.push({ name, methodKind: 'normal', signature: '()', type: 'int' });
   });
 }
 
@@ -275,9 +281,9 @@ function addEnumMember() {
   props.runPatch((d) => {
     const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
     if (!c) return;
-    if (!c.members) c.members = [];
-    const name = ensureUniqueMemberName(c.members, 'ENUM');
-    c.members.push({ name, kind: 'enumLiteral', enumGroup: 'default' });
+    if (!c['enum']) c['enum'] = [];
+    const name = ensureUniqueClassifierItemName(c, 'ENUM');
+    c['enum'].push({ name, enumGroup: 'default' });
   });
 }
 
@@ -293,7 +299,7 @@ function enableAssocTypeForCurrentRows(): void {
   const t = preferredAssociatedType();
   if (!t) return;
   for (const r of fieldRows.value) {
-    patchMember(r.idx, { typeFromAssociation: true, type: t });
+    patchFieldMember(r.idx, { typeFromAssociation: true, type: t });
   }
   for (let pi = 0; pi < propertyRows.value.length; pi++) {
     patchProperty(pi, { typeFromAssociation: true, type: t });
@@ -306,22 +312,52 @@ function removeProperty(pi: number) {
   });
 }
 
-function patchMember(miIdx: number, part: Partial<MvCodespaceMember>) {
+function patchFieldMember(miIdx: number, part: Partial<MvCodespaceClassMember>) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.members?.[miIdx];
+    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.member?.[miIdx];
     if (!mem) return;
     Object.assign(mem, part);
-    normalizeMemberByKind(mem);
-    if (mem.kind === 'method' && mem.methodKind === 'operator') {
+    normalizeFieldMember(mem);
+  });
+}
+
+function patchMethodMember(miIdx: number, part: Partial<MvCodespaceClassMethod>) {
+  props.runPatch((d) => {
+    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.method?.[miIdx];
+    if (!mem) return;
+    Object.assign(mem, part);
+    normalizeMethodMember(mem);
+    if (mem.methodKind === 'operator') {
       const op = String(mem.operatorSymbol ?? '').trim();
       mem.operatorSymbol = op || '()';
     }
   });
 }
 
-function removeMember(miIdx: number) {
+function patchEnumMember(miIdx: number, part: Partial<MvCodespaceClassEnum>) {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.members?.splice(miIdx, 1);
+    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.['enum']?.[miIdx];
+    if (!mem) return;
+    Object.assign(mem, part);
+    normalizeEnumMember(mem);
+  });
+}
+
+function removeFieldMember(miIdx: number) {
+  props.runPatch((d) => {
+    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.member?.splice(miIdx, 1);
+  });
+}
+
+function removeMethodMember(miIdx: number) {
+  props.runPatch((d) => {
+    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.method?.splice(miIdx, 1);
+  });
+}
+
+function removeEnumMember(miIdx: number) {
+  props.runPatch((d) => {
+    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.['enum']?.splice(miIdx, 1);
   });
 }
 
@@ -341,7 +377,7 @@ watch(associatedTypeCandidates, (next, prev) => {
     return;
   }
   for (const r of fieldRows.value) {
-    if (r.mem.typeFromAssociation === true) patchMember(r.idx, { type: t });
+    if (r.mem.typeFromAssociation === true) patchFieldMember(r.idx, { type: t });
   }
   for (let pi = 0; pi < propertyRows.value.length; pi++) {
     if (propertyRows.value[pi]?.typeFromAssociation === true) patchProperty(pi, { type: t });
@@ -480,14 +516,14 @@ watch(associatedTypeCandidates, (next, prev) => {
               <input
                 :value="mem.name"
                 :title="csMsg.flClsMemberNameTitle"
-                @input="patchMember(idx, { name: ($event.target as HTMLInputElement).value })"
+                @input="patchFieldMember(idx, { name: ($event.target as HTMLInputElement).value })"
               />
             </td>
             <td>
               <select
                 :value="mem.visibility ?? 'public'"
                 :title="csMsg.flClsMemberVisTitle"
-                @change="patchMember(idx, { visibility: ($event.target as HTMLSelectElement).value })"
+                @change="patchFieldMember(idx, { visibility: ($event.target as HTMLSelectElement).value })"
               >
                 <option v-for="v in MEMBER_VIS_OPTIONS" :key="'mv-' + v" :value="v">{{ v }}</option>
               </select>
@@ -496,7 +532,7 @@ watch(associatedTypeCandidates, (next, prev) => {
               <select
                 :value="mem.type ?? 'int'"
                 :title="csMsg.flClsMemberTypeSigTitle"
-                @change="patchMember(idx, { type: ($event.target as HTMLSelectElement).value })"
+                @change="patchFieldMember(idx, { type: ($event.target as HTMLSelectElement).value })"
               >
                 <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'mt-' + t" :value="t">{{ t }}</option>
                 <option v-if="mem.type && !memberTypeKnown(mem.type)" :value="mem.type">
@@ -517,11 +553,11 @@ watch(associatedTypeCandidates, (next, prev) => {
                 type="checkbox"
                 :checked="mem.static === true"
                 :title="csMsg.flClsMemberStaticTitle"
-                @change="patchMember(idx, { static: ($event.target as HTMLInputElement).checked })"
+                @change="patchFieldMember(idx, { static: ($event.target as HTMLInputElement).checked })"
               />
             </td>
             <td>
-              <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeMember(idx)">
+              <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeFieldMember(idx)">
                 {{ csMsg.flClsRemoveMemberLabel }}
               </button>
             </td>
@@ -662,30 +698,30 @@ watch(associatedTypeCandidates, (next, prev) => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="{ mem, idx } in methodRows" :key="idx">
+          <tr v-for="{ mem, idx } in methodRows" :key="'meth-' + idx">
             <td>
-              <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchMember(idx, { name: ($event.target as HTMLInputElement).value })" />
+              <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchMethodMember(idx, { name: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
-              <input :value="mem.visibility ?? ''" :title="csMsg.flClsMemberVisTitle" @input="patchMember(idx, { visibility: ($event.target as HTMLInputElement).value })" />
+              <input :value="mem.visibility ?? ''" :title="csMsg.flClsMemberVisTitle" @input="patchMethodMember(idx, { visibility: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
               <select
                 :value="mem.methodKind ?? 'normal'"
                 :title="csMsg.flClsMemberMethodKindTitle"
-                @change="patchMember(idx, { methodKind: ($event.target as HTMLSelectElement).value as MvCodespaceMethodKind })"
+                @change="patchMethodMember(idx, { methodKind: ($event.target as HTMLSelectElement).value as MvCodespaceMethodKind })"
               >
                 <option v-for="mk in METHOD_KINDS" :key="mk" :value="mk">{{ mk }}</option>
               </select>
             </td>
             <td>
-              <input :value="mem.signature ?? '()'" placeholder="(arg: int)" :title="csMsg.flClsMemberTypeSigTitle" @input="patchMember(idx, { signature: ($event.target as HTMLInputElement).value })" />
+              <input :value="mem.signature ?? '()'" placeholder="(arg: int)" :title="csMsg.flClsMemberTypeSigTitle" @input="patchMethodMember(idx, { signature: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
               <select
                 :value="mem.type ?? 'int'"
                 :title="csMsg.flClsMemberTypeSigTitle"
-                @change="patchMember(idx, { type: ($event.target as HTMLSelectElement).value })"
+                @change="patchMethodMember(idx, { type: ($event.target as HTMLSelectElement).value })"
               >
                 <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'mr-' + t" :value="t">{{ t }}</option>
                 <option v-if="mem.type && !memberTypeKnown(mem.type)" :value="mem.type">
@@ -694,21 +730,21 @@ watch(associatedTypeCandidates, (next, prev) => {
               </select>
             </td>
             <td class="cs-td-center">
-              <input type="checkbox" :checked="mem.virtual === true" :title="csMsg.flClsMemberVirtualTitle" @change="patchMember(idx, { virtual: ($event.target as HTMLInputElement).checked })" />
+              <input type="checkbox" :checked="mem.virtual === true" :title="csMsg.flClsMemberVirtualTitle" @change="patchMethodMember(idx, { virtual: ($event.target as HTMLInputElement).checked })" />
             </td>
             <td>
               <template v-if="(mem.methodKind ?? 'normal') === 'operator'">
                 <select
                   :value="mem.operatorSymbol ?? '()'"
                   :title="csMsg.flClsMemberOperatorTitle"
-                  @change="patchMember(idx, { operatorSymbol: ($event.target as HTMLSelectElement).value })"
+                  @change="patchMethodMember(idx, { operatorSymbol: ($event.target as HTMLSelectElement).value })"
                 >
                   <option v-for="op in OPERATOR_SYMBOL_OPTIONS" :key="op" :value="op">{{ op }}</option>
                 </select>
               </template>
             </td>
             <td>
-              <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeMember(idx)">
+              <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeMethodMember(idx)">
                 {{ csMsg.flClsRemoveMemberLabel }}
               </button>
             </td>
@@ -730,18 +766,18 @@ watch(associatedTypeCandidates, (next, prev) => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="{ mem, idx } in enumRows" :key="idx">
+          <tr v-for="{ mem, idx } in enumRows" :key="'en-' + idx">
             <td>
-              <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchMember(idx, { name: ($event.target as HTMLInputElement).value })" />
+              <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchEnumMember(idx, { name: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
-              <input :value="mem.type ?? ''" :title="csMsg.flClsMemberTypeSigTitle" @input="patchMember(idx, { type: ($event.target as HTMLInputElement).value })" />
+              <input :value="mem.type ?? ''" :title="csMsg.flClsMemberTypeSigTitle" @input="patchEnumMember(idx, { type: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
-              <input :value="mem.enumGroup ?? ''" placeholder="default" title="enum group" @input="patchMember(idx, { enumGroup: ($event.target as HTMLInputElement).value })" />
+              <input :value="mem.enumGroup ?? ''" placeholder="default" title="enum group" @input="patchEnumMember(idx, { enumGroup: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
-              <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeMember(idx)">
+              <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeEnumMember(idx)">
                 {{ csMsg.flClsRemoveMemberLabel }}
               </button>
             </td>

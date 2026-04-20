@@ -113,7 +113,10 @@
 | stereotype | string? | 可选（如文档化版型名） |
 | templateParams | string[]? | 可选；模板形参名列表（示意） |
 | bases | array? | 每项：`targetId`（string，指向本块内 `classes[].id`）、`relation`：`generalization` \| `realization` |
-| members | array? | 每项：`name`（必填）、`kind`：`field` \| `method` \| `enumLiteral`；可选 `static`、`visibility`（string）、`virtual`、`type`、`signature`、`notes` |
+| member | array? | **字段 / 普通成员变量**；每项：`name`（必填）；可选 `static`、`visibility`、`accessor`（`none` \| `get` \| `set` \| `getset`）、`type`、`typeFromAssociation`、`notes` |
+| method | array? | **方法**；每项：`name`（必填）；可选 `static`、`visibility`、`virtual`、`methodKind`、`operatorSymbol`、`signature`、`type`、`typeFromAssociation`、`notes` |
+| enum | array? | **枚举字面量**（JSON 键名 `enum`）；每项：`name`（必填）；可选 `enumGroup`、`type`、`notes` |
+| members | array? | **已弃用**：旧版混排数组（`kind`：`field` \| `method` \| `enumLiteral`）。解析器在校验通过后**归并**为 `member` / `method` / `enum` 并移除 `members`；**不得**与上述三键同时出现 |
 
 ### `associations[]`
 

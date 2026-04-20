@@ -376,8 +376,7 @@ function syncAssocTypeFromDiagramToCodespace(): void {
       for (const n of nodes ?? []) {
         for (const c of n.classes ?? []) {
           const t = resolveType(c.id);
-          for (const m of c.members ?? []) {
-            if (m.kind !== 'field') continue;
+          for (const m of c.member ?? []) {
             m.typeFromAssociation = !!t || undefined;
             if (t) m.type = t;
           }
@@ -1187,7 +1186,8 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
     id: ev.classId,
     name: ev.className,
     kind: 'class',
-    members: [],
+    member: [],
+    method: [],
   });
 }
 </script>

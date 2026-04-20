@@ -25,8 +25,9 @@
                   "id": "cls-widget",
                   "name": "Widget",
                   "kind": "class",
-                  "members": [
-                    { "name": "draw", "kind": "method", "visibility": "public", "virtual": true, "signature": "void draw()" }
+                  "member": [],
+                  "method": [
+                    { "name": "draw", "visibility": "public", "virtual": true, "signature": "void draw()" }
                   ]
                 },
                 {
@@ -34,8 +35,9 @@
                   "name": "Button",
                   "kind": "class",
                   "bases": [{ "targetId": "cls-widget", "relation": "generalization" }],
-                  "members": [
-                    { "name": "onClick", "kind": "method", "visibility": "public", "signature": "void onClick()" }
+                  "member": [],
+                  "method": [
+                    { "name": "onClick", "visibility": "public", "signature": "void onClick()" }
                   ]
                 }
               ],

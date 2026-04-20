@@ -343,6 +343,158 @@ function validateCodespaceOptionalString(
   return { ok: true };
 }
 
+/** 将旧版 `members[{ kind }]` 归并为 `member` / `method` / `enum` 后删除 `members`。 */
+function splitLegacyClassifierMembers(co: Record<string, unknown>): void {
+  const raw = co.members;
+  delete co.members;
+  if (!Array.isArray(raw) || raw.length === 0) return;
+  const member: unknown[] = [];
+  const method: unknown[] = [];
+  const enums: unknown[] = [];
+  for (const mem of raw) {
+    if (!mem || typeof mem !== 'object' || Array.isArray(mem)) continue;
+    const mo = { ...(mem as Record<string, unknown>) };
+    const k = mo.kind;
+    delete mo.kind;
+    if (k === 'method') method.push(mo);
+    else if (k === 'enumLiteral') enums.push(mo);
+    else member.push(mo);
+  }
+  if (member.length) co.member = member;
+  if (method.length) co.method = method;
+  if (enums.length) co.enum = enums;
+}
+
+function codespaceForbidKeys(
+  mo: Record<string, unknown>,
+  mp: string,
+  forbidden: Set<string>,
+): { ok: true } | { ok: false; message: string } {
+  for (const k of Object.keys(mo)) {
+    if (forbidden.has(k)) {
+      return { ok: false, message: `${mp}: property "${k}" is not allowed in this entry` };
+    }
+  }
+  return { ok: true };
+}
+
+function validateCodespaceClassifierMemberField(
+  mem: unknown,
+  mp: string,
+): { ok: true } | { ok: false; message: string } {
+  if (!mem || typeof mem !== 'object' || Array.isArray(mem)) {
+    return { ok: false, message: `${mp} must be an object` };
+  }
+  const mo = mem as Record<string, unknown>;
+  if ('kind' in mo) {
+    return { ok: false, message: `${mp}: remove "kind"; use top-level "member"[] instead` };
+  }
+  const fk = codespaceForbidKeys(mo, mp, new Set(['signature', 'methodKind', 'operatorSymbol', 'virtual', 'enumGroup']));
+  if (!fk.ok) return fk;
+  if (typeof mo.name !== 'string' || !mo.name.trim()) {
+    return { ok: false, message: `${mp}.name must be a non-empty string` };
+  }
+  const ms = validateCodespaceOptionalString(mo, mp, ['visibility', 'type', 'notes']);
+  if (!ms.ok) return ms;
+  if ('accessor' in mo && mo.accessor !== undefined) {
+    if (typeof mo.accessor !== 'string' || !CODESPACE_FIELD_ACCESSORS.has(mo.accessor)) {
+      return {
+        ok: false,
+        message: `${mp}.accessor must be one of: none, get, set, getset`,
+      };
+    }
+  }
+  if ('static' in mo && mo.static !== undefined && typeof mo.static !== 'boolean') {
+    return { ok: false, message: `${mp}.static must be a boolean when present` };
+  }
+  if ('typeFromAssociation' in mo && mo.typeFromAssociation !== undefined && typeof mo.typeFromAssociation !== 'boolean') {
+    return { ok: false, message: `${mp}.typeFromAssociation must be a boolean when present` };
+  }
+  return { ok: true };
+}
+
+function validateCodespaceClassifierMethod(
+  mem: unknown,
+  mp: string,
+): { ok: true } | { ok: false; message: string } {
+  if (!mem || typeof mem !== 'object' || Array.isArray(mem)) {
+    return { ok: false, message: `${mp} must be an object` };
+  }
+  const mo = mem as Record<string, unknown>;
+  if ('kind' in mo) {
+    return { ok: false, message: `${mp}: remove "kind"; use top-level "method"[] instead` };
+  }
+  const fk = codespaceForbidKeys(mo, mp, new Set(['accessor', 'enumGroup']));
+  if (!fk.ok) return fk;
+  if (typeof mo.name !== 'string' || !mo.name.trim()) {
+    return { ok: false, message: `${mp}.name must be a non-empty string` };
+  }
+  const ms = validateCodespaceOptionalString(mo, mp, ['visibility', 'type', 'signature', 'operatorSymbol', 'notes']);
+  if (!ms.ok) return ms;
+  if ('methodKind' in mo && mo.methodKind !== undefined) {
+    if (typeof mo.methodKind !== 'string' || !CODESPACE_METHOD_KINDS.has(mo.methodKind)) {
+      return {
+        ok: false,
+        message: `${mp}.methodKind must be one of: normal, constructor, destructor, functor, operator`,
+      };
+    }
+  }
+  if ('operatorSymbol' in mo && mo.operatorSymbol !== undefined && typeof mo.operatorSymbol !== 'string') {
+    return { ok: false, message: `${mp}.operatorSymbol must be a string when present` };
+  }
+  if ('static' in mo && mo.static !== undefined && typeof mo.static !== 'boolean') {
+    return { ok: false, message: `${mp}.static must be a boolean when present` };
+  }
+  if ('virtual' in mo && mo.virtual !== undefined && typeof mo.virtual !== 'boolean') {
+    return { ok: false, message: `${mp}.virtual must be a boolean when present` };
+  }
+  if ('typeFromAssociation' in mo && mo.typeFromAssociation !== undefined && typeof mo.typeFromAssociation !== 'boolean') {
+    return { ok: false, message: `${mp}.typeFromAssociation must be a boolean when present` };
+  }
+  if (mo.methodKind === 'operator') {
+    if (typeof mo.operatorSymbol !== 'string' || !mo.operatorSymbol.trim()) {
+      return {
+        ok: false,
+        message: `${mp}.operatorSymbol must be a non-empty string when methodKind is operator`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+function validateCodespaceClassifierEnum(
+  mem: unknown,
+  mp: string,
+): { ok: true } | { ok: false; message: string } {
+  if (!mem || typeof mem !== 'object' || Array.isArray(mem)) {
+    return { ok: false, message: `${mp} must be an object` };
+  }
+  const mo = mem as Record<string, unknown>;
+  if ('kind' in mo) {
+    return { ok: false, message: `${mp}: remove "kind"; use top-level "enum"[] instead` };
+  }
+  const fk = codespaceForbidKeys(
+    mo,
+    mp,
+    new Set([
+      'accessor',
+      'methodKind',
+      'operatorSymbol',
+      'virtual',
+      'signature',
+      'static',
+      'typeFromAssociation',
+    ]),
+  );
+  if (!fk.ok) return fk;
+  if (typeof mo.name !== 'string' || !mo.name.trim()) {
+    return { ok: false, message: `${mp}.name must be a non-empty string` };
+  }
+  const ms = validateCodespaceOptionalString(mo, mp, ['type', 'enumGroup', 'notes']);
+  if (!ms.ok) return ms;
+  return { ok: true };
+}
+
 function validateCodespaceNamespaceNode(
   node: unknown,
   path: string,
@@ -439,7 +591,46 @@ function validateCodespaceNamespaceNode(
           ctx.pendingBases.push({ targetId: bo.targetId.trim(), path: bp });
         }
       }
-      if ('members' in co && co.members !== undefined) {
+      const hasLegacyMembers = 'members' in co && co.members !== undefined;
+      const hasMemberArr = 'member' in co && co.member !== undefined;
+      const hasMethodArr = 'method' in co && co.method !== undefined;
+      const hasEnumArr = 'enum' in co && co.enum !== undefined;
+      const hasNewShape = hasMemberArr || hasMethodArr || hasEnumArr;
+      if (hasLegacyMembers && hasNewShape) {
+        return {
+          ok: false,
+          message: `${cp}: use either legacy "members" or new "member"/"method"/"enum", not both`,
+        };
+      }
+      if (hasNewShape) {
+        if (hasMemberArr) {
+          if (!Array.isArray(co.member)) {
+            return { ok: false, message: `${cp}.member must be an array when present` };
+          }
+          for (let m = 0; m < co.member.length; m++) {
+            const vr = validateCodespaceClassifierMemberField(co.member[m], `${cp}.member[${m}]`);
+            if (!vr.ok) return vr;
+          }
+        }
+        if (hasMethodArr) {
+          if (!Array.isArray(co.method)) {
+            return { ok: false, message: `${cp}.method must be an array when present` };
+          }
+          for (let m = 0; m < co.method.length; m++) {
+            const vr = validateCodespaceClassifierMethod(co.method[m], `${cp}.method[${m}]`);
+            if (!vr.ok) return vr;
+          }
+        }
+        if (hasEnumArr) {
+          if (!Array.isArray(co.enum)) {
+            return { ok: false, message: `${cp}.enum must be an array when present` };
+          }
+          for (let m = 0; m < co.enum.length; m++) {
+            const vr = validateCodespaceClassifierEnum(co.enum[m], `${cp}.enum[${m}]`);
+            if (!vr.ok) return vr;
+          }
+        }
+      } else if (hasLegacyMembers) {
         if (!Array.isArray(co.members)) {
           return { ok: false, message: `${cp}.members must be an array when present` };
         }
@@ -507,6 +698,7 @@ function validateCodespaceNamespaceNode(
             }
           }
         }
+        splitLegacyClassifierMembers(co);
       }
       if ('properties' in co && co.properties !== undefined) {
         if (!Array.isArray(co.properties)) {

@@ -102,9 +102,8 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
                   id: 'cls-service',
                   name: 'Service',
                   kind: 'class',
-                  members: [
-                    { name: 'run', kind: 'method', visibility: 'public', virtual: true, signature: 'void run()' },
-                  ],
+                  member: [],
+                  method: [{ name: 'run', visibility: 'public', virtual: true, signature: 'void run()' }],
                 },
               ],
             },
