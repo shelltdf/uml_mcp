@@ -36,6 +36,8 @@ const cd = computed(() => classDiagramCanvasMessages[locale.value]);
 const mkId = computed(() => `mk-${props.canvasId.replace(/[^a-zA-Z0-9_-]/g, '')}`);
 const markerAssocUrl = computed(() => `url(#${mkId.value}-asc)`);
 const markerInheritUrl = computed(() => `url(#${mkId.value}-inh)`);
+const WORLD_HALF = 100000;
+const WORLD_SIZE = WORLD_HALF * 2;
 
 const viewportRef = ref<HTMLElement | null>(null);
 const state = reactive<ClassDiagramState>({ classes: [], links: [] });
@@ -577,31 +579,79 @@ function zoomDelta(d: number): void {
 function autoLayoutClasses(): void {
   const classes = state.classes;
   if (!classes.length) return;
-  // 按“完整命名空间前缀”分列，列内自上而下排布，保证可读性优先。
-  const groups = new Map<string, ClassDef[]>();
-  for (const c of classes) {
-    const label = classDisplayLabel(c);
-    const i = label.lastIndexOf('.');
-    const key = i > 0 ? label.slice(0, i) : '(root)';
-    const arr = groups.get(key) ?? [];
-    arr.push(c);
-    groups.set(key, arr);
+  // 继承树布局：父类在上、子类在下；多个根按森林横向排列。
+  const byId = new Map(classes.map((c) => [c.id, c] as const));
+  const children = new Map<string, string[]>();
+  const hasParent = new Set<string>();
+
+  for (const l of state.links) {
+    if (l.kind !== 'inherit') continue;
+    if (!byId.has(l.from) || !byId.has(l.to)) continue;
+    const arr = children.get(l.to) ?? [];
+    if (!arr.includes(l.from)) arr.push(l.from);
+    children.set(l.to, arr);
+    hasParent.add(l.from);
   }
-  const sortedGroups = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  let x = 80;
-  const colGap = 64;
-  const rowGap = 24;
-  for (const [, list] of sortedGroups) {
-    list.sort((a, b) => classDisplayLabel(a).localeCompare(classDisplayLabel(b)));
-    let y = 80;
-    let colWidth = 248;
-    for (const c of list) {
-      const sz = estimateClassSize(c, !!folded[c.id]);
-      positions[c.id] = { x, y };
-      y += sz.h + rowGap;
-      if (sz.w > colWidth) colWidth = sz.w;
+  for (const arr of children.values()) {
+    arr.sort((a, b) => classDisplayLabel(byId.get(a)!).localeCompare(classDisplayLabel(byId.get(b)!)));
+  }
+
+  let roots = classes.filter((c) => !hasParent.has(c.id)).map((c) => c.id);
+  if (!roots.length) roots = classes.map((c) => c.id);
+  roots.sort((a, b) => classDisplayLabel(byId.get(a)!).localeCompare(classDisplayLabel(byId.get(b)!)));
+
+  const hGap = 44;
+  const treeGap = 72;
+  const rowPitch = 220;
+  const measureMemo = new Map<string, number>();
+  const measuring = new Set<string>();
+  const nodeWidth = (id: string) => estimateClassSize(byId.get(id)!, !!folded[id]).w;
+
+  const measure = (id: string): number => {
+    if (measureMemo.has(id)) return measureMemo.get(id)!;
+    if (measuring.has(id)) return nodeWidth(id);
+    measuring.add(id);
+    const kids = children.get(id) ?? [];
+    let w = nodeWidth(id);
+    if (kids.length) {
+      const sub = kids.reduce((sum, k, i) => sum + measure(k) + (i > 0 ? hGap : 0), 0);
+      if (sub > w) w = sub;
     }
-    x += colWidth + colGap;
+    measuring.delete(id);
+    measureMemo.set(id, w);
+    return w;
+  };
+
+  const placed = new Set<string>();
+  const place = (id: string, left: number, depth: number) => {
+    if (placed.has(id)) return;
+    placed.add(id);
+    const boxW = nodeWidth(id);
+    const subW = measure(id);
+    const centerX = left + subW / 2;
+    positions[id] = { x: centerX - boxW / 2, y: 80 + depth * rowPitch };
+    const kids = children.get(id) ?? [];
+    let cur = left;
+    for (const k of kids) {
+      const kw = measure(k);
+      place(k, cur, depth + 1);
+      cur += kw + hGap;
+    }
+  };
+
+  let curX = 80;
+  for (const r of roots) {
+    const rw = measure(r);
+    place(r, curX, 0);
+    curX += rw + treeGap;
+  }
+
+  // 兜底：环路或孤立节点未放置时，按平铺放到最右侧。
+  for (const c of classes) {
+    if (placed.has(c.id)) continue;
+    const w = nodeWidth(c.id);
+    positions[c.id] = { x: curX, y: 80 };
+    curX += w + treeGap;
   }
   pushPayload();
   fitAll();
@@ -945,8 +995,8 @@ function deleteClass(classId: string): void {
         <svg
           class="cde-svg"
           xmlns="http://www.w3.org/2000/svg"
-          width="4800"
-          height="3600"
+          :width="WORLD_SIZE"
+          :height="WORLD_SIZE"
           @contextmenu.prevent
         >
           <defs>
@@ -983,10 +1033,10 @@ function deleteClass(classId: string): void {
 
           <rect
             class="cde-svg-bg"
-            x="0"
-            y="0"
-            width="4800"
-            height="3600"
+            :x="-WORLD_HALF"
+            :y="-WORLD_HALF"
+            :width="WORLD_SIZE"
+            :height="WORLD_SIZE"
             fill="transparent"
             @pointerdown="onSvgBackgroundPointerDown"
             @contextmenu="onBackgroundContextMenu"
@@ -1441,10 +1491,10 @@ function deleteClass(classId: string): void {
 
 .cde-grid {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 4800px;
-  height: 3600px;
+  left: -100000px;
+  top: -100000px;
+  width: 200000px;
+  height: 200000px;
   pointer-events: none;
   z-index: 0;
   background-color: var(--uml-paper-bg, #f8fafc);
