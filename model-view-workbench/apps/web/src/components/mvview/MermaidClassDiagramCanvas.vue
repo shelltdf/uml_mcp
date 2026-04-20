@@ -107,6 +107,7 @@ const tempAssociationLine = ref<{ x1: number; y1: number; x2: number; y2: number
 const selectedEdgeId = ref<string | null>(null);
 const selectedInheritHandleClassId = ref<string | null>(null);
 const edgeCtx = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
+const edgeEditor = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
 
 function loadFromPayload(payload: string): void {
   const raw = (payload ?? '').trim();
@@ -665,6 +666,9 @@ function onWindowClick(e: MouseEvent): void {
   if (edgeCtx.open && viewportRef.value && !viewportRef.value.querySelector('.cde-edgectx')?.contains(t)) {
     edgeCtx.open = false;
   }
+  if (edgeEditor.open && viewportRef.value && !viewportRef.value.querySelector('.cde-edgeedit')?.contains(t)) {
+    edgeEditor.open = false;
+  }
   if (addCtx.open && viewportRef.value && !viewportRef.value.querySelector('.cde-addctx')?.contains(t)) {
     addCtx.open = false;
   }
@@ -1111,6 +1115,18 @@ function onEdgePointerDown(e: PointerEvent, edgeId: string): void {
   addCtx.open = false;
 }
 
+function openEdgeEditor(edgeId: string, x: number, y: number): void {
+  selectedEdgeId.value = edgeId;
+  selectedInheritHandleClassId.value = null;
+  ctx.open = false;
+  addCtx.open = false;
+  edgeCtx.open = false;
+  edgeEditor.open = true;
+  edgeEditor.edgeId = edgeId;
+  edgeEditor.x = x;
+  edgeEditor.y = y;
+}
+
 function onEdgeContextMenu(e: MouseEvent, edgeId: string): void {
   e.preventDefault();
   e.stopPropagation();
@@ -1118,16 +1134,35 @@ function onEdgeContextMenu(e: MouseEvent, edgeId: string): void {
   selectedInheritHandleClassId.value = null;
   ctx.open = false;
   addCtx.open = false;
+  edgeEditor.open = false;
   edgeCtx.open = true;
+  edgeCtx.edgeId = edgeId;
   edgeCtx.x = e.clientX;
   edgeCtx.y = e.clientY;
-  edgeCtx.edgeId = edgeId;
+}
+
+function onEdgeDblClick(e: MouseEvent, edgeId: string): void {
+  e.preventDefault();
+  e.stopPropagation();
+  openEdgeEditor(edgeId, e.clientX, e.clientY);
 }
 
 function deleteEdge(edgeId: string): void {
   state.links = state.links.filter((l) => l.id !== edgeId);
   if (selectedEdgeId.value === edgeId) selectedEdgeId.value = null;
   edgeCtx.open = false;
+  if (edgeEditor.edgeId === edgeId) edgeEditor.open = false;
+  pushPayload();
+}
+
+const selectedEdge = computed(() => state.links.find((l) => l.id === edgeEditor.edgeId));
+
+function patchEdge(part: Partial<{ kind: 'inherit' | 'association' | 'dependency'; fromMult: string; toMult: string }>): void {
+  const edge = state.links.find((l) => l.id === edgeEditor.edgeId);
+  if (!edge) return;
+  if (part.kind !== undefined) edge.kind = part.kind;
+  if (part.fromMult !== undefined) edge.fromMult = part.fromMult || undefined;
+  if (part.toMult !== undefined) edge.toMult = part.toMult || undefined;
   pushPayload();
 }
 
@@ -1783,6 +1818,16 @@ function deleteClass(classId: string): void {
             <path
               :d="ep.d"
               fill="none"
+              stroke="transparent"
+              stroke-width="14"
+              style="pointer-events: visibleStroke; cursor: pointer"
+              @pointerdown="onEdgePointerDown($event, ep.id)"
+              @contextmenu="onEdgeContextMenu($event, ep.id)"
+              @dblclick="onEdgeDblClick($event, ep.id)"
+            />
+            <path
+              :d="ep.d"
+              fill="none"
               :stroke="selectedEdgeId === ep.id ? '#2563eb' : ep.kind === 'inherit' ? '#475569' : '#64748b'"
               :stroke-width="selectedEdgeId === ep.id ? 3 : ep.kind === 'inherit' ? 2 : 1.75"
               :stroke-dasharray="ep.dash"
@@ -1790,6 +1835,7 @@ function deleteClass(classId: string): void {
               style="pointer-events: visibleStroke; cursor: pointer"
               @pointerdown="onEdgePointerDown($event, ep.id)"
               @contextmenu="onEdgeContextMenu($event, ep.id)"
+              @dblclick="onEdgeDblClick($event, ep.id)"
             />
             <text
               v-if="ep.fromMult"
@@ -1981,9 +2027,52 @@ function deleteClass(classId: string): void {
         role="menu"
         @click.stop
       >
+        <button type="button" @click="openEdgeEditor(edgeCtx.edgeId, edgeCtx.x, edgeCtx.y)">
+          {{ locale === 'en' ? 'Edit edge' : '编辑连线' }}
+        </button>
         <button type="button" class="cde-ctx-danger" @click="deleteEdge(edgeCtx.edgeId)">
           {{ locale === 'en' ? 'Delete edge' : '删除连线' }}
         </button>
+      </div>
+      <div
+        v-if="edgeEditor.open && selectedEdge"
+        class="cde-ctx cde-edgeedit"
+        :style="{ left: edgeEditor.x + 'px', top: edgeEditor.y + 'px' }"
+        role="dialog"
+        @click.stop
+      >
+        <div class="cde-edgeedit-title">{{ locale === 'en' ? 'Edit edge' : '编辑连线' }}</div>
+        <label class="cde-edgeedit-row">
+          <span>kind</span>
+          <select
+            :value="selectedEdge.kind"
+            @change="patchEdge({ kind: ($event.target as HTMLSelectElement).value as 'inherit' | 'association' | 'dependency' })"
+          >
+            <option value="inherit">inherit</option>
+            <option value="association">association</option>
+            <option value="dependency">dependency</option>
+          </select>
+        </label>
+        <label class="cde-edgeedit-row">
+          <span>fromMult</span>
+          <input
+            :value="selectedEdge.fromMult ?? ''"
+            @input="patchEdge({ fromMult: ($event.target as HTMLInputElement).value })"
+          />
+        </label>
+        <label class="cde-edgeedit-row">
+          <span>toMult</span>
+          <input
+            :value="selectedEdge.toMult ?? ''"
+            @input="patchEdge({ toMult: ($event.target as HTMLInputElement).value })"
+          />
+        </label>
+        <div class="cde-edgeedit-actions">
+          <button type="button" @click="edgeEditor.open = false">{{ locale === 'en' ? 'Close' : '关闭' }}</button>
+          <button type="button" class="cde-ctx-danger" @click="deleteEdge(selectedEdge.id)">
+            {{ locale === 'en' ? 'Delete edge' : '删除连线' }}
+          </button>
+        </div>
       </div>
       <div
         v-if="addCtx.open"
@@ -2335,6 +2424,40 @@ function deleteClass(classId: string): void {
 }
 .cde-ctx .cde-ctx-danger {
   color: #b91c1c;
+}
+.cde-edgeedit {
+  min-width: 220px;
+}
+.cde-edgeedit-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.cde-edgeedit-row {
+  display: grid;
+  grid-template-columns: 66px 1fr;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.cde-edgeedit-row span {
+  font-size: 0.72rem;
+  color: #475569;
+}
+.cde-edgeedit-row input,
+.cde-edgeedit-row select {
+  font: inherit;
+  border: 1px solid var(--border, #d4d4d8);
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: #fff;
+  color: #111827;
+}
+.cde-edgeedit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 .cde-addctx {
   position: fixed;
