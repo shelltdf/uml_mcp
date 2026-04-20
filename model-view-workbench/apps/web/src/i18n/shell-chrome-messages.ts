@@ -196,6 +196,16 @@ export type ShellChromeMessages = {
   dockStructWordDataset: string;
   /** mv-view 非 mermaid 分支 modelRefs 行在「无引用」时的占位 */
   dockViewModelRefsNone: string;
+  /** 块画布：modelRefs 相对路径输入框标签 */
+  modelRefsPickerPathLabel: string;
+  /** 块画布：modelRefs 相对路径 placeholder */
+  modelRefsPickerPathPlaceholder: string;
+  /** 块画布：modelRefs 可选模型列表说明 */
+  modelRefsPickerListHint: string;
+  /** 块画布：目标 .md 未在工作区打开时的提示 */
+  modelRefsPickerFileMissing: string;
+  /** 块画布：modelRefs 高级手写展开 */
+  modelRefsAdvancedToggle: string;
   /** 菜单「新建」生成的 Markdown 一级标题文本（不含 `#`） */
   newDocHeading: string;
 };
@@ -392,6 +402,11 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockStructWordGroup: '组',
     dockStructWordDataset: '数据集',
     dockViewModelRefsNone: '（无）',
+    modelRefsPickerPathLabel: 'Model 所在文件（相对路径，空=当前文档）',
+    modelRefsPickerPathPlaceholder: '例如 models/data.md；留空表示当前 .md',
+    modelRefsPickerListHint: '勾选要绑定的模型（可多选）；未列出的引用见下方高级区。',
+    modelRefsPickerFileMissing: '该路径下的 Markdown 未载入工作区，无法列出模型；请在工作区打开对应 .md 或用手写地址。',
+    modelRefsAdvancedToggle: '高级：手写 modelRefs（逗号分隔）',
     newDocHeading: '新文档',
   },
   en: {
@@ -588,6 +603,11 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockStructWordGroup: 'Group',
     dockStructWordDataset: 'Dataset',
     dockViewModelRefsNone: '(none)',
+    modelRefsPickerPathLabel: 'Model file (relative path, empty = this document)',
+    modelRefsPickerPathPlaceholder: 'e.g. models/data.md; leave empty for current .md',
+    modelRefsPickerListHint: 'Check models to bind (multi-select). Unlisted refs appear in Advanced.',
+    modelRefsPickerFileMissing: 'That Markdown file is not loaded in the workspace; open the .md or edit refs manually.',
+    modelRefsAdvancedToggle: 'Advanced: raw modelRefs (comma-separated)',
     newDocHeading: 'New document',
   },
 };

@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, provide, ref, watch } from 'vue';
 import CodespaceCanvasEditor from './codespace/CodespaceCanvasEditor.vue';
+import CodespaceClassifierFloat from './codespace/floating/CodespaceClassifierFloat.vue';
+import MermaidClassDiagramCanvas from './mvview/MermaidClassDiagramCanvas.vue';
 import {
   MV_MAP_CANVAS_TITLE,
   MV_MODEL_INTERFACE_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
-  MV_MODEL_REFS_SCHEME_DOC,
   MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
   isMermaidViewKind,
   isPlantUmlViewKind,
+  normalizeRelPath,
   parseMarkdownBlocks,
   replaceBlockInnerById,
   type MvMapPayload,
@@ -23,10 +25,26 @@ import {
   type ParsedFenceBlock,
 } from '@mvwb/core';
 import { useAppLocale } from '../composables/useAppLocale';
+import { CS_CANVAS_MSG_KEY, codespaceCanvasMessages } from '../i18n/codespace-canvas-messages';
 import { mvViewKindStrings } from '../i18n/mv-view-kind-locale';
 import type { CodespaceDockContextPayload } from '../utils/codespace-dock-context';
+import {
+  findCodespaceClassifierForMermaidClass,
+  getFirstCodespaceRefForMermaidClass,
+  listCodespaceClassesForMermaidClass,
+  type CodespaceClassTreeItem,
+} from '../utils/mermaid-codespace-bridge';
+import {
+  buildModelRefString,
+  inferPickerPathFromModelRefs,
+  listModelRefCandidates,
+  resolvePickerTargetFileRel,
+  type ModelRefCandidate,
+} from '../utils/model-refs-picker';
 
 const { locale, ui } = useAppLocale();
+const csCanvasMsgForBlock = computed(() => codespaceCanvasMessages[locale.value]);
+provide(CS_CANVAS_MSG_KEY, csCanvasMsgForBlock);
 
 const MODEL_COL_TYPES = ['string', 'int', 'float', 'boolean', 'json'] as const;
 
@@ -107,8 +125,16 @@ const structJsonText = ref('');
 const codespaceDraft = ref<MvModelCodespacePayload | null>(null);
 const interfaceJsonText = ref('');
 const viewDraft = ref<MvViewPayload | null>(null);
-const viewModelRefsText = ref('');
+/** modelRefs：相对当前 mv-view 所在 .md 目录的路径，空=当前文件 */
+const modelRefsRelPathInput = ref('');
 const mapJsonText = ref('');
+/** mermaid-class：payload 编辑模式 */
+const mermaidPayloadMode = ref<'meta' | 'canvas' | 'source'>('canvas');
+/** 类图双击 / 浮窗编辑的 codespace 侧车副本（与 modelRefs 指向块同步保存） */
+const mermaidCodespaceFloatOpen = ref(false);
+const mermaidCodespaceFloat = ref<{ mi: number; path: number[]; ci: number } | null>(null);
+const mermaidCodespaceSideBlockId = ref<string | null>(null);
+const mermaidCodespaceSidePayload = ref<MvModelCodespacePayload | null>(null);
 /** 子表标签「×」删除：页内确认（部分壳层对 window.confirm 不可靠） */
 const subtableDeleteOpen = ref(false);
 const subtableDeleteIndex = ref<number | null>(null);
@@ -127,8 +153,13 @@ watch(
     codespaceDraft.value = null;
     interfaceJsonText.value = '';
     viewDraft.value = null;
-    viewModelRefsText.value = '';
+    modelRefsRelPathInput.value = '';
     mapJsonText.value = '';
+    mermaidPayloadMode.value = 'canvas';
+    mermaidCodespaceFloatOpen.value = false;
+    mermaidCodespaceFloat.value = null;
+    mermaidCodespaceSideBlockId.value = null;
+    mermaidCodespaceSidePayload.value = null;
     if (!b) return;
     if (b.kind === 'mv-model-sql') {
       modelRowFilter.value = '';
@@ -148,7 +179,10 @@ watch(
       interfaceJsonText.value = JSON.stringify(b.payload, null, 2);
     } else if (b.kind === 'mv-view') {
       viewDraft.value = JSON.parse(JSON.stringify(b.payload)) as MvViewPayload;
-      viewModelRefsText.value = (viewDraft.value.modelRefs ?? []).join(', ');
+      if (!Array.isArray(viewDraft.value.modelRefs)) viewDraft.value.modelRefs = [];
+      if (typeof viewDraft.value.payload !== 'string') viewDraft.value.payload = '';
+      // 用户要求：路径输入框默认保持空字符串，不做 modelRefs 自动反推。
+      modelRefsRelPathInput.value = '';
     } else if (b.kind === 'mv-map') {
       mapJsonText.value = JSON.stringify(b.payload as MvMapPayload, null, 2);
     }
@@ -195,6 +229,79 @@ const viewPayloadPlaceholder = computed(() => {
   const b = block.value;
   if (!b || b.kind !== 'mv-view' || !viewDraft.value) return '';
   return mvViewKindStrings(viewDraft.value.kind as MvViewKind, locale.value).payloadPlaceholder;
+});
+
+const modelRefsTargetFileRel = computed(() =>
+  resolvePickerTargetFileRel(props.relPath, modelRefsRelPathInput.value),
+);
+
+const modelRefsTargetMarkdown = computed((): string | null => {
+  const viewN = normalizeRelPath(props.relPath.replace(/\\/g, '/'));
+  const targetN = normalizeRelPath(modelRefsTargetFileRel.value.replace(/\\/g, '/'));
+  if (viewN === targetN) return props.markdown;
+  const raw = props.workspaceFiles?.[targetN];
+  return raw !== undefined ? raw : null;
+});
+
+const modelRefsTargetMissing = computed(
+  () =>
+    modelRefsRelPathInput.value.trim() !== '' &&
+    modelRefsTargetMarkdown.value === null,
+);
+
+const modelRefsCandidates = computed((): ModelRefCandidate[] =>
+  listModelRefCandidates(modelRefsTargetMarkdown.value ?? ''),
+);
+
+function canonicalModelRef(c: ModelRefCandidate): string {
+  return buildModelRefString(
+    normalizeRelPath(props.relPath.replace(/\\/g, '/')),
+    modelRefsTargetFileRel.value,
+    c.blockId,
+    c.tableId,
+  );
+}
+
+function isModelRefCandidateChecked(c: ModelRefCandidate): boolean {
+  const v = viewDraft.value;
+  if (!v?.modelRefs?.length) return false;
+  const canon = canonicalModelRef(c);
+  return v.modelRefs.some((r) => r === canon || r === c.value);
+}
+
+function toggleModelRefCandidate(c: ModelRefCandidate) {
+  const v = viewDraft.value;
+  if (!v) return;
+  const canon = canonicalModelRef(c);
+  // 该区域按单选处理：只保留当前选中的一个引用，避免旧模板/历史引用残留。
+  v.modelRefs = [canon];
+}
+
+function clearModelRefsPathInput() {
+  modelRefsRelPathInput.value = '';
+}
+
+function openModelRefsPathPrompt() {
+  const next = window.prompt(
+    locale.value === 'en' ? 'Input model file relative path (.md):' : '请输入模型文件相对路径（.md）：',
+    modelRefsRelPathInput.value,
+  );
+  if (next === null) return;
+  modelRefsRelPathInput.value = next.trim();
+}
+
+/** 当前路径下列表无法覆盖的已有引用（仍保留在 JSON 中） */
+const modelRefsOrphanRefs = computed((): string[] => {
+  const v = viewDraft.value;
+  if (!v?.modelRefs?.length) return [];
+  const canonSet = new Set(modelRefsCandidates.value.map((c) => canonicalModelRef(c)));
+  const valSet = new Set(modelRefsCandidates.value.map((c) => c.value));
+  return v.modelRefs.filter((r) => !canonSet.has(r) && !valSet.has(r));
+});
+
+const mermaidCodespaceClassTree = computed<CodespaceClassTreeItem[]>(() => {
+  if (!viewDraft.value || viewDraft.value.kind !== 'mermaid-class') return [];
+  return listCodespaceClassesForMermaidClass(props.markdown, viewDraft.value.modelRefs ?? []);
 });
 
 const filteredModelRowEntries = computed(() => {
@@ -785,10 +892,7 @@ function buildInnerJson(): string | null {
   }
   if (b.kind === 'mv-view' && viewDraft.value) {
     const v = { ...viewDraft.value };
-    v.modelRefs = viewModelRefsText.value
-      .split(/[,，\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    if (!Array.isArray(v.modelRefs)) v.modelRefs = [];
     return JSON.stringify(v, null, 2);
   }
   if (b.kind === 'mv-map') {
@@ -803,6 +907,47 @@ function buildInnerJson(): string | null {
   }
   return null;
 }
+
+function originalInnerJsonForCurrentBlock(): string | null {
+  const b = block.value;
+  if (!b) return null;
+  return JSON.stringify(b.payload, null, 2);
+}
+
+/** 当前编辑态的“宽松”JSON 文本：即使未通过保存校验，也用于判断是否有改动。 */
+function currentDraftInnerLoose(): string | null {
+  const b = block.value;
+  if (!b) return null;
+  if (b.kind === 'mv-model-sql' && modelSqlDraft.value) return JSON.stringify(modelSqlDraft.value, null, 2);
+  if (b.kind === 'mv-model-kv' && kvDraft.value) return JSON.stringify(kvDraft.value, null, 2);
+  if (b.kind === 'mv-model-struct') return structJsonText.value.trim();
+  if (b.kind === 'mv-model-codespace' && codespaceDraft.value) return JSON.stringify(codespaceDraft.value, null, 2);
+  if (b.kind === 'mv-model-interface') return interfaceJsonText.value.trim();
+  if (b.kind === 'mv-view' && viewDraft.value) return JSON.stringify(viewDraft.value, null, 2);
+  if (b.kind === 'mv-map') return mapJsonText.value.trim();
+  return null;
+}
+
+const hasCanvasUnsavedChanges = computed(() => {
+  const b = block.value;
+  if (!b) return false;
+  const orig = originalInnerJsonForCurrentBlock();
+  const cur = currentDraftInnerLoose();
+  const mainDirty = (orig ?? '').trim() !== (cur ?? '').trim();
+  if (!mainDirty && b.kind !== 'mv-view') return false;
+
+  // mv-view 里还可能带同文件 codespace 侧车改动：也应触发“保存”变色。
+  let sideDirty = false;
+  if (b.kind === 'mv-view' && mermaidCodespaceSideBlockId.value && mermaidCodespaceSidePayload.value) {
+    const sideBlockId = mermaidCodespaceSideBlockId.value;
+    const sideInnerNow = JSON.stringify(mermaidCodespaceSidePayload.value, null, 2).trim();
+    const { blocks } = parseMarkdownBlocks(props.markdown);
+    const sideBlock = blocks.find((x) => x.payload.id === sideBlockId);
+    const sideInnerOrig = sideBlock ? JSON.stringify(sideBlock.payload, null, 2).trim() : '';
+    sideDirty = sideInnerNow !== sideInnerOrig;
+  }
+  return mainDirty || sideDirty;
+});
 
 function save() {
   const inner = buildInnerJson();
@@ -821,8 +966,22 @@ function save() {
     }
     return;
   }
-  const next = replaceBlockInnerById(props.markdown, props.blockId, inner);
+  let base = props.markdown;
+  if (
+    block.value?.kind === 'mv-view' &&
+    mermaidCodespaceSideBlockId.value &&
+    mermaidCodespaceSidePayload.value &&
+    mermaidCodespaceSideBlockId.value !== props.blockId
+  ) {
+    const csInner = JSON.stringify(mermaidCodespaceSidePayload.value, null, 2);
+    const r0 = replaceBlockInnerById(base, mermaidCodespaceSideBlockId.value, csInner);
+    if (r0) base = r0;
+  }
+  const next = replaceBlockInnerById(base, props.blockId, inner);
   if (!next) return;
+  mermaidCodespaceSideBlockId.value = null;
+  mermaidCodespaceSidePayload.value = null;
+  mermaidCodespaceFloatOpen.value = false;
   emit('saved', { markdown: next, relPath: props.relPath });
 }
 
@@ -832,6 +991,80 @@ function closeWin() {
 
 function setCodespaceDraft(v: MvModelCodespacePayload) {
   codespaceDraft.value = v;
+}
+
+function patchMermaidCodespaceSide(fn: (d: MvModelCodespacePayload) => void) {
+  const p = mermaidCodespaceSidePayload.value;
+  if (!p) return;
+  fn(p);
+}
+
+function onMermaidOpenClassifier(ev: { classDiagramClassId: string; className: string }) {
+  const vd = viewDraft.value;
+  if (!vd) return;
+  const hit = findCodespaceClassifierForMermaidClass(
+    props.markdown,
+    vd.modelRefs,
+    ev.classDiagramClassId,
+    ev.className,
+  );
+  if (!hit) {
+    window.alert(
+      locale.value === 'en'
+        ? 'No matching class in a same-file mv-model-codespace listed in modelRefs (ref: cross-file not supported here yet).'
+        : '未在同文件 modelRefs 所绑定的 mv-model-codespace 中找到该类（暂不支持 ref: 跨文件打开浮窗）。',
+    );
+    return;
+  }
+  mermaidCodespaceSideBlockId.value = hit.codespaceBlockId;
+  mermaidCodespaceSidePayload.value = hit.payload;
+  mermaidCodespaceFloat.value = { mi: hit.mi, path: hit.path, ci: hit.ci };
+  mermaidCodespaceFloatOpen.value = true;
+}
+
+function closeMermaidCodespaceFloat() {
+  mermaidCodespaceFloatOpen.value = false;
+}
+
+function onMermaidCreateMissingClassifier(ev: { classId: string; className: string }) {
+  const vd = viewDraft.value;
+  if (!vd) return;
+
+  if (!mermaidCodespaceSidePayload.value || !mermaidCodespaceSideBlockId.value) {
+    const first = getFirstCodespaceRefForMermaidClass(props.markdown, vd.modelRefs ?? []);
+    if (!first) {
+      window.alert(
+        locale.value === 'en'
+          ? 'No same-file mv-model-codespace found in modelRefs; cannot sync new class to model.'
+          : 'modelRefs 未绑定同文件 mv-model-codespace，无法把新 class 同步到 model。',
+      );
+      return;
+    }
+    mermaidCodespaceSideBlockId.value = first.codespaceBlockId;
+    mermaidCodespaceSidePayload.value = first.payload;
+  }
+
+  const payload = mermaidCodespaceSidePayload.value;
+  if (!payload) return;
+
+  if (!payload.modules || payload.modules.length === 0) {
+    payload.modules = [{ id: 'core', name: 'Core', namespaces: [] }];
+  }
+  const m0 = payload.modules[0]!;
+  if (!m0.namespaces || m0.namespaces.length === 0) {
+    m0.namespaces = [{ id: 'ns_root', name: 'Root', classes: [] }];
+  }
+  const ns0 = m0.namespaces[0]!;
+  if (!ns0.classes) ns0.classes = [];
+
+  const exists = ns0.classes.some((c) => c.id === ev.classId || c.name === ev.className);
+  if (exists) return;
+  ns0.classes.push({
+    id: ev.classId,
+    name: ev.className,
+    kind: 'class',
+    members: [],
+  });
 }
 </script>
 
@@ -860,7 +1093,7 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
         </button>
         <button
           type="button"
-          class="tb primary"
+          :class="['tb', 'primary', { 'tb-dirty': hasCanvasUnsavedChanges }]"
           :disabled="!block"
           :title="ui.blockCanvasSaveTitle"
           @click="save"
@@ -1281,25 +1514,176 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
         </template>
 
         <template v-else-if="block.kind === 'mv-view' && viewDraft">
-          <p class="canvas-hint title">{{ canvasSurfaceTitle }}</p>
-          <p class="canvas-hint canvas-hint--compact">
-            对应文档中的 <code>mv-view</code> 围栏代码块；块内为视图 JSON，<code>payload</code> 可为 JSON、XML、PlantUML/Mermaid 文本等。
-          </p>
-          <p class="canvas-hint">类型 <code>{{ viewDraft.kind }}</code> — {{ viewKindDescription }}</p>
-          <label class="field">
-            <span>标题 title</span>
-            <input v-model="viewDraft.title" type="text" class="wide" />
-          </label>
-          <p class="canvas-hint canvas-hint--compact">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>
-          <label class="field">
-            <span>modelRefs（Model 地址，逗号分隔）</span>
-            <input v-model="viewModelRefsText" type="text" class="wide" placeholder="同文件 id 或 ref:其它.md#块id" />
-          </label>
-
-          <p v-if="isMermaidViewKind(viewDraft.kind)" class="canvas-hint canvas-hint--compact">
-            若源码里本 <code>mv-view</code> 围栏之后紧跟标准 mermaid 代码围栏（三个反引号 + <code>mermaid</code>），则其与下方 <code>payload</code> 为<strong>同文镜像</strong>；保存时会一并写回，便于普通 Markdown 预览出图。
-          </p>
-          <label class="field">
+          <div
+            class="mv-view-shell"
+            :class="{ 'mv-view-shell--class-canvas': viewDraft.kind === 'mermaid-class' && mermaidPayloadMode === 'canvas' }"
+          >
+          <template v-if="viewDraft.kind === 'mermaid-class'">
+            <div class="mv-class-payload-head" role="tablist">
+              <button
+                type="button"
+                class="mv-class-tab"
+                :class="{ 'mv-class-tab--active': mermaidPayloadMode === 'meta' }"
+                role="tab"
+                id="mv-class-tab-meta"
+                :aria-selected="mermaidPayloadMode === 'meta'"
+                :tabindex="mermaidPayloadMode === 'meta' ? 0 : -1"
+                aria-controls="mv-class-panel-meta"
+                @click="mermaidPayloadMode = 'meta'"
+              >
+                基本信息
+              </button>
+              <button
+                type="button"
+                class="mv-class-tab"
+                :class="{ 'mv-class-tab--active': mermaidPayloadMode === 'canvas' }"
+                role="tab"
+                id="mv-class-tab-canvas"
+                :aria-selected="mermaidPayloadMode === 'canvas'"
+                :tabindex="mermaidPayloadMode === 'canvas' ? 0 : -1"
+                aria-controls="mv-class-panel-canvas"
+                @click="mermaidPayloadMode = 'canvas'"
+              >
+                类图画布
+              </button>
+              <button
+                type="button"
+                class="mv-class-tab"
+                :class="{ 'mv-class-tab--active': mermaidPayloadMode === 'source' }"
+                role="tab"
+                id="mv-class-tab-source"
+                :aria-selected="mermaidPayloadMode === 'source'"
+                :tabindex="mermaidPayloadMode === 'source' ? 0 : -1"
+                aria-controls="mv-class-panel-source"
+                @click="mermaidPayloadMode = 'source'"
+              >
+                源码
+              </button>
+            </div>
+            <div
+              v-show="mermaidPayloadMode === 'meta'"
+              id="mv-class-panel-meta"
+              class="mv-class-panel-meta"
+              role="tabpanel"
+              aria-labelledby="mv-class-tab-meta"
+            >
+              <label class="field">
+                <span>标题 title</span>
+                <input v-model="viewDraft.title" type="text" class="wide" />
+              </label>
+              <div class="mv-model-refs-picker">
+                <label class="field">
+                  <span>{{ ui.modelRefsPickerPathLabel }}</span>
+                  <div class="mv-model-refs-path-row">
+                    <input
+                      v-model="modelRefsRelPathInput"
+                      type="text"
+                      class="wide"
+                      spellcheck="false"
+                      :placeholder="ui.modelRefsPickerPathPlaceholder"
+                    />
+                    <button type="button" class="tb mv-mini-btn" @click="openModelRefsPathPrompt">打开文件</button>
+                    <button type="button" class="tb mv-mini-btn" @click="clearModelRefsPathInput">清空</button>
+                  </div>
+                </label>
+                <p v-if="modelRefsTargetMissing" class="canvas-hint canvas-hint--warn">
+                  {{ ui.modelRefsPickerFileMissing }}
+                </p>
+                <p v-else class="canvas-hint canvas-hint--compact">勾选要绑定的模型（单选）；未列出的引用见下方高级区。</p>
+                <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
+                  <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
+                    <input
+                      type="radio"
+                      name="model-refs-single"
+                      :checked="isModelRefCandidateChecked(c)"
+                      @change="toggleModelRefCandidate(c)"
+                    />
+                    <span>{{ c.label }}</span>
+                  </label>
+                </div>
+                <p v-else-if="!modelRefsTargetMissing" class="canvas-hint canvas-hint--compact">（{{ ui.dockViewModelRefsNone }}）</p>
+                <p v-if="modelRefsOrphanRefs.length" class="canvas-hint canvas-hint--compact">
+                  其它已保存引用（未出现在上表）：
+                  <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph-' + i" class="mv-model-refs-orph">{{ o }}</code>
+                </p>
+              </div>
+            </div>
+            <div
+              v-show="mermaidPayloadMode === 'canvas'"
+              id="mv-class-panel-canvas"
+              class="mv-class-canvas-wrap"
+              role="tabpanel"
+              aria-labelledby="mv-class-tab-canvas"
+            >
+              <MermaidClassDiagramCanvas
+                :model-value="viewDraft.payload ?? ''"
+                :canvas-id="blockId"
+                :codespace-classes="mermaidCodespaceClassTree"
+                @update:model-value="(v: string) => viewDraft && (viewDraft.payload = v)"
+                @open-classifier="onMermaidOpenClassifier"
+                @create-missing-classifier="onMermaidCreateMissingClassifier"
+              />
+            </div>
+            <label
+              v-show="mermaidPayloadMode === 'source'"
+              id="mv-class-panel-source"
+              class="field"
+              role="tabpanel"
+              aria-labelledby="mv-class-tab-source"
+            >
+              <span>payload（Mermaid classDiagram）</span>
+              <textarea
+                v-model="viewDraft.payload"
+                class="payload-ta"
+                spellcheck="false"
+                rows="16"
+                :placeholder="viewPayloadPlaceholder"
+              />
+            </label>
+          </template>
+          <template v-else>
+            <label class="field">
+              <span>标题 title</span>
+              <input v-model="viewDraft.title" type="text" class="wide" />
+            </label>
+            <div class="mv-model-refs-picker">
+              <label class="field">
+                <span>{{ ui.modelRefsPickerPathLabel }}</span>
+                <div class="mv-model-refs-path-row">
+                  <input
+                    v-model="modelRefsRelPathInput"
+                    type="text"
+                    class="wide"
+                    spellcheck="false"
+                    :placeholder="ui.modelRefsPickerPathPlaceholder"
+                  />
+                  <button type="button" class="tb mv-mini-btn" @click="openModelRefsPathPrompt">打开文件</button>
+                  <button type="button" class="tb mv-mini-btn" @click="clearModelRefsPathInput">清空</button>
+                </div>
+              </label>
+              <p v-if="modelRefsTargetMissing" class="canvas-hint canvas-hint--warn">
+                {{ ui.modelRefsPickerFileMissing }}
+              </p>
+              <p v-else class="canvas-hint canvas-hint--compact">勾选要绑定的模型（单选）；未列出的引用见下方高级区。</p>
+              <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
+                <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
+                  <input
+                    type="radio"
+                    name="model-refs-single"
+                    :checked="isModelRefCandidateChecked(c)"
+                    @change="toggleModelRefCandidate(c)"
+                  />
+                  <span>{{ c.label }}</span>
+                </label>
+              </div>
+              <p v-else-if="!modelRefsTargetMissing" class="canvas-hint canvas-hint--compact">（{{ ui.dockViewModelRefsNone }}）</p>
+              <p v-if="modelRefsOrphanRefs.length" class="canvas-hint canvas-hint--compact">
+                其它已保存引用（未出现在上表）：
+                <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph-' + i" class="mv-model-refs-orph">{{ o }}</code>
+              </p>
+            </div>
+          </template>
+          <label v-if="viewDraft.kind !== 'mermaid-class'" class="field">
             <span
               >payload（{{
                 isPlantUmlViewKind(viewDraft.kind)
@@ -1317,6 +1701,17 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
               :placeholder="viewPayloadPlaceholder"
             />
           </label>
+          <CodespaceClassifierFloat
+            v-if="mermaidCodespaceSidePayload && mermaidCodespaceFloat"
+            :open="mermaidCodespaceFloatOpen"
+            :model-value="mermaidCodespaceSidePayload"
+            :mi="mermaidCodespaceFloat.mi"
+            :path="mermaidCodespaceFloat.path"
+            :ci="mermaidCodespaceFloat.ci"
+            :run-patch="patchMermaidCodespaceSide"
+            @close="closeMermaidCodespaceFloat"
+          />
+          </div>
         </template>
 
         <template v-else-if="block.kind === 'mv-map'">
@@ -1437,6 +1832,10 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
   color: #fff;
   border-color: #1d4ed8;
 }
+.tb.primary.tb-dirty:not(:disabled) {
+  background: #ea580c;
+  border-color: #c2410c;
+}
 .tb:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1491,6 +1890,16 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
   flex: 1 1 auto;
   min-height: 0;
 }
+.canvas-root--embedded .canvas-surface :deep(.cde) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.canvas-root--embedded .canvas-surface :deep(.cde-viewport) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .canvas-root--embedded .tb {
   padding: 4px 10px;
   font-size: 0.8rem;
@@ -1510,6 +1919,83 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
 .canvas-hint--compact {
   font-size: 0.76rem;
   margin-bottom: 6px;
+}
+.mv-model-refs-picker {
+  margin-bottom: 10px;
+}
+.mv-model-refs-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mv-model-refs-path-row .wide {
+  flex: 1 1 auto;
+}
+.mv-mini-btn {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+}
+.mv-model-refs-cb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.mv-model-refs-cb {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.mv-class-payload-head {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 6px;
+}
+.mv-class-tab {
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+.mv-class-tab--active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  font-weight: 600;
+}
+.mv-class-canvas-wrap {
+  min-height: 280px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.canvas-root--embedded .mv-class-canvas-wrap {
+  min-height: 200px;
+}
+.mv-view-shell {
+  display: flex;
+  flex-direction: column;
+}
+.canvas-root--embedded .mv-view-shell--class-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.canvas-root--embedded .mv-view-shell--class-canvas .mv-class-canvas-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+.canvas-root--embedded .mv-view-shell--class-canvas .mv-class-canvas-wrap :deep(.cde) {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .canvas-table-wrap--readonly {
   margin-bottom: 14px;

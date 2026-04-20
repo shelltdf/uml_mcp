@@ -486,7 +486,7 @@ export const MV_MAP_CANVAS_TITLE = '映射规则画布';
  * 每个 `mv-view` 应在 `modelRefs` 中列出其依赖的 **Model 地址**：可多项。
  */
 export const MV_MODEL_REFS_SCHEME_DOC =
-  'modelRefs 每项指向 **Model** 围栏 ``mv-model-sql`` 内的一张表：同文件写 `块id#表id`；仅当该块只有一张表时可只写 `块id`。跨文件写 `ref:相对路径.md#块id#表id` 或（单表块）`ref:相对路径.md#块id`。相对路径相对于当前 mv-view 所在 .md 的目录，用 /。';
+  'modelRefs 每项指向 **Model** 围栏（``mv-model-sql`` / ``mv-model-kv`` / ``mv-model-struct`` / ``mv-model-codespace`` / ``mv-model-interface``）：同文件写 `块id`；``mv-model-sql`` 多表时写 `块id#表id`，仅一张表时可只写 `块id`。跨文件写 `ref:相对路径.md#块id`，sql 多表时再加 `#表id`。路径相对于当前 mv-view 所在 .md 的目录，用 /。';
 
 /** PlantUML 系视图（细分 kind 与通用 uml-diagram） */
 export const MV_PLANTUML_VIEW_KINDS: ReadonlySet<MvViewKind> = new Set([
@@ -507,7 +507,7 @@ export function isPlantUmlViewKind(kind: MvViewKind): boolean {
 export interface MvViewPayload {
   id: string;
   kind: MvViewKind;
-  /** 绑定的 Model 表地址：同文件 `块id#表id` 或 `块id`（单表）；跨文件 `ref:路径.md#块id#表id`（见 `MV_MODEL_REFS_SCHEME_DOC`） */
+  /** 绑定的 Model 地址：同文件 `块id` 或 sql 多表时的 `块id#表id`；跨文件 `ref:路径.md#块id`（见 `MV_MODEL_REFS_SCHEME_DOC`） */
   modelRefs: string[];
   /** 可选视图标题（展示用） */
   title?: string;

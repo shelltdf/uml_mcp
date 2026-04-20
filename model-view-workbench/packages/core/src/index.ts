@@ -57,3 +57,31 @@ export {
 
 export { parseMarkdownBlocks, replaceBlockInnerById, getBlockFenceSlice, findMvModelSqlTable } from './parse/blocks.js';
 export { parseRefUri, normalizeRelPath, resolveRefPath, detectRefCycle } from './refs/resolve.js';
+
+export type {
+  ClassDef,
+  ClassDiagramState,
+  ClassLink,
+  ClassPositions,
+  ClassDiagramEdgeVisibility,
+  ParsedClassLayout,
+} from './mermaid/classDiagramModel.js';
+export {
+  slug,
+  stripMermaidMemberModifiers,
+  isClassMemberMethodLine,
+  emptyDiagram,
+  parseLayoutComment,
+  extractFirstMermaidBlock,
+  parseClassDiagramBody,
+  serializeClassDiagramBody,
+  mergePositions,
+  buildClassDiagramMarkdown,
+  parseOrDefault,
+  classDiagramHeaderHeight,
+  estimateClassSize,
+  diagramBounds,
+  extractClassDiagramSourceFromPayload,
+  parseViewPayloadClassDiagram,
+  buildClassDiagramViewPayload,
+} from './mermaid/classDiagramModel.js';
