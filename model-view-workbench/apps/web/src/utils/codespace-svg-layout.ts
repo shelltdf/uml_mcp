@@ -22,11 +22,9 @@ export interface CodespaceLayoutNode {
   h: number;
 }
 
-/** 树状连线（SVG `path`；三次贝塞尔；廊道内不同控制点 x + 可选虚线区分平行边） */
+/** 树状连线（SVG `path`；三次贝塞尔；权柄纯横向、与竖边正交切线；廊道 `busX`；**实线**） */
 export interface CodespaceLayoutEdge {
   d: string;
-  /** 传给 `stroke-dasharray`，无则实线 */
-  dash?: string;
 }
 
 export interface CodespaceLayoutResult {
@@ -41,9 +39,15 @@ const ROW_H = 20;
 const ROW_GAP = 8;
 const CELL_GAP = 3;
 const MODULE_GAP = 12;
+/** 根 NS 竖向堆叠之间的间距（px） */
 const NS_COL_GAP = 5;
-/** NS 右缘到同级列左缘：走线廊道（容纳多条竖向母线，减少重叠） */
-const LR_NS_TO_SIBLING = 26;
+/**
+ * 模块竖条右缘到内容区起点（首列根 NS 左缘）的水平距（px）。
+ * 须明显大于 `EDGE_INSET`，否则 `busXsInCorridor(sxMod, …)` 廊道过窄、多根连线堆叠。
+ */
+const LR_MODULE_TO_INNER = 30;
+/** NS 右缘到同级列左缘：走线廊道（容纳多条母线 x，避免贝塞尔臂差异过小） */
+const LR_NS_TO_SIBLING = 42;
 const MIN_NS_COL_W = 72;
 /** 连线端点与矩形边的间隙（px） */
 const EDGE_INSET = 2;
@@ -95,19 +99,10 @@ function moduleLeftBarW(m: MvModelCodespaceModule): number {
   return Math.min(220, Math.max(80, labelCellW(label) + 12));
 }
 
-/** 虚线样式轮换，便于区分平行边 */
-function edgeDashForIndex(i: number): string | undefined {
-  const m = i % 4;
-  if (m === 0) return undefined;
-  if (m === 1) return '7 4';
-  if (m === 2) return '2 3';
-  return '10 3';
-}
-
 /** 在 `sx` 与 `x1` 之间均匀分配竖向母线 x（每条子边一根，避免共线重叠） */
 function busXsInCorridor(sx: number, x1: number, n: number): number[] {
-  const left = sx + 1.5;
-  const right = Math.max(left + 0.5, x1 - 4);
+  const left = sx + 2.5;
+  const right = Math.max(left + 2, x1 - 3);
   if (n <= 0) return [];
   if (n === 1) return [(left + right) / 2];
   const span = right - left;
@@ -121,8 +116,8 @@ function busXsInCorridor(sx: number, x1: number, n: number): number[] {
 }
 
 /**
- * LR 三次贝塞尔：起点切线水平向右离开，终点切线水平从左侧进入；
- * `busX` 为第一条控制点 x（廊道内每条边不同，减少重叠）。
+ * LR 三次贝塞尔：**仅横向**权柄——P1=(sx+armOut,sy)、P2=(tx−armIn,ty)，
+ * 使在竖直边界上的切线为水平方向（与框边垂直）；`busX` 相对弦中点的偏移微调 armOut/armIn 以分开平行边。
  */
 function pushCurvedLREdge(
   edges: CodespaceLayoutEdge[],
@@ -132,23 +127,41 @@ function pushCurvedLREdge(
   tx: number,
   ty: number,
   busX: number,
-  dash?: string,
 ): void {
   if (Math.hypot(tx - sx, ty - sy) < 0.25) return;
-  const c1x = busX;
+  const gap = tx - sx;
+  if (gap < 0.25) return;
+
+  const midX = sx + gap / 2;
+  const lane = busX - midX;
+  const cap = Math.min(44, Math.max(10, gap * 0.44));
+  const minArm = EDGE_INSET + 3;
+  let armOut = cap + lane * 0.42;
+  let armIn = cap - lane * 0.42;
+  armOut = Math.max(minArm, Math.min(armOut, gap * 0.52));
+  armIn = Math.max(minArm, Math.min(armIn, gap * 0.52));
+  const maxSum = gap - 8;
+  if (armOut + armIn > maxSum && maxSum > minArm * 2) {
+    const s = maxSum / (armOut + armIn);
+    armOut *= s;
+    armIn *= s;
+  }
+  let c1x = sx + armOut;
+  let c2x = tx - armIn;
+  if (c2x <= c1x + 4) {
+    const half = Math.max(minArm, (gap - 8) / 2);
+    c1x = sx + half;
+    c2x = tx - half;
+  }
   const c1y = sy;
-  const span = Math.max(8, tx - sx);
-  const pull = Math.min(36, Math.max(10, span * 0.42));
-  let c2x = Math.min(busX + pull, tx - EDGE_INSET - 2);
-  c2x = Math.max(c2x, busX + 4);
-  if (c2x > tx - EDGE_INSET - 1) c2x = Math.max(sx + 6, tx - EDGE_INSET - 3);
   const c2y = ty;
+
   extendPoint(bounds, sx, sy);
   extendPoint(bounds, c1x, c1y);
   extendPoint(bounds, c2x, c2y);
   extendPoint(bounds, tx, ty);
   const d = `M ${sx} ${sy} C ${c1x} ${c1y} ${c2x} ${c2y} ${tx} ${ty}`;
-  edges.push(dash ? { d, dash } : { d });
+  edges.push({ d });
 }
 
 /** 从左到右树：子树外包宽高（与 `layoutNsTreeLR` 一致；同级叶与子 NS 头共一列宽 `col1w`） */
@@ -309,7 +322,6 @@ function layoutNsTreeLR(
       pl.x + EDGE_INSET,
       pl.y,
       busXs[edgeIx] ?? busXs[0]!,
-      edgeDashForIndex(edgeIx),
     );
     edgeIx += 1;
     yc += ROW_H;
@@ -330,7 +342,6 @@ function layoutNsTreeLR(
       pl.x + EDGE_INSET,
       pl.y,
       busXs[edgeIx] ?? busXs[busXs.length - 1]!,
-      edgeDashForIndex(edgeIx),
     );
     edgeIx += 1;
     yc += subH + (idx < childOrder.length - 1 ? ROW_GAP : 0);
@@ -349,7 +360,7 @@ function layoutModuleStrip(
   edges: CodespaceLayoutEdge[],
 ): { w: number; h: number } {
   const barW = moduleLeftBarW(m);
-  const innerX = x0 + barW + NS_COL_GAP;
+  const innerX = x0 + barW + LR_MODULE_TO_INNER;
   const innerY = y0;
   const roots = m.namespaces ?? [];
   const segment: CodespaceLayoutNode[] = [];
@@ -384,12 +395,12 @@ function layoutModuleStrip(
 
   const innerW = innerMaxW;
   const totalH = yCur - innerY;
-  const totalW = barW + NS_COL_GAP + Math.max(innerW, 0);
+  const totalW = barW + LR_MODULE_TO_INNER + Math.max(innerW, 0);
 
   const modRect: Rect = { x: x0, y: y0, w: barW, h: totalH };
   const mrm = { x: modRect.x + modRect.w, y: midY(modRect) };
   const sxMod = mrm.x - EDGE_INSET;
-  const xCorridorR = Math.max(sxMod + 3, innerX - 4);
+  const xCorridorR = Math.max(sxMod + 8, innerX - 5);
   const nRoots = rootHeaders.length;
   const rootBuses = busXsInCorridor(sxMod, xCorridorR, Math.max(1, nRoots));
   rootHeaders.forEach((nh, ri) => {
@@ -402,7 +413,6 @@ function layoutModuleStrip(
       t.x + EDGE_INSET,
       t.y,
       rootBuses[ri] ?? rootBuses[0]!,
-      edgeDashForIndex(ri + 100),
     );
   });
 

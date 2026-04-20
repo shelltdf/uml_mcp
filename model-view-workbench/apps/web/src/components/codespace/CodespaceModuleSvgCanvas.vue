@@ -176,7 +176,7 @@ onUnmounted(() => {
               />
             </clipPath>
           </defs>
-          <!-- 连线 → 矩形 → 文字：贝塞尔边在矩形之下；廊道内控制点分离 + 虚线轮换 -->
+          <!-- 连线 → 矩形 → 文字：贝塞尔边在矩形之下；实线 -->
           <g class="cs-svg-edges" aria-hidden="true">
             <path
               v-for="(e, ei) in layout.edges"
@@ -188,7 +188,6 @@ onUnmounted(() => {
               stroke-width="1"
               stroke-linecap="round"
               stroke-linejoin="round"
-              :stroke-dasharray="e.dash ?? undefined"
               pointer-events="none"
             />
           </g>
