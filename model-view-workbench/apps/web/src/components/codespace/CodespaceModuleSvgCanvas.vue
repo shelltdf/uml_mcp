@@ -43,6 +43,11 @@ function pickKey(p: CodespaceSvgPick): string {
   return `mac-${p.mi}-${p.path.join('.')}-${p.maci}`;
 }
 
+/** SVG `id` 合法字符（path 含 `.` 等） */
+function clipIdFor(p: CodespaceSvgPick): string {
+  return `cp-${pickKey(p).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
 function isSelected(p: CodespaceSvgPick): boolean {
   const s = props.selected;
   if (!s) return false;
@@ -75,11 +80,11 @@ function strokeFor(n: CodespaceLayoutNode): string {
 }
 
 function strokeW(n: CodespaceLayoutNode): number {
-  return isSelected(n.pick) ? 2.5 : 1;
+  return isSelected(n.pick) ? 1.75 : 0.85;
 }
 
 function fitView() {
-  vp.zoomToFit(layout.value.bounds, 36);
+  vp.zoomToFit(layout.value.bounds, 28);
 }
 
 function originView() {
@@ -160,13 +165,40 @@ onUnmounted(() => {
           aria-label="代码空间模块树"
         >
           <rect :width="worldMetrics.w" :height="worldMetrics.h" fill="#fafafa" />
-          <g v-for="n in layout.nodes" :key="pickKey(n.pick)" class="cs-svg-nodeg">
+          <defs>
+            <clipPath v-for="n in layout.nodes" :key="'clipdef-' + pickKey(n.pick)" :id="clipIdFor(n.pick)">
+              <rect
+                :x="n.x + 1"
+                :y="n.y + 1"
+                :width="Math.max(0, n.w - 2)"
+                :height="Math.max(0, n.h - 2)"
+                rx="2"
+              />
+            </clipPath>
+          </defs>
+          <!-- 连线 → 矩形 → 文字：贝塞尔边在矩形之下；廊道内控制点分离 + 虚线轮换 -->
+          <g class="cs-svg-edges" aria-hidden="true">
+            <path
+              v-for="(e, ei) in layout.edges"
+              :key="'e-' + ei"
+              :d="e.d"
+              class="cs-svg-edge"
+              fill="none"
+              stroke="#64748b"
+              stroke-width="1"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              :stroke-dasharray="e.dash ?? undefined"
+              pointer-events="none"
+            />
+          </g>
+          <g v-for="n in layout.nodes" :key="'r-' + pickKey(n.pick)" class="cs-svg-nodeg cs-svg-nodeg-rect">
             <rect
               :x="n.x"
               :y="n.y"
               :width="n.w"
               :height="n.h"
-              :rx="4"
+              :rx="3"
               :fill="fillFor(n)"
               :stroke="strokeFor(n)"
               :stroke-width="strokeW(n)"
@@ -179,12 +211,17 @@ onUnmounted(() => {
               @dblclick="onNodeDblClick(n, $event)"
               @keydown.enter.prevent="emit('openDefinition', n.pick)"
             />
+          </g>
+          <g v-for="n in layout.nodes" :key="'t-' + pickKey(n.pick)" class="cs-svg-nodeg cs-svg-nodeg-txt">
             <text
-              :x="n.x + 8"
-              :y="n.y + n.h * 0.72"
+              :x="n.x + 6"
+              :y="n.y + n.h / 2"
               class="cs-svg-txt"
+              dominant-baseline="middle"
+              text-anchor="start"
               pointer-events="none"
-              font-size="12"
+              :clip-path="`url(#${clipIdFor(n.pick)})`"
+              :font-size="n.pick.t === 'module' ? 10.5 : 11"
               fill="#0f172a"
             >
               {{ n.label }}
