@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject } from 'vue';
+import { computed, inject, watch } from 'vue';
 import type {
   MvCodespaceAccessorVisibility,
   MvCodespaceClassifier,
@@ -50,6 +50,7 @@ const props = defineProps<{
   path: number[];
   ci: number;
   runPatch: (fn: (d: MvModelCodespacePayload) => void) => void;
+  diagramAssocTargetsByClassId?: Record<string, string[]>;
 }>();
 
 const emit = defineEmits<{
@@ -59,6 +60,7 @@ const emit = defineEmits<{
 const selectedClass = computed((): MvCodespaceClassifier | null =>
   getNamespaceAtPath(props.modelValue, props.mi, props.path)?.classes?.[props.ci] ?? null,
 );
+const selectedNamespace = computed(() => getNamespaceAtPath(props.modelValue, props.mi, props.path));
 
 const classifierOptions = computed(() => collectClassifierIds(props.modelValue));
 const fieldRows = computed(() =>
@@ -77,6 +79,41 @@ const enumRows = computed(() =>
     .filter((r) => r.mem.kind === 'enumLiteral'),
 );
 const propertyRows = computed(() => selectedClass.value?.properties ?? []);
+
+const classifierNameById = computed(() => {
+  const m = new Map<string, string>();
+  for (const mod of props.modelValue.modules ?? []) {
+    const walk = (nodes: NonNullable<typeof mod.namespaces>) => {
+      for (const n of nodes) {
+        for (const c of n.classes ?? []) m.set(c.id, (c.name ?? c.id).trim());
+        if (n.namespaces?.length) walk(n.namespaces);
+      }
+    };
+    if (mod.namespaces?.length) walk(mod.namespaces);
+  }
+  return m;
+});
+
+const associatedTypeCandidates = computed((): string[] => {
+  const cls = selectedClass.value;
+  const ns = selectedNamespace.value;
+  if (!cls || !ns) return [];
+  const out: string[] = [];
+  const push = (id: string) => {
+    const t = classifierNameById.value.get(id) ?? id;
+    if (t && !out.includes(t)) out.push(t);
+  };
+  for (const a of ns.associations ?? []) {
+    if (a.fromClassifierId === cls.id && a.toClassifierId !== cls.id) push(a.toClassifierId);
+    else if (a.toClassifierId === cls.id && a.fromClassifierId !== cls.id) push(a.fromClassifierId);
+  }
+  for (const tid of props.diagramAssocTargetsByClassId?.[cls.id] ?? []) push(tid);
+  return out;
+});
+
+function preferredAssociatedType(): string {
+  return associatedTypeCandidates.value[0] ?? '';
+}
 function classTemplateParamsStr(): string {
   const c = getNamespaceAtPath(props.modelValue, props.mi, props.path)?.classes?.[props.ci];
   return (c?.templateParams ?? []).join(', ');
@@ -252,6 +289,17 @@ function patchProperty(pi: number, part: Partial<MvCodespaceProperty>) {
   });
 }
 
+function enableAssocTypeForCurrentRows(): void {
+  const t = preferredAssociatedType();
+  if (!t) return;
+  for (const r of fieldRows.value) {
+    patchMember(r.idx, { typeFromAssociation: true, type: t });
+  }
+  for (let pi = 0; pi < propertyRows.value.length; pi++) {
+    patchProperty(pi, { typeFromAssociation: true, type: t });
+  }
+}
+
 function removeProperty(pi: number) {
   props.runPatch((d) => {
     getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.properties?.splice(pi, 1);
@@ -283,6 +331,22 @@ function removeClass() {
   });
   emit('close');
 }
+
+watch(associatedTypeCandidates, (next, prev) => {
+  const t = preferredAssociatedType();
+  if (!t) return;
+  // When association is newly connected, auto-enable assocType and sync types.
+  if (next.length > 0 && (!prev || prev.length === 0)) {
+    enableAssocTypeForCurrentRows();
+    return;
+  }
+  for (const r of fieldRows.value) {
+    if (r.mem.typeFromAssociation === true) patchMember(r.idx, { type: t });
+  }
+  for (let pi = 0; pi < propertyRows.value.length; pi++) {
+    if (propertyRows.value[pi]?.typeFromAssociation === true) patchProperty(pi, { type: t });
+  }
+}, { immediate: true });
 </script>
 
 <template>
@@ -405,6 +469,7 @@ function removeClass() {
             <th>name</th>
             <th>visibility</th>
             <th>type</th>
+            <th>assocType</th>
             <th>static</th>
             <th></th>
           </tr>
@@ -442,6 +507,14 @@ function removeClass() {
             <td class="cs-td-center">
               <input
                 type="checkbox"
+                :checked="mem.typeFromAssociation === true"
+                title="Read-only: controlled by association links"
+                disabled
+              />
+            </td>
+            <td class="cs-td-center">
+              <input
+                type="checkbox"
                 :checked="mem.static === true"
                 :title="csMsg.flClsMemberStaticTitle"
                 @change="patchMember(idx, { static: ($event.target as HTMLInputElement).checked })"
@@ -467,6 +540,7 @@ function removeClass() {
             <th>backingField</th>
             <th>backingVisibility</th>
             <th>type</th>
+            <th>assocType</th>
             <th>getter</th>
             <th>setter</th>
             <th>getterVis</th>
@@ -511,6 +585,14 @@ function removeClass() {
                   {{ prop.type }}
                 </option>
               </select>
+            </td>
+            <td class="cs-td-center">
+              <input
+                type="checkbox"
+                :checked="prop.typeFromAssociation === true"
+                title="Read-only: controlled by association links"
+                disabled
+              />
             </td>
             <td class="cs-td-center">
               <input

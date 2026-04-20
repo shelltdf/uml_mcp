@@ -28,6 +28,7 @@ function lineNumberAt(source: string, offset: number): number {
 
 /**
  * 从 `mv-view` 围栏结束偏移起，跳过空白后尝试识别标准 `` ```mermaid ... ``` ``（与 GitHub 等兼容）。
+ * 对 `kind` 为 `mermaid-*` 的 `mv-view`，解析层**要求**存在该镜像围栏（见 `md-mv-core/spec.md`）。
  */
 function tryParseTrailingMermaidFence(
   source: string,
@@ -485,6 +486,9 @@ function validateCodespaceNamespaceNode(
           if ('virtual' in mo && mo.virtual !== undefined && typeof mo.virtual !== 'boolean') {
             return { ok: false, message: `${mp}.virtual must be a boolean when present` };
           }
+          if ('typeFromAssociation' in mo && mo.typeFromAssociation !== undefined && typeof mo.typeFromAssociation !== 'boolean') {
+            return { ok: false, message: `${mp}.typeFromAssociation must be a boolean when present` };
+          }
           if (mo.kind === 'field' && 'methodKind' in mo && mo.methodKind !== undefined) {
             return { ok: false, message: `${mp}.methodKind is only allowed when kind is method` };
           }
@@ -533,6 +537,9 @@ function validateCodespaceNamespaceNode(
           }
           if ('hasSetter' in po && po.hasSetter !== undefined && typeof po.hasSetter !== 'boolean') {
             return { ok: false, message: `${pp}.hasSetter must be a boolean when present` };
+          }
+          if ('typeFromAssociation' in po && po.typeFromAssociation !== undefined && typeof po.typeFromAssociation !== 'boolean') {
+            return { ok: false, message: `${pp}.typeFromAssociation must be a boolean when present` };
           }
           if ('getterVisibility' in po && po.getterVisibility !== undefined) {
             if (typeof po.getterVisibility !== 'string' || !CODESPACE_ACCESSOR_VIS.has(po.getterVisibility)) {
@@ -924,7 +931,16 @@ export function parseMarkdownBlocks(source: string): ParseMdResult {
       if (kind === 'mv-view') {
         const view = payload as MvViewPayload;
         const mirror = tryParseTrailingMermaidFence(source, endOffset);
-        if (mirror && isMermaidViewKind(view.kind)) {
+        if (isMermaidViewKind(view.kind)) {
+          if (!mirror) {
+            errors.push({
+              message:
+                'mv-view: mermaid-* kinds require a trailing ```mermaid ... ``` fence immediately after the mv-view block (only whitespace may appear between)',
+              line: lineNumberAt(source, innerStartOffset),
+            });
+            pos = endOffset;
+            continue;
+          }
           mermaidMirror = mirror;
           const mBody = source.slice(mirror.innerStartOffset, mirror.innerEndOffset);
           const jp = typeof view.payload === 'string' ? view.payload : '';

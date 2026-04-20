@@ -9,6 +9,7 @@ import {
   MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
+  parseViewPayloadClassDiagram,
   isMermaidViewKind,
   isPlantUmlViewKind,
   normalizeRelPath,
@@ -334,6 +335,63 @@ const mermaidClassSourceMarkdown = computed((): string => {
   const next = replaceBlockInnerById(props.markdown, sideId, JSON.stringify(sidePayload, null, 2));
   return next ?? props.markdown;
 });
+
+const mermaidAssocTargetsByClassId = computed<Record<string, string[]>>(() => {
+  const out: Record<string, string[]> = {};
+  const v = viewDraft.value;
+  if (!v || v.kind !== 'mermaid-class') return out;
+  const parsed = parseViewPayloadClassDiagram(v.payload ?? '');
+  for (const l of parsed.state.links) {
+    if (l.kind !== 'association') continue;
+    if (!out[l.from]) out[l.from] = [];
+    if (!out[l.to]) out[l.to] = [];
+    if (!out[l.from]!.includes(l.to)) out[l.from]!.push(l.to);
+    if (!out[l.to]!.includes(l.from)) out[l.to]!.push(l.from);
+  }
+  return out;
+});
+
+function syncAssocTypeFromDiagramToCodespace(): void {
+  const v = viewDraft.value;
+  const side = mermaidCodespaceSidePayload.value;
+  if (!v || v.kind !== 'mermaid-class' || !side) return;
+  const targets = mermaidAssocTargetsByClassId.value;
+  const nameById = new Map<string, string>();
+  for (const mod of side.modules ?? []) {
+    const walk = (nodes: typeof mod.namespaces) => {
+      for (const n of nodes ?? []) {
+        for (const c of n.classes ?? []) nameById.set(c.id, (c.name ?? c.id).trim());
+        walk(n.namespaces);
+      }
+    };
+    walk(mod.namespaces);
+  }
+  const resolveType = (classId: string): string | undefined => {
+    const first = targets[classId]?.[0];
+    if (!first) return undefined;
+    return nameById.get(first) ?? first;
+  };
+  for (const mod of side.modules ?? []) {
+    const walk = (nodes: typeof mod.namespaces) => {
+      for (const n of nodes ?? []) {
+        for (const c of n.classes ?? []) {
+          const t = resolveType(c.id);
+          for (const m of c.members ?? []) {
+            if (m.kind !== 'field') continue;
+            m.typeFromAssociation = !!t || undefined;
+            if (t) m.type = t;
+          }
+          for (const p of c.properties ?? []) {
+            p.typeFromAssociation = !!t || undefined;
+            if (t) p.type = t;
+          }
+        }
+        walk(n.namespaces);
+      }
+    };
+    walk(mod.namespaces);
+  }
+}
 
 const filteredModelRowEntries = computed(() => {
   const m = modelDraft.value;
@@ -924,6 +982,8 @@ function buildInnerJson(): string | null {
   if (b.kind === 'mv-view' && viewDraft.value) {
     const v = { ...viewDraft.value };
     if (!Array.isArray(v.modelRefs)) v.modelRefs = [];
+    // Mermaid view must store source in a dedicated ```mermaid``` block.
+    if (isMermaidViewKind(v.kind)) v.payload = '';
     return JSON.stringify(v, null, 2);
   }
   if (b.kind === 'mv-map') {
@@ -937,6 +997,22 @@ function buildInnerJson(): string | null {
     }
   }
   return null;
+}
+
+function upsertTrailingMermaidMirror(source: string, viewBlockId: string, body: string): string {
+  const r = parseMarkdownBlocks(source);
+  const b = r.blocks.find((x) => x.payload.id === viewBlockId && x.kind === 'mv-view');
+  if (!b) return source;
+  const mermaidBody = (body ?? '').replace(/\r\n/g, '\n').trimEnd();
+  if (b.mermaidMirror) {
+    return (
+      source.slice(0, b.mermaidMirror.innerStartOffset) +
+      (mermaidBody ? `${mermaidBody}\n` : '') +
+      source.slice(b.mermaidMirror.innerEndOffset)
+    );
+  }
+  const fence = `\n\`\`\`mermaid\n${mermaidBody ? `${mermaidBody}\n` : ''}\`\`\`\n`;
+  return source.slice(0, b.endOffset) + fence + source.slice(b.endOffset);
 }
 
 function originalInnerJsonForCurrentBlock(): string | null {
@@ -986,6 +1062,14 @@ watch(
   { immediate: true },
 );
 
+watch(
+  [() => viewDraft.value?.payload, () => mermaidCodespaceSidePayload.value],
+  () => {
+    syncAssocTypeFromDiagramToCodespace();
+  },
+  { deep: true },
+);
+
 function save() {
   const inner = buildInnerJson();
   if (!inner) {
@@ -1014,8 +1098,11 @@ function save() {
     const r0 = replaceBlockInnerById(base, mermaidCodespaceSideBlockId.value, csInner);
     if (r0) base = r0;
   }
-  const next = replaceBlockInnerById(base, props.blockId, inner);
+  let next = replaceBlockInnerById(base, props.blockId, inner);
   if (!next) return;
+  if (block.value?.kind === 'mv-view' && viewDraft.value && isMermaidViewKind(viewDraft.value.kind)) {
+    next = upsertTrailingMermaidMirror(next, props.blockId, viewDraft.value.payload ?? '');
+  }
   mermaidCodespaceSideBlockId.value = null;
   mermaidCodespaceSidePayload.value = null;
   mermaidCodespaceFloatOpen.value = false;
@@ -1747,6 +1834,7 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
             :mi="mermaidCodespaceFloat.mi"
             :path="mermaidCodespaceFloat.path"
             :ci="mermaidCodespaceFloat.ci"
+            :diagram-assoc-targets-by-class-id="mermaidAssocTargetsByClassId"
             :run-patch="patchMermaidCodespaceSide"
             @close="closeMermaidCodespaceFloat"
           />

@@ -158,20 +158,20 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     modelRefs: inferDefaultModelRefs(ctx),
     title,
   };
-  // Mermaid class 画布要求：新建围栏默认 payload 为空，由用户从绑定 model 逐步添加 class。
-  if (kind === 'mermaid-class') {
+  /** `mermaid-*`：JSON 内不写正文，仅紧随的 `` ```mermaid `` 承载源码（解析器会回填 `payload`）。 */
+  let mermaidMirrorBody = '';
+  if (isMermaidViewKind(kind)) {
     obj.payload = '';
-  }
-  if (kind !== 'mermaid-class' && !skipPayload && ph && !ph.startsWith('（')) {
+    if (!skipPayload && ph && !ph.startsWith('（')) {
+      mermaidMirrorBody = ph;
+    }
+  } else if (!skipPayload && ph && !ph.startsWith('（')) {
     obj.payload = ph;
   }
   const inner = JSON.stringify(obj, null, 2);
   const mvFence = `\n\n\`\`\`mv-view\n${inner}\n\`\`\`\n\n`;
   if (isMermaidViewKind(kind)) {
-    const pl = typeof obj.payload === 'string' ? obj.payload : '';
-    if (pl.trim()) {
-      return `${mvFence}\`\`\`mermaid\n${pl}\n\`\`\`\n\n`;
-    }
+    return `${mvFence}\`\`\`mermaid\n${mermaidMirrorBody}\n\`\`\`\n\n`;
   }
   return mvFence;
 }

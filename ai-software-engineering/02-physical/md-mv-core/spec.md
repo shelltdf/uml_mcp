@@ -151,11 +151,11 @@
 | title | string? | 可选视图标题 |
 | payload | string? | **子类型相关**载荷（如 Mermaid / PlantUML 文本、脑图 JSON 快照等，由对应 `kind` 解释） |
 
-### `mermaid-*` 与标准 `` ```mermaid`` 镜像（普通 MD 兼容）
+### `mermaid-*` 与标准 `` ```mermaid`` 镜像（**必须**两段围栏）
 
-当 `kind` 为 **`mermaid-*`** 时，允许在 **`` ```mv-view `` 围栏结束之后**（仅中间可隔空白）紧随一个 **标准** `` ```mermaid`` … `` ``` `` 围栏，其**正文**与 JSON 内 `payload` 表示**同一段 Mermaid 源码**（便于 GitHub、Typora 等仅识别 `` ```mermaid`` 的环境出图）。
+当 `kind` 为 **`mermaid-*`** 时，**必须**在 **`` ```mv-view `` 围栏结束之后**（仅中间可隔空白）紧随一个 **标准** `` ```mermaid`` … `` ``` `` 围栏；两段为**独立**代码块。镜像**正文**与 JSON 内 `payload` 表示**同一段 Mermaid 源码**（便于 GitHub、Typora 等仅识别 `` ```mermaid`` 的环境出图）。缺省镜像围栏的 `mv-view`（`mermaid-*`）**解析失败**，该块不进入 `blocks` 列表。
 
-- **解析**：仍只产生 **一条** `ParsedFenceBlock`（`kind: mv-view`）；若识别到镜像围栏，则设置 `mermaidMirror`（起止偏移）且扫描指针跳过该段，避免将 `` ```mermaid`` 当作未知围栏阻塞后续解析。若 JSON 内 `payload` 为空（或缺省）而镜像非空，则用镜像正文**填入**内存中的 `payload`；若二者均非空且不一致，**以 JSON 内 `payload` 为准**（镜像视为可由下次保存覆盖）。
+- **解析**：仍只产生 **一条** `ParsedFenceBlock`（`kind: mv-view`）；设置 `mermaidMirror`（起止偏移）且扫描指针跳过镜像段，避免将 `` ```mermaid`` 当作未知围栏阻塞后续解析。若 JSON 内 `payload` 为空（或缺省）而镜像非空，则用镜像正文**填入**内存中的 `payload`；若二者均非空且不一致，**以 JSON 内 `payload` 为准**（镜像视为可由下次保存覆盖）。
 - **回写**：`replaceBlockInnerById` 在替换 `` ```mv-view`` 内 JSON 后，若仍存在 `mermaidMirror` 且新 JSON 为 `mermaid-*` 且含 `payload` 字符串，则**同步替换**镜像围栏内正文，使两段保持一致。
 
 ## mv-map

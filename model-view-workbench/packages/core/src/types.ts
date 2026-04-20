@@ -125,6 +125,8 @@ export interface MvCodespaceMember {
   operatorSymbol?: string;
   /** kind=enumLiteral 时可选：枚举分组名（用于同一枚举按组组织） */
   enumGroup?: string;
+  /** type 是否由关联关系自动推导（只读语义开关） */
+  typeFromAssociation?: boolean;
   type?: string;
   signature?: string;
   notes?: string;
@@ -139,6 +141,8 @@ export interface MvCodespaceProperty {
   /** backing 字段可见性；默认 private */
   backingVisibility?: string;
   type?: string;
+  /** type 是否由关联关系自动推导（只读语义开关） */
+  typeFromAssociation?: boolean;
   static?: boolean;
   hasGetter?: boolean;
   hasSetter?: boolean;
@@ -575,7 +579,7 @@ export type MvBlockPayload =
 
 /**
  * 紧随 `` ```mv-view ``（且 `kind` 为 `mermaid-*`）的标准 `` ```mermaid `` 围栏，与 JSON 内 `payload` 同源，供普通 Markdown 预览 Mermaid。
- * 解析时若 JSON 中 `payload` 为空而镜像非空，则用镜像正文填充 `payload`。
+ * **契约**：`mermaid-*` 的 `mv-view` 在源码中必须带该镜像段，否则解析器丢弃该块；解析时若 JSON 中 `payload` 为空而镜像非空，则用镜像正文填充 `payload`。
  */
 export interface ParsedMermaidMirrorFence {
   /** `` ```mermaid`` 行首第一个 `` ` `` 的偏移 */
@@ -607,7 +611,7 @@ export interface ParsedFenceBlock {
   /** Raw inner text between fences (trimmed for JSON parse) */
   rawInner: string;
   payload: MvBlockPayload;
-  /** 仅 `mv-view` 且 `kind` 为 `mermaid-*` 且源码紧随标准 `` ```mermaid`` 时出现 */
+  /** `mv-view` 且 `kind` 为 `mermaid-*` 且解析成功时**必有**（紧随的标准 `` ```mermaid`` 段） */
   mermaidMirror?: ParsedMermaidMirrorFence;
 }
 

@@ -43,34 +43,42 @@ describe('parseMarkdownBlocks', () => {
   });
 
   it('parses mv-view mermaid-flowchart kind', () => {
+    const mer = 'flowchart TD\n  A --> B';
     const md =
       '\`\`\`mv-view\n' +
       JSON.stringify({
         id: 'mf1',
         kind: 'mermaid-flowchart',
         modelRefs: [],
-        payload: 'flowchart TD\n  A --> B',
+        payload: mer,
       }) +
+      '\n\`\`\`\n\n\`\`\`mermaid\n' +
+      mer +
       '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks).toHaveLength(1);
     expect((r.blocks[0].payload as { kind: string }).kind).toBe('mermaid-flowchart');
+    expect(r.blocks[0].mermaidMirror).toBeDefined();
   });
 
   it('parses mv-view with refs', () => {
+    const mer = 'classDiagram\n  class A';
     const md =
       '\`\`\`mv-view\n' +
       JSON.stringify({
         id: 'v1',
         kind: 'mermaid-class',
         modelRefs: ['ref:./m.md#t1#tbl'],
-        payload: 'classDiagram\n  class A',
+        payload: mer,
       }) +
+      '\n\`\`\`\n\n\`\`\`mermaid\n' +
+      mer +
       '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks[0].payload.id).toBe('v1');
+    expect(r.blocks[0].mermaidMirror).toBeDefined();
   });
 
   it('parses mv-view mindmap-ui and uml-diagram kinds', () => {
@@ -291,7 +299,7 @@ describe('parseMarkdownBlocks', () => {
       id: 'cs1',
       title: 'mono',
       workspaceRoot: '.',
-      modules: [{ id: 'a', name: 'pkg-a', path: 'packages/a', role: 'lib' }],
+      modules: [{ id: 'a', name: 'pkg_a', path: 'packages/a', role: 'lib' }],
     };
     const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
@@ -486,14 +494,17 @@ describe('parseMarkdownBlocks', () => {
         modules: [{ id: 'm1', name: 'ModuleA', namespaces: [{ id: 'n1', name: 'NsA', classes: [{ id: 'c1', name: 'User' }] }] }],
       }) +
       '\n```\n';
+    const mer = 'classDiagram\n  class User';
     const viewBlock =
       '```mv-view\n' +
       JSON.stringify({
         id: 'v1',
         kind: 'mermaid-class',
         modelRefs: ['cs_only_truth'],
-        payload: 'classDiagram\n  class User',
+        payload: mer,
       }) +
+      '\n```\n\n```mermaid\n' +
+      mer +
       '\n```\n';
     const mdWithView = `${modelBlock}\n${viewBlock}`;
     const withView = parseMarkdownBlocks(mdWithView);
@@ -661,6 +672,21 @@ describe('parseMarkdownBlocks', () => {
     const r = parseMarkdownBlocks(md);
     expect(r.blocks).toHaveLength(0);
     expect(r.errors.some((e) => e.message.includes('duplicate endpoint id'))).toBe(true);
+  });
+
+  it('rejects mv-view mermaid-* without trailing mermaid mirror', () => {
+    const md =
+      '\`\`\`mv-view\n' +
+      JSON.stringify({
+        id: 'bad',
+        kind: 'mermaid-flowchart',
+        modelRefs: [],
+        payload: 'flowchart TD\n  A --> B',
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('trailing') && e.message.includes('mermaid'))).toBe(true);
   });
 
   it('parses mv-view mermaid-flowchart with trailing mermaid mirror and fills empty payload', () => {
