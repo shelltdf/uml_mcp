@@ -102,6 +102,11 @@ const visibilityOpen = ref(true);
 
 const inheritDrag = ref<{ fromId: string } | null>(null);
 const tempInheritLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+const associationDrag = ref<{ fromId: string; sectionIndex: number; lineIndex: number; anchor: 'left' | 'right' } | null>(null);
+const tempAssociationLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+const selectedEdgeId = ref<string | null>(null);
+const selectedInheritHandleClassId = ref<string | null>(null);
+const edgeCtx = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
 
 function loadFromPayload(payload: string): void {
   const raw = (payload ?? '').trim();
@@ -251,6 +256,9 @@ function onMarqueePointerUp(e: PointerEvent): void {
 function onSvgBackgroundPointerDown(e: PointerEvent): void {
   if (e.button !== 0) return;
   e.preventDefault();
+  edgeCtx.open = false;
+  selectedEdgeId.value = null;
+  selectedInheritHandleClassId.value = null;
   const w = clientToWorld(e.clientX, e.clientY);
   marquee.value = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
   window.addEventListener('pointermove', onMarqueePointerMove);
@@ -459,6 +467,8 @@ const PREVIEW_TOP_PAD = 8;
 const PREVIEW_BOTTOM_PAD = 8;
 const PREVIEW_LABEL_TO_LINES_GAP = 2;
 const PREVIEW_SECTION_GAP = 4;
+const PREVIEW_LABEL_X = 10;
+const PREVIEW_CONTENT_X = 34; // visual indent for section content
 
 function previewSections(c: ClassDef): PreviewSection[] {
   return [
@@ -493,7 +503,41 @@ function previewSectionLineY(c: ClassDef, index: number, lineIndex: number): num
 }
 
 function previewIndentedLine(line: string): string {
-  return `    ${line}`;
+  return line;
+}
+
+function rightHandleRows(c: ClassDef): Array<{ key: string; sectionIndex: number; lineIndex: number }> {
+  const out: Array<{ key: string; sectionIndex: number; lineIndex: number }> = [];
+  const memb = effectiveAttributes(c);
+  for (let i = 0; i < memb.length; i++) out.push({ key: `m-${i}`, sectionIndex: 0, lineIndex: i });
+  const prop = effectiveProperties(c);
+  for (let i = 0; i < prop.length; i++) out.push({ key: `p-${i}`, sectionIndex: 1, lineIndex: i });
+  return out;
+}
+
+function rightHandleTipY(c: ClassDef, h: { sectionIndex: number; lineIndex: number }): number {
+  return previewSectionLineY(c, h.sectionIndex, h.lineIndex) - 4;
+}
+
+function associationSourceTip(
+  fromClass: ClassDef,
+  fromPos: { x: number; y: number },
+  toPos: { x: number; y: number },
+): { x: number; y: number } {
+  const rows = rightHandleRows(fromClass);
+  if (!rows.length) return { x: fromPos.x + 264, y: fromPos.y + 18 };
+  const targetY = toPos.y + 18;
+  let best = rows[0]!;
+  let bestD = Math.abs(fromPos.y + rightHandleTipY(fromClass, best) - targetY);
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i]!;
+    const d = Math.abs(fromPos.y + rightHandleTipY(fromClass, r) - targetY);
+    if (d < bestD) {
+      best = r;
+      bestD = d;
+    }
+  }
+  return { x: fromPos.x + 264, y: fromPos.y + rightHandleTipY(fromClass, best) };
 }
 
 function classBoxSize(c: ClassDef): { w: number; h: number } {
@@ -617,6 +661,9 @@ function onWindowClick(e: MouseEvent): void {
   const t = e.target as Node;
   if (ctx.open && viewportRef.value && !viewportRef.value.querySelector('.cde-ctx')?.contains(t)) {
     ctx.open = false;
+  }
+  if (edgeCtx.open && viewportRef.value && !viewportRef.value.querySelector('.cde-edgectx')?.contains(t)) {
+    edgeCtx.open = false;
   }
   if (addCtx.open && viewportRef.value && !viewportRef.value.querySelector('.cde-addctx')?.contains(t)) {
     addCtx.open = false;
@@ -885,6 +932,27 @@ function autoLayoutClasses(): void {
     positions[c.id] = { x: curX, y: 80 };
     curX += w + treeGap;
   }
+
+  // Association direction constraint: target class should stay on the right side.
+  // Apply multiple passes to propagate shifts across association chains.
+  const assocGap = 56;
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (const l of state.links) {
+      if (l.kind !== 'association') continue;
+      const fromPos = positions[l.from];
+      const toPos = positions[l.to];
+      const fromClass = byId.get(l.from);
+      if (!fromPos || !toPos || !fromClass) continue;
+      const minToX = fromPos.x + classBoxSize(fromClass).w + assocGap;
+      if (toPos.x < minToX) {
+        positions[l.to] = { ...toPos, x: minToX };
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+
   pushPayload();
   fitAll();
 }
@@ -899,53 +967,174 @@ function classIdAtWorldPoint(wx: number, wy: number): string | null {
   return null;
 }
 
-function startInheritDrag(e: PointerEvent, childId: string): void {
+function classIdAtLeftHandlePoint(wx: number, wy: number): string | null {
+  for (const c of state.classes) {
+    const p = positions[c.id];
+    if (!p) continue;
+    // Left triangle around points: (-16,18) (0,10) (0,26)
+    const x0 = p.x - 18;
+    const x1 = p.x + 2;
+    const y0 = p.y + 8;
+    const y1 = p.y + 28;
+    if (wx >= x0 && wx <= x1 && wy >= y0 && wy <= y1) return c.id;
+  }
+  return null;
+}
+
+function classIdAtRightHandlePoint(wx: number, wy: number): string | null {
+  for (const c of state.classes) {
+    const p = positions[c.id];
+    if (!p) continue;
+    const rows = rightHandleRows(c);
+    for (const h of rows) {
+      const cy = p.y + previewSectionLineY(c, h.sectionIndex, h.lineIndex) - 4;
+      // Right triangle around points: (264,cy) (248,cy-8) (248,cy+4)
+      const x0 = p.x + 246;
+      const x1 = p.x + 266;
+      const y0 = cy - 10;
+      const y1 = cy + 6;
+      if (wx >= x0 && wx <= x1 && wy >= y0 && wy <= y1) return c.id;
+    }
+  }
+  return null;
+}
+
+function startInheritDrag(e: PointerEvent, childId: string, anchor: 'top' | 'left' = 'top'): void {
   e.stopPropagation();
   e.preventDefault();
+  selectedInheritHandleClassId.value = childId;
+  selectedEdgeId.value = null;
   const p = positions[childId];
   if (!p) return;
   const child = state.classes.find((x) => x.id === childId);
   if (!child) return;
   const s = classBoxSize(child);
-  const x1 = p.x + s.w / 2;
-  const y1 = p.y;
+  const x1 = anchor === 'left' ? p.x : p.x + s.w / 2;
+  const y1 = anchor === 'left' ? p.y + 18 : p.y;
   inheritDrag.value = { fromId: childId };
   const w = clientToWorld(e.clientX, e.clientY);
   tempInheritLine.value = { x1, y1, x2: w.x, y2: w.y };
 }
 
-function onGlobalPointerMove(e: PointerEvent): void {
-  if (!inheritDrag.value || !tempInheritLine.value) return;
+function startAssociationDrag(
+  e: PointerEvent,
+  fromId: string,
+  sectionIndex: number,
+  lineIndex: number,
+  anchor: 'left' | 'right' = 'right',
+): void {
+  e.stopPropagation();
+  e.preventDefault();
+  const p = positions[fromId];
+  const c = state.classes.find((x) => x.id === fromId);
+  if (!p || !c) return;
+  selectedInheritHandleClassId.value = null;
+  selectedEdgeId.value = null;
+  associationDrag.value = { fromId, sectionIndex, lineIndex, anchor };
+  const x1 = anchor === 'left' ? p.x - 16 : p.x + 264;
+  const y1 = anchor === 'left' ? p.y + 18 : p.y + rightHandleTipY(c, { sectionIndex, lineIndex });
   const w = clientToWorld(e.clientX, e.clientY);
-  tempInheritLine.value = {
-    ...tempInheritLine.value,
-    x2: w.x,
-    y2: w.y,
-  };
+  tempAssociationLine.value = { x1, y1, x2: w.x, y2: w.y };
+}
+
+function onGlobalPointerMove(e: PointerEvent): void {
+  const w = clientToWorld(e.clientX, e.clientY);
+  if (inheritDrag.value && tempInheritLine.value) {
+    tempInheritLine.value = {
+      ...tempInheritLine.value,
+      x2: w.x,
+      y2: w.y,
+    };
+  }
+  if (associationDrag.value && tempAssociationLine.value) {
+    tempAssociationLine.value = {
+      ...tempAssociationLine.value,
+      x2: w.x,
+      y2: w.y,
+    };
+  }
 }
 
 function onGlobalPointerUp(e: PointerEvent): void {
-  if (!inheritDrag.value) return;
+  if (!inheritDrag.value && !associationDrag.value) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
-  const childId = inheritDrag.value.fromId;
   const w = clientToWorld(e.clientX, e.clientY);
   const targetId = classIdAtWorldPoint(w.x, w.y);
-  inheritDrag.value = null;
-  tempInheritLine.value = null;
-  if (!targetId || targetId === childId) return;
-  state.links = state.links.filter((l) => !(l.kind === 'inherit' && l.from === childId));
-  state.links.push({
-    id: `inh-${Date.now()}`,
-    from: childId,
-    to: targetId,
-    kind: 'inherit',
-  });
+  if (inheritDrag.value) {
+    const childId = inheritDrag.value.fromId;
+    inheritDrag.value = null;
+    tempInheritLine.value = null;
+    if (targetId && targetId !== childId) {
+      state.links = state.links.filter((l) => !(l.kind === 'inherit' && l.from === childId));
+      const newId = `inh-${Date.now()}`;
+      state.links.push({
+        id: newId,
+        from: childId,
+        to: targetId,
+        kind: 'inherit',
+      });
+      selectedEdgeId.value = newId;
+      pushPayload();
+    }
+  }
+  if (associationDrag.value) {
+    const fromId = associationDrag.value.fromId;
+    const anchor = associationDrag.value.anchor;
+    associationDrag.value = null;
+    tempAssociationLine.value = null;
+    const anchorTargetId =
+      anchor === 'right' ? classIdAtLeftHandlePoint(w.x, w.y) : classIdAtRightHandlePoint(w.x, w.y);
+    if (anchorTargetId && anchorTargetId !== fromId) {
+      const newId = `asc-${Date.now()}`;
+      // Side-to-side association rule:
+      // right handle: source.right -> target.left  => from=source, to=target
+      // left handle:  source.left  -> target.right => from=target, to=source
+      const from = anchor === 'right' ? fromId : anchorTargetId;
+      const to = anchor === 'right' ? anchorTargetId : fromId;
+      state.links.push({
+        id: newId,
+        from,
+        to,
+        kind: 'association',
+      });
+      selectedEdgeId.value = newId;
+      pushPayload();
+    }
+  }
+}
+
+function onEdgePointerDown(e: PointerEvent, edgeId: string): void {
+  e.stopPropagation();
+  selectedEdgeId.value = edgeId;
+  selectedInheritHandleClassId.value = null;
+  ctx.open = false;
+  addCtx.open = false;
+}
+
+function onEdgeContextMenu(e: MouseEvent, edgeId: string): void {
+  e.preventDefault();
+  e.stopPropagation();
+  selectedEdgeId.value = edgeId;
+  selectedInheritHandleClassId.value = null;
+  ctx.open = false;
+  addCtx.open = false;
+  edgeCtx.open = true;
+  edgeCtx.x = e.clientX;
+  edgeCtx.y = e.clientY;
+  edgeCtx.edgeId = edgeId;
+}
+
+function deleteEdge(edgeId: string): void {
+  state.links = state.links.filter((l) => l.id !== edgeId);
+  if (selectedEdgeId.value === edgeId) selectedEdgeId.value = null;
+  edgeCtx.open = false;
   pushPayload();
 }
 
 function onSvgClassPointerDown(e: PointerEvent, classId: string): void {
   if (e.button !== 0 || inheritDrag.value) return;
   e.stopPropagation();
+  selectedEdgeId.value = null;
   const wasSelected = selectedIds.value.includes(classId);
   const additive = e.ctrlKey || e.metaKey || e.shiftKey;
   if (additive) {
@@ -1012,6 +1201,7 @@ function onSvgClassPointerUp(e: PointerEvent, classId: string): void {
 function onClassContextMenu(e: MouseEvent, classId: string): void {
   e.preventDefault();
   e.stopPropagation();
+  edgeCtx.open = false;
   addCtx.open = false;
   selectedIds.value = [classId];
   ctx.open = true;
@@ -1023,6 +1213,7 @@ function onClassContextMenu(e: MouseEvent, classId: string): void {
 function onBackgroundContextMenu(e: MouseEvent): void {
   e.preventDefault();
   e.stopPropagation();
+  edgeCtx.open = false;
   ctx.open = false;
   addCtx.open = true;
   customClassName.value = '';
@@ -1069,10 +1260,12 @@ const edgePaths = computed((): EdgePathItem[] => {
       y2 = p2.y + s2.h;
       dpath = `M ${x1} ${y1} L ${x2} ${y2}`;
     } else {
-      x1 = p1.x + s1.w;
-      y1 = p1.y + s1.h / 2;
-      x2 = p2.x;
-      y2 = p2.y + s2.h / 2;
+      // Association anchors: from right triangle tip -> to left triangle tip.
+      const src = associationSourceTip(fc, p1, p2);
+      x1 = src.x;
+      y1 = src.y;
+      x2 = p2.x - 16;
+      y2 = p2.y + 18;
       dpath = `M ${x1} ${y1} L ${x2} ${y2}`;
     }
     const dash = l.kind === 'dependency' ? '6 4' : undefined;
@@ -1298,53 +1491,6 @@ function deleteClass(classId: string): void {
             @pointerdown="onSvgBackgroundPointerDown"
             @contextmenu="onBackgroundContextMenu"
           />
-          <rect
-            v-if="marqueeNorm"
-            class="cde-marquee-rect"
-            :x="marqueeNorm.x"
-            :y="marqueeNorm.y"
-            :width="marqueeNorm.w"
-            :height="marqueeNorm.h"
-            fill="rgba(37, 99, 235, 0.12)"
-            stroke="#2563eb"
-            stroke-width="1"
-            stroke-dasharray="4 3"
-            pointer-events="none"
-          />
-
-          <template v-for="ep in edgePaths" :key="ep.id">
-            <path
-              :d="ep.d"
-              fill="none"
-              :stroke="ep.kind === 'inherit' ? '#475569' : '#64748b'"
-              :stroke-width="ep.kind === 'inherit' ? 2 : 1.75"
-              :stroke-dasharray="ep.dash"
-              :marker-end="ep.markerEnd ?? 'none'"
-              pointer-events="none"
-            />
-            <text
-              v-if="ep.fromMult"
-              :x="ep.lx"
-              :y="ep.ly"
-              font-size="9"
-              fill="#64748b"
-              text-anchor="middle"
-              style="pointer-events: none; user-select: none"
-            >
-              {{ escapeXml(ep.fromMult) }}
-            </text>
-            <text
-              v-if="ep.toMult"
-              :x="ep.rx"
-              :y="ep.ry"
-              font-size="9"
-              fill="#64748b"
-              text-anchor="middle"
-              style="pointer-events: none; user-select: none"
-            >
-              {{ escapeXml(ep.toMult) }}
-            </text>
-          </template>
 
           <g
             v-for="(c, idx) in state.classes"
@@ -1357,12 +1503,12 @@ function deleteClass(classId: string): void {
             @contextmenu="onClassContextMenu($event, c.id)"
           >
             <polygon
-              points="124,-18 116,-4 132,-4"
-              :fill="isClassSelected(c.id) ? '#2563eb' : '#94a3b8'"
+              points="124,-14 116,0 132,0"
+              :fill="selectedInheritHandleClassId === c.id || isClassSelected(c.id) ? '#2563eb' : '#94a3b8'"
               stroke="#334155"
-              stroke-width="1"
+              :stroke-width="selectedInheritHandleClassId === c.id ? 2 : 1"
               class="cde-inherit-handle"
-              @pointerdown.stop="startInheritDrag($event, c.id)"
+              @pointerdown.stop="startInheritDrag($event, c.id, 'top')"
             >
               <title>{{ cd.cdsInheritHandleHint }}</title>
             </polygon>
@@ -1415,9 +1561,15 @@ function deleteClass(classId: string): void {
               <title>{{ classDisplayLabel(c) }}</title>
               {{ escapeXml(classDisplayLabel(c)) }}
             </text>
+            <polygon
+              points="-16,18 0,10 0,26"
+              :fill="isDarkTheme() ? '#94a3b8' : '#475569'"
+              style="cursor: crosshair"
+              @pointerdown.stop="startAssociationDrag($event, c.id, 0, 0, 'left')"
+            />
             <template v-for="(sec, si) in previewSections(c)" :key="'pv-sec-' + si">
               <text
-                x="10"
+                :x="PREVIEW_LABEL_X"
                 :y="previewSectionLabelY(c, si)"
                 font-size="9"
                 font-family="ui-monospace, Consolas, monospace"
@@ -1429,17 +1581,24 @@ function deleteClass(classId: string): void {
               <text
                 v-for="(line, li) in sec.lines"
                 :key="'pv-ln-' + si + '-' + li"
-                x="10"
+                :x="PREVIEW_CONTENT_X"
                 :y="previewSectionLineY(c, si, li)"
                 font-size="9"
                 font-family="ui-monospace, Consolas, monospace"
-                xml:space="preserve"
                 :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
                 style="pointer-events: none; user-select: none"
               >
                 {{ escapeXml(previewIndentedLine(line)) }}
               </text>
             </template>
+            <polygon
+              v-for="h in rightHandleRows(c)"
+              :key="'memb-handle-' + h.key"
+              :points="`264,${previewSectionLineY(c, h.sectionIndex, h.lineIndex) - 4} 248,${previewSectionLineY(c, h.sectionIndex, h.lineIndex) - 12} 248,${previewSectionLineY(c, h.sectionIndex, h.lineIndex) + 4}`"
+              :fill="isDarkTheme() ? '#93c5fd' : '#2563eb'"
+              style="cursor: crosshair"
+              @pointerdown.stop="startAssociationDrag($event, c.id, h.sectionIndex, h.lineIndex, 'right')"
+            />
             <template v-if="false">
               <line
                 :x1="6"
@@ -1620,6 +1779,42 @@ function deleteClass(classId: string): void {
             </template>
           </g>
 
+          <template v-for="ep in edgePaths" :key="ep.id">
+            <path
+              :d="ep.d"
+              fill="none"
+              :stroke="selectedEdgeId === ep.id ? '#2563eb' : ep.kind === 'inherit' ? '#475569' : '#64748b'"
+              :stroke-width="selectedEdgeId === ep.id ? 3 : ep.kind === 'inherit' ? 2 : 1.75"
+              :stroke-dasharray="ep.dash"
+              :marker-end="ep.markerEnd ?? 'none'"
+              style="pointer-events: visibleStroke; cursor: pointer"
+              @pointerdown="onEdgePointerDown($event, ep.id)"
+              @contextmenu="onEdgeContextMenu($event, ep.id)"
+            />
+            <text
+              v-if="ep.fromMult"
+              :x="ep.lx"
+              :y="ep.ly"
+              font-size="9"
+              fill="#64748b"
+              text-anchor="middle"
+              style="pointer-events: none; user-select: none"
+            >
+              {{ escapeXml(ep.fromMult) }}
+            </text>
+            <text
+              v-if="ep.toMult"
+              :x="ep.rx"
+              :y="ep.ry"
+              font-size="9"
+              fill="#64748b"
+              text-anchor="middle"
+              style="pointer-events: none; user-select: none"
+            >
+              {{ escapeXml(ep.toMult) }}
+            </text>
+          </template>
+
           <path
             v-if="tempInheritLine"
             :d="`M ${tempInheritLine.x1} ${tempInheritLine.y1} L ${tempInheritLine.x2} ${tempInheritLine.y2}`"
@@ -1627,6 +1822,28 @@ function deleteClass(classId: string): void {
             stroke="#2563eb"
             stroke-width="2"
             stroke-dasharray="6 4"
+            pointer-events="none"
+          />
+          <path
+            v-if="tempAssociationLine"
+            :d="`M ${tempAssociationLine.x1} ${tempAssociationLine.y1} L ${tempAssociationLine.x2} ${tempAssociationLine.y2}`"
+            fill="none"
+            stroke="#2563eb"
+            stroke-width="2"
+            stroke-dasharray="6 4"
+            pointer-events="none"
+          />
+          <rect
+            v-if="marqueeNorm"
+            class="cde-marquee-rect"
+            :x="marqueeNorm.x"
+            :y="marqueeNorm.y"
+            :width="marqueeNorm.w"
+            :height="marqueeNorm.h"
+            fill="rgba(37, 99, 235, 0.12)"
+            stroke="#2563eb"
+            stroke-width="1"
+            stroke-dasharray="4 3"
             pointer-events="none"
           />
         </svg>
@@ -1756,6 +1973,17 @@ function deleteClass(classId: string): void {
       >
         <button type="button" @click="openClassifierFromDiagram(ctx.classId)">{{ cd.cdeOpenCodespaceClass }}</button>
         <button type="button" class="cde-ctx-danger" @click="deleteClass(ctx.classId)">{{ cd.cdeDeleteClass }}</button>
+      </div>
+      <div
+        v-if="edgeCtx.open"
+        class="cde-ctx cde-edgectx"
+        :style="{ left: edgeCtx.x + 'px', top: edgeCtx.y + 'px' }"
+        role="menu"
+        @click.stop
+      >
+        <button type="button" class="cde-ctx-danger" @click="deleteEdge(edgeCtx.edgeId)">
+          {{ locale === 'en' ? 'Delete edge' : '删除连线' }}
+        </button>
       </div>
       <div
         v-if="addCtx.open"

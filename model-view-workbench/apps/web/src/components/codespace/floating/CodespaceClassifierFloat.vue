@@ -492,18 +492,25 @@ function removeClass() {
               />
             </td>
             <td>
-              <input
-                :value="prop.backingVisibility ?? ''"
+              <select
+                :value="prop.backingVisibility ?? 'private'"
                 :title="csMsg.flClsMemberVisTitle"
-                @input="patchProperty(pi, { backingVisibility: ($event.target as HTMLInputElement).value })"
-              />
+                @change="patchProperty(pi, { backingVisibility: ($event.target as HTMLSelectElement).value })"
+              >
+                <option v-for="v in MEMBER_VIS_OPTIONS" :key="'pv-' + v" :value="v">{{ v }}</option>
+              </select>
             </td>
             <td>
-              <input
-                :value="prop.type ?? ''"
+              <select
+                :value="prop.type ?? 'int'"
                 :title="csMsg.flClsMemberTypeSigTitle"
-                @input="patchProperty(pi, { type: ($event.target as HTMLInputElement).value })"
-              />
+                @change="patchProperty(pi, { type: ($event.target as HTMLSelectElement).value })"
+              >
+                <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'pt-' + t" :value="t">{{ t }}</option>
+                <option v-if="prop.type && !memberTypeKnown(prop.type)" :value="prop.type">
+                  {{ prop.type }}
+                </option>
+              </select>
             </td>
             <td class="cs-td-center">
               <input
