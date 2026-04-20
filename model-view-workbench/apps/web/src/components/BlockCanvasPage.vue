@@ -15,6 +15,7 @@ import {
   normalizeRelPath,
   parseMarkdownBlocks,
   replaceBlockInnerById,
+  slug,
   type MvMapPayload,
   type MvModelCodespacePayload,
   type MvModelColumnDef,
@@ -366,16 +367,20 @@ function syncAssocTypeFromDiagramToCodespace(): void {
     };
     walk(mod.namespaces);
   }
-  const resolveType = (classId: string): string | undefined => {
-    const first = targets[classId]?.[0];
-    if (!first) return undefined;
-    return nameById.get(first) ?? first;
+  /** 类图连线端点用的是 `slug(类名)`，codespace 里常用 `cls-*` id；两边都试才能推类型。 */
+  const resolveType = (classId: string, className: string): string | undefined => {
+    const keys = [classId, slug(className)].filter((k) => k.trim().length > 0);
+    for (const k of keys) {
+      const first = targets[k]?.[0];
+      if (first) return nameById.get(first) ?? first;
+    }
+    return undefined;
   };
   for (const mod of side.modules ?? []) {
     const walk = (nodes: typeof mod.namespaces) => {
       for (const n of nodes ?? []) {
         for (const c of n.classes ?? []) {
-          const t = resolveType(c.id);
+          const t = resolveType(c.id, (c.name ?? c.id).trim());
           for (const m of c.member ?? []) {
             m.typeFromAssociation = !!t || undefined;
             if (t) m.type = t;

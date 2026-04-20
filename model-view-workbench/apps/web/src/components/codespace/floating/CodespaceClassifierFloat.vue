@@ -11,6 +11,7 @@ import type {
   MvCodespaceProperty,
   MvModelCodespacePayload,
 } from '@mvwb/core';
+import { slug } from '@mvwb/core';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import {
   collectClassifierIds,
@@ -101,7 +102,13 @@ const associatedTypeCandidates = computed((): string[] => {
     if (a.fromClassifierId === cls.id && a.toClassifierId !== cls.id) push(a.toClassifierId);
     else if (a.toClassifierId === cls.id && a.fromClassifierId !== cls.id) push(a.fromClassifierId);
   }
-  for (const tid of props.diagramAssocTargetsByClassId?.[cls.id] ?? []) push(tid);
+  const diag = props.diagramAssocTargetsByClassId;
+  if (diag) {
+    const keys = [cls.id, slug((cls.name ?? cls.id).trim())].filter((k) => k.length > 0);
+    for (const k of keys) {
+      for (const tid of diag[k] ?? []) push(tid);
+    }
+  }
   return out;
 });
 
