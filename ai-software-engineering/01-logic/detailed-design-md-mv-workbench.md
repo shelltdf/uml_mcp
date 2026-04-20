@@ -22,6 +22,6 @@
 
 ## `mv-model-codespace` 与 UML 同步契约（`uml.sync.md`）分工
 
-- **`mv-model-codespace`**：落在 **单个 Markdown 围栏** 内的 **JSON 示意模型**（`workspaceRoot`、`modules[]`，及可选的递归 `namespaces`、Classifier、`associations` 等），由 `@mvwb/core` 的 `parseMarkdownBlocks` / `validateMvModelCodespace` 校验；适合在 Model-View Workbench 中与 `mv-view` 同文件编排、单块 diff。
+- **`mv-model-codespace`**：落在 **单个 Markdown 围栏** 内的 **JSON 示意模型**（`workspaceRoot`、`modules[]`，及可选的递归 `namespaces`、Classifier、`associations` 等），由 `@mvwb/core` 的 `parseMarkdownBlocks` / `validateMvModelCodespace` 校验；适合在 Model-View Workbench 中与 `mv-view` 同文件编排、单块 diff。**Workbench 画布交互**（`CodespaceCanvasEditor`）：块级元数据为表单；结构在 **SVG 画布**（`CodespaceModuleSvgCanvas` + `useCanvasViewport`）中单击选中、双击打开 **`floating/*` 定义窗**（`Teleport`）；`associations[]` 仍走「高级：原始 JSON」。
 - **`uml.sync.md` + `namespace_root` + `*.class.md` / `*.code.md` + `*.uml.md`**：仓库约定的 **文件树 + 多文件契约** 同步流（见 `.cursor/rules/uml-code-sync.mdc` 与 `02-physical/uml-vue-sdi/spec.md`），面向「目录即命名空间、一文件一类/一文件一图」的编辑习惯。
 - 二者 **不互相替代**：codespace 块可摘要多模块结构；UML 同步流可承载细粒度类契约与多图拆分。若需对齐，由作者或后续 **映射工具**（如 `mv-map`、导出脚本）人工或半自动维护，本阶段工作台 **不对** `mv-model-codespace` 与 `*.class.md` 做自动双向同步。

@@ -24,6 +24,7 @@ import {
   type MvViewPayload,
   type ParsedFenceBlock,
 } from '@mvwb/core';
+import type { CodespaceDockContextPayload } from '../utils/codespace-dock-context';
 
 const MODEL_COL_TYPES = ['string', 'int', 'float', 'boolean', 'json'] as const;
 
@@ -71,6 +72,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'saved', payload: { markdown: string; relPath: string }): void;
   (e: 'close'): void;
+  /** 代码空间画布选中节点摘要与属性行，供主窗口属性 Dock 展示 */
+  (e: 'codespaceDockContext', ctx: CodespaceDockContextPayload): void;
 }>();
 
 const block = computed<ParsedFenceBlock | null>(() => {
@@ -1249,12 +1252,12 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
         </template>
 
         <template v-else-if="block.kind === 'mv-model-codespace' && codespaceDraft">
-          <h3 class="model-section-title">代码空间模型画布 · 树形编辑</h3>
-          <p class="canvas-hint canvas-hint--compact">
-            <strong>软件结构示意</strong>：左侧树选择 <strong>块属性 / 模块 / 命名空间 / 类 / 变量 / 函数 / 宏</strong>，右侧编辑字段；<strong>类间关联</strong>（<code>associations[]</code>）不在命名空间树中操作，请用底部「高级：原始 JSON」维护。保存时由解析器校验（含递归
-            <code>namespaces</code>、Classifier、全局 <code>id</code> 唯一等）。非真实文件系统。展开底部「高级：原始 JSON」可整段粘贴后「应用到树」。
-          </p>
-          <CodespaceCanvasEditor :model-value="codespaceDraft" @update:model-value="setCodespaceDraft" />
+          <CodespaceCanvasEditor
+            :model-value="codespaceDraft"
+            :compact-layout="embedded"
+            @update:model-value="setCodespaceDraft"
+            @codespace-dock-context="(c) => emit('codespaceDockContext', c)"
+          />
         </template>
 
         <template v-else-if="block.kind === 'mv-model-interface'">
@@ -1449,8 +1452,38 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
   border: 1px solid #cbd5e1;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
 }
+.canvas-root--embedded .canvas-toolbar {
+  padding: 5px 8px;
+  gap: 8px;
+}
+.canvas-root--embedded .canvas-title {
+  font-size: 0.82rem;
+}
+.canvas-root--embedded .canvas-body {
+  padding: 4px 5px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .canvas-root--embedded .canvas-surface {
+  flex: 1 1 auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 5px 6px 6px;
+  border-radius: 4px;
+  box-shadow: none;
+  background-size: 14px 14px;
+}
+/** 代码空间等单根子组件：撑满 surface 高度，便于内部 SVG 区 flex 吃满 */
+.canvas-root--embedded .canvas-surface :deep(.cs-editor) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.canvas-root--embedded .tb {
+  padding: 4px 10px;
+  font-size: 0.8rem;
 }
 .canvas-hint {
   margin: 0 0 12px;

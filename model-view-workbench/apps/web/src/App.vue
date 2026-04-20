@@ -27,6 +27,7 @@ import { detectShell } from './platform';
 import MdMarkdownPreview from './components/MdMarkdownPreview.vue';
 import MdWysiwygEditor from './components/MdWysiwygEditor.vue';
 import BlockCanvasPage from './components/BlockCanvasPage.vue';
+import type { CodespaceDockContextPayload, CodespaceDockPropLine } from './utils/codespace-dock-context';
 import InsertCodeBlockModal from './components/InsertCodeBlockModal.vue';
 import { buildFenceMarkdownForInsert, type InsertCodeBlockKind } from './utils/code-block-insert';
 import {
@@ -60,6 +61,10 @@ interface CanvasTabSpec {
   blockId: string;
   fenceKind: MvFenceKind;
   subtypeLabel: string;
+  /** `mv-model-codespace` 画布：当前选中节点说明（由 CodespaceCanvasEditor 同步） */
+  codespaceDockSummary?: string;
+  /** 画布选中节点的属性键值（与 `codespaceDockSummary` 同次更新） */
+  codespaceDockLines?: CodespaceDockPropLine[];
 }
 const canvasTabs = ref<CanvasTabSpec[]>([]);
 /** `'markdown'` = 中间列仅 Markdown 编辑；否则为 `canvasTabs` 中某条 `id` */
@@ -1455,6 +1460,35 @@ const embeddedCanvasMarkdown = computed(() => {
   return files.value.get(s.relPath) ?? '';
 });
 
+/** 主窗口内嵌代码空间画布时，在属性 Dock 展示画布当前选中节点 */
+const showCodespaceDockCanvasSelection = computed(() => {
+  const tab = activeCanvasSession.value;
+  const b = selectedBlock.value;
+  if (activeEditorTab.value === 'markdown') return false;
+  if (!tab || b?.kind !== 'mv-model-codespace' || b.payload.id !== tab.blockId) return false;
+  return true;
+});
+
+const codespaceDockCanvasSelectionText = computed(() => {
+  const tab = activeCanvasSession.value;
+  if (!tab) return '';
+  return tab.codespaceDockSummary ?? '';
+});
+
+const codespaceDockCanvasLines = computed((): CodespaceDockPropLine[] => {
+  const tab = activeCanvasSession.value;
+  if (!tab) return [];
+  return tab.codespaceDockLines ?? [];
+});
+
+function onCodespaceDockContext(ctx: CodespaceDockContextPayload) {
+  const tab = activeCanvasSession.value;
+  if (!tab) return;
+  canvasTabs.value = canvasTabs.value.map((t) =>
+    t.id === tab.id ? { ...t, codespaceDockSummary: ctx.summary, codespaceDockLines: ctx.lines } : t,
+  );
+}
+
 function workspaceFilesRecord(): Record<string, string> {
   return Object.fromEntries(files.value);
 }
@@ -1481,6 +1515,8 @@ function openVisualCanvas(block: ParsedFenceBlock) {
       blockId: block.payload.id,
       fenceKind: block.kind,
       subtypeLabel: fenceBlockSubtypeLabel(block),
+      codespaceDockSummary: '',
+      codespaceDockLines: [],
     },
   ];
   activeEditorTab.value = id;
@@ -2151,6 +2187,7 @@ onUnmounted(() => {
                   :key="activeCanvasSession.id"
                   @saved="onEmbeddedCanvasSaved"
                   @close="closeCanvasTab(activeCanvasSession.id)"
+                  @codespace-dock-context="onCodespaceDockContext"
                 />
               </div>
             </template>
@@ -2212,6 +2249,18 @@ onUnmounted(() => {
                     <dd>{{ row.value }}</dd>
                   </template>
                 </dl>
+                <template v-if="showCodespaceDockCanvasSelection">
+                  <h3 class="dock-subh">画布选中</h3>
+                  <p class="dock-muted dock-canvas-hint" title="代码空间画布当前单击选中 — 无全局快捷键">
+                    {{ codespaceDockCanvasSelectionText || '（在画布上单击节点）' }}
+                  </p>
+                  <dl v-if="codespaceDockCanvasLines.length" class="dock-dl dock-dl--props">
+                    <template v-for="(row, i) in codespaceDockCanvasLines" :key="'csdock-' + i">
+                      <dt>{{ row.label }}</dt>
+                      <dd>{{ row.value }}</dd>
+                    </template>
+                  </dl>
+                </template>
                 <details v-if="selectedBlock.kind === 'mv-view'" class="dock-json-details dock-ref-details">
                   <summary class="dock-json-summary" title="modelRefs 书写约定 — 无全局快捷键">modelRefs 地址说明</summary>
                   <p class="dock-muted dock-ref-doc">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>

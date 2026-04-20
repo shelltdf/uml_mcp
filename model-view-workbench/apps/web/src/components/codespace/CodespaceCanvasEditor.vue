@@ -1,46 +1,56 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type {
-  MvCodespaceClassifier,
-  MvCodespaceClassifierBase,
-  MvCodespaceFunction,
-  MvCodespaceMacro,
-  MvCodespaceMember,
-  MvCodespaceNamespaceNode,
-  MvCodespaceVariable,
-  MvModelCodespaceModule,
-  MvModelCodespacePayload,
-} from '@mvwb/core';
+import type { MvModelCodespacePayload } from '@mvwb/core';
 import {
-  collectClassifierIds,
   getNamespaceAtPath,
   insertNamespaceChild,
   newCodespaceUniqueId,
   removeNamespaceAtPath,
 } from '../../utils/codespace-canvas';
+import {
+  buildCodespaceDockContext,
+  type CodespaceDockContextPayload,
+  type CsDockSelection,
+} from '../../utils/codespace-dock-context';
+import type { CodespaceSvgPick } from '../../utils/codespace-svg-layout';
+import CodespaceModuleSvgCanvas from './CodespaceModuleSvgCanvas.vue';
+import CodespaceClassifierFloat from './floating/CodespaceClassifierFloat.vue';
+import CodespaceFunctionFloat from './floating/CodespaceFunctionFloat.vue';
+import CodespaceMacroFloat from './floating/CodespaceMacroFloat.vue';
+import CodespaceModuleFloat from './floating/CodespaceModuleFloat.vue';
+import CodespaceNamespaceFloat from './floating/CodespaceNamespaceFloat.vue';
+import CodespaceVariableFloat from './floating/CodespaceVariableFloat.vue';
 
-const props = defineProps<{
-  modelValue: MvModelCodespacePayload;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: MvModelCodespacePayload;
+    /** 主窗口嵌入标签时为 true：收紧间距与画布 chrome，少占边框留白 */
+    compactLayout?: boolean;
+  }>(),
+  { compactLayout: false },
+);
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: MvModelCodespacePayload): void;
+  /** 同步到主窗口右侧属性 Dock：摘要 + 属性行 */
+  (e: 'codespaceDockContext', ctx: CodespaceDockContextPayload): void;
 }>();
 
-type CsSelection =
-  | { t: 'meta' }
-  | { t: 'module'; mi: number }
-  | { t: 'ns'; mi: number; path: number[] }
-  | { t: 'class'; mi: number; path: number[]; ci: number }
-  | { t: 'var'; mi: number; path: number[]; vi: number }
-  | { t: 'fn'; mi: number; path: number[]; fi: number }
-  | { t: 'macro'; mi: number; path: number[]; maci: number };
-
-const selection = ref<CsSelection>({ t: 'meta' });
+const selection = ref<CsDockSelection>({ t: 'meta' });
 const advancedJsonOpen = ref(false);
 const advancedJsonText = ref('');
 const moduleDeleteMi = ref<number | null>(null);
 const nsDeleteCtx = ref<{ mi: number; path: number[] } | null>(null);
+
+const floatOpen = ref(false);
+const floatPick = ref<CodespaceSvgPick | null>(null);
+
+const moduleFloatCtx = computed(() => (floatPick.value?.t === 'module' ? floatPick.value : null));
+const nsFloatCtx = computed(() => (floatPick.value?.t === 'ns' ? floatPick.value : null));
+const classFloatCtx = computed(() => (floatPick.value?.t === 'class' ? floatPick.value : null));
+const varFloatCtx = computed(() => (floatPick.value?.t === 'var' ? floatPick.value : null));
+const fnFloatCtx = computed(() => (floatPick.value?.t === 'fn' ? floatPick.value : null));
+const macroFloatCtx = computed(() => (floatPick.value?.t === 'macro' ? floatPick.value : null));
 
 function patch(updater: (d: MvModelCodespacePayload) => void) {
   const d = JSON.parse(JSON.stringify(props.modelValue)) as MvModelCodespacePayload;
@@ -79,64 +89,33 @@ function applyAdvancedJson() {
   }
 }
 
-interface FlatRow {
-  depth: number;
-  label: string;
-  sel: CsSelection;
-}
-
-const sidebarRows = computed((): FlatRow[] => {
-  const d = props.modelValue;
-  const rows: FlatRow[] = [];
-  rows.push({ depth: 0, label: '块属性 · workspace / title', sel: { t: 'meta' } });
-  (d.modules ?? []).forEach((m, mi) => {
-    rows.push({ depth: 0, label: `模块 · ${m.name} (${m.id})`, sel: { t: 'module', mi } });
-    const walkNs = (nodes: MvCodespaceNamespaceNode[] | undefined, path: number[], baseDepth: number) => {
-      if (!nodes?.length) return;
-      nodes.forEach((ns, i) => {
-        const pth = [...path, i];
-        rows.push({ depth: baseDepth, label: `命名空间 · ${ns.name}`, sel: { t: 'ns', mi, path: pth } });
-        (ns.classes ?? []).forEach((_c: MvCodespaceClassifier, ci: number) => {
-          rows.push({
-            depth: baseDepth + 1,
-            label: `类 · ${ns.classes![ci].name}`,
-            sel: { t: 'class', mi, path: pth, ci },
-          });
-        });
-        (ns.variables ?? []).forEach((_v: MvCodespaceVariable, vi: number) => {
-          rows.push({
-            depth: baseDepth + 1,
-            label: `变量 · ${ns.variables![vi].name}`,
-            sel: { t: 'var', mi, path: pth, vi },
-          });
-        });
-        (ns.functions ?? []).forEach((_f: MvCodespaceFunction, fi: number) => {
-          rows.push({
-            depth: baseDepth + 1,
-            label: `函数 · ${ns.functions![fi].name}`,
-            sel: { t: 'fn', mi, path: pth, fi },
-          });
-        });
-        (ns.macros ?? []).forEach((_m: MvCodespaceMacro, maci: number) => {
-          rows.push({
-            depth: baseDepth + 1,
-            label: `宏 · ${ns.macros![maci].name}`,
-            sel: { t: 'macro', mi, path: pth, maci },
-          });
-        });
-        walkNs(ns.namespaces, pth, baseDepth + 1);
-      });
-    };
-    walkNs(m.namespaces, [], 1);
-  });
-  return rows;
+const canvasSelection = computed((): CodespaceSvgPick | null => {
+  const s = selection.value;
+  if (s.t === 'meta') return null;
+  return s as CodespaceSvgPick;
 });
 
-const classifierOptions = computed(() => collectClassifierIds(props.modelValue));
-
-function selectRow(sel: CsSelection) {
-  selection.value = sel;
+function onCanvasSelect(p: CodespaceSvgPick) {
+  selection.value = p as Exclude<CsDockSelection, { t: 'meta' }>;
 }
+
+function openDefinition(p: CodespaceSvgPick) {
+  floatPick.value = p;
+  floatOpen.value = true;
+}
+
+function closeFloat() {
+  floatOpen.value = false;
+  floatPick.value = null;
+}
+
+watch(
+  [selection, () => props.modelValue],
+  () => {
+    emit('codespaceDockContext', buildCodespaceDockContext(selection.value, props.modelValue));
+  },
+  { deep: true, immediate: true },
+);
 
 function addModule() {
   patch((d) => {
@@ -155,6 +134,11 @@ function tryRequestDeleteModule(mi: number) {
   moduleDeleteMi.value = mi;
 }
 
+function onModuleFloatRequestDelete(mi: number) {
+  closeFloat();
+  tryRequestDeleteModule(mi);
+}
+
 function confirmDeleteModule() {
   const mi = moduleDeleteMi.value;
   moduleDeleteMi.value = null;
@@ -171,6 +155,7 @@ function cancelDeleteModule() {
 }
 
 function requestDeleteNs(mi: number, path: number[]) {
+  closeFloat();
   nsDeleteCtx.value = { mi, path };
 }
 
@@ -221,13 +206,6 @@ function addClass(mi: number, path: number[]) {
   });
 }
 
-function removeClass(mi: number, path: number[], ci: number) {
-  patch((d) => {
-    const n = getNamespaceAtPath(d, mi, path);
-    n?.classes?.splice(ci, 1);
-  });
-}
-
 function addVar(mi: number, path: number[]) {
   patch((d) => {
     const n = getNamespaceAtPath(d, mi, path);
@@ -255,50 +233,6 @@ function addMacro(mi: number, path: number[]) {
   });
 }
 
-function isSelRow(sel: CsSelection, row: FlatRow): boolean {
-  return JSON.stringify(sel) === JSON.stringify(row.sel);
-}
-
-const CLASSIFIER_KINDS = ['class', 'interface', 'struct'] as const;
-const MEMBER_KINDS = ['field', 'method', 'enumLiteral'] as const;
-const BASE_REL = ['generalization', 'realization'] as const;
-
-const selectedModule = computed((): MvModelCodespaceModule | null => {
-  const s = selection.value;
-  if (s.t !== 'module') return null;
-  return props.modelValue.modules[s.mi] ?? null;
-});
-
-const selectedNs = computed((): MvCodespaceNamespaceNode | null => {
-  const s = selection.value;
-  if (s.t !== 'ns') return null;
-  return getNamespaceAtPath(props.modelValue, s.mi, s.path);
-});
-
-const selectedClass = computed((): MvCodespaceClassifier | null => {
-  const s = selection.value;
-  if (s.t !== 'class') return null;
-  return getNamespaceAtPath(props.modelValue, s.mi, s.path)?.classes?.[s.ci] ?? null;
-});
-
-const selectedVar = computed((): MvCodespaceVariable | null => {
-  const s = selection.value;
-  if (s.t !== 'var') return null;
-  return getNamespaceAtPath(props.modelValue, s.mi, s.path)?.variables?.[s.vi] ?? null;
-});
-
-const selectedFn = computed((): MvCodespaceFunction | null => {
-  const s = selection.value;
-  if (s.t !== 'fn') return null;
-  return getNamespaceAtPath(props.modelValue, s.mi, s.path)?.functions?.[s.fi] ?? null;
-});
-
-const selectedMacro = computed((): MvCodespaceMacro | null => {
-  const s = selection.value;
-  if (s.t !== 'macro') return null;
-  return getNamespaceAtPath(props.modelValue, s.mi, s.path)?.macros?.[s.maci] ?? null;
-});
-
 function patchMetaTitle(title: string) {
   patch((d) => {
     d.title = title.trim() ? title : undefined;
@@ -310,668 +244,118 @@ function patchMetaRoot(root: string) {
     d.workspaceRoot = root.trim() ? root : undefined;
   });
 }
-
-function patchModuleField(mi: number, key: keyof MvModelCodespaceModule, value: string) {
-  patch((d) => {
-    const m = d.modules[mi];
-    if (!m) return;
-    if (key === 'id' || key === 'name') {
-      (m as unknown as Record<string, unknown>)[key] = value;
-      return;
-    }
-    const v = value.trim();
-    (m as unknown as Record<string, unknown>)[key] = v ? value : undefined;
-  });
-}
-
-function patchNsField(mi: number, path: number[], key: 'name' | 'qualifiedName' | 'notes', value: string) {
-  patch((d) => {
-    const n = getNamespaceAtPath(d, mi, path);
-    if (!n) return;
-    if (key === 'name') n.name = value;
-    else {
-      const v = value.trim();
-      n[key] = v ? value : undefined;
-    }
-  });
-}
-
-function patchClassField(
-  mi: number,
-  path: number[],
-  ci: number,
-  key: keyof MvCodespaceClassifier,
-  value: unknown,
-) {
-  patch((d) => {
-    const c = getNamespaceAtPath(d, mi, path)?.classes?.[ci];
-    if (!c) return;
-    if (key === 'kind') {
-      const s = typeof value === 'string' ? value : '';
-      if (!s || s === 'class') delete c.kind;
-      else c.kind = s as MvCodespaceClassifier['kind'];
-      return;
-    }
-    if (key === 'abstract') {
-      c.abstract = value === true ? true : undefined;
-      return;
-    }
-    if (key === 'id' || key === 'name') {
-      (c as unknown as Record<string, unknown>)[key] = value;
-      return;
-    }
-    if (key === 'stereotype' || key === 'notes') {
-      const str = String(value ?? '').trim();
-      (c as unknown as Record<string, unknown>)[key] = str ? String(value) : undefined;
-    }
-  });
-}
-
-function classTemplateParamsStr(mi: number, path: number[], ci: number): string {
-  const c = getNamespaceAtPath(props.modelValue, mi, path)?.classes?.[ci];
-  return (c?.templateParams ?? []).join(', ');
-}
-
-function setClassTemplateParams(mi: number, path: number[], ci: number, raw: string) {
-  patch((d) => {
-    const c = getNamespaceAtPath(d, mi, path)?.classes?.[ci];
-    if (!c) return;
-    const parts = raw
-      .split(/[,，\n\r]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    c.templateParams = parts.length ? parts : undefined;
-  });
-}
-
-function addBase(mi: number, path: number[], ci: number) {
-  patch((d) => {
-    const c = getNamespaceAtPath(d, mi, path)?.classes?.[ci];
-    if (!c) return;
-    if (!c.bases) c.bases = [];
-    const ids = collectClassifierIds(d);
-    const tid = ids.find((id) => id !== c.id) ?? ids[0] ?? c.id;
-    c.bases.push({ targetId: tid, relation: 'generalization' });
-  });
-}
-
-function patchBase(
-  mi: number,
-  path: number[],
-  ci: number,
-  bi: number,
-  part: Partial<MvCodespaceClassifierBase>,
-) {
-  patch((d) => {
-    const b = getNamespaceAtPath(d, mi, path)?.classes?.[ci]?.bases?.[bi];
-    if (!b) return;
-    Object.assign(b, part);
-  });
-}
-
-function removeBase(mi: number, path: number[], ci: number, bi: number) {
-  patch((d) => {
-    getNamespaceAtPath(d, mi, path)?.classes?.[ci]?.bases?.splice(bi, 1);
-  });
-}
-
-function addMember(mi: number, path: number[], ci: number) {
-  patch((d) => {
-    const c = getNamespaceAtPath(d, mi, path)?.classes?.[ci];
-    if (!c) return;
-    if (!c.members) c.members = [];
-    c.members.push({ name: 'member', kind: 'field' });
-  });
-}
-
-function patchMember(
-  mi: number,
-  path: number[],
-  ci: number,
-  miIdx: number,
-  part: Partial<MvCodespaceMember>,
-) {
-  patch((d) => {
-    const mem = getNamespaceAtPath(d, mi, path)?.classes?.[ci]?.members?.[miIdx];
-    if (!mem) return;
-    Object.assign(mem, part);
-  });
-}
-
-function removeMember(mi: number, path: number[], ci: number, miIdx: number) {
-  patch((d) => {
-    getNamespaceAtPath(d, mi, path)?.classes?.[ci]?.members?.splice(miIdx, 1);
-  });
-}
-
-function patchVar(mi: number, path: number[], vi: number, part: Partial<MvCodespaceVariable>) {
-  patch((d) => {
-    const v = getNamespaceAtPath(d, mi, path)?.variables?.[vi];
-    if (!v) return;
-    Object.assign(v, part);
-  });
-}
-
-function removeVar(mi: number, path: number[], vi: number) {
-  patch((d) => {
-    getNamespaceAtPath(d, mi, path)?.variables?.splice(vi, 1);
-  });
-}
-
-function patchFn(mi: number, path: number[], fi: number, part: Partial<MvCodespaceFunction>) {
-  patch((d) => {
-    const f = getNamespaceAtPath(d, mi, path)?.functions?.[fi];
-    if (!f) return;
-    Object.assign(f, part);
-  });
-}
-
-function removeFn(mi: number, path: number[], fi: number) {
-  patch((d) => {
-    getNamespaceAtPath(d, mi, path)?.functions?.splice(fi, 1);
-  });
-}
-
-function patchMacro(mi: number, path: number[], maci: number, part: Partial<MvCodespaceMacro>) {
-  patch((d) => {
-    const m = getNamespaceAtPath(d, mi, path)?.macros?.[maci];
-    if (!m) return;
-    Object.assign(m, part);
-  });
-}
-
-function removeMacro(mi: number, path: number[], maci: number) {
-  patch((d) => {
-    getNamespaceAtPath(d, mi, path)?.macros?.splice(maci, 1);
-  });
-}
-
 </script>
 
 <template>
-  <div class="cs-editor">
-    <div class="cs-split">
-      <nav class="cs-tree" aria-label="代码空间结构树">
-        <div class="cs-tree-head">结构</div>
-        <ul class="cs-tree-ul">
-          <li
-            v-for="(row, idx) in sidebarRows"
-            :key="idx"
-            class="cs-tree-li"
-            :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
-          >
-            <button
-              type="button"
-              class="cs-tree-btn"
-              :class="{ 'cs-tree-btn--active': isSelRow(selection, row) }"
-              title="选中 — 无全局快捷键"
-              @click="selectRow(row.sel)"
-            >
-              {{ row.label }}
-            </button>
-          </li>
-        </ul>
-        <button type="button" class="link-btn cs-add-mod" title="添加模块 — 无全局快捷键" @click="addModule">＋ 添加模块</button>
-      </nav>
-
-      <section class="cs-detail">
-        <template v-if="selection.t === 'meta'">
-          <h4 class="cs-detail-title">块与工作区</h4>
-          <p class="canvas-hint canvas-hint--compact">围栏内 <code>id</code> 与文档块绑定，此处只读。</p>
-          <label class="field">
-            <span>id（只读）</span>
-            <input type="text" class="wide" :value="modelValue.id" readonly />
-          </label>
-          <label class="field">
-            <span>title</span>
-            <input
-              type="text"
-              class="wide"
-              :value="modelValue.title ?? ''"
-              title="标题 — 无全局快捷键"
-              @input="patchMetaTitle(($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>workspaceRoot</span>
-            <input
-              type="text"
-              class="wide"
-              :value="modelValue.workspaceRoot ?? ''"
-              title="工作区根路径片段 — 无全局快捷键"
-              @input="patchMetaRoot(($event.target as HTMLInputElement).value)"
-            />
-          </label>
-        </template>
-
-        <template v-else-if="selection.t === 'module' && selectedModule">
-          <h4 class="cs-detail-title">模块</h4>
-          <label class="field">
-            <span>id</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedModule.id"
-              title="模块 id — 无全局快捷键"
-              @input="patchModuleField(selection.mi, 'id', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>name</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedModule.name"
-              title="模块名称 — 无全局快捷键"
-              @input="patchModuleField(selection.mi, 'name', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>path</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedModule.path ?? ''"
-              title="相对路径 — 无全局快捷键"
-              @input="patchModuleField(selection.mi, 'path', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>role</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedModule.role ?? ''"
-              title="角色 — 无全局快捷键"
-              @input="patchModuleField(selection.mi, 'role', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>notes</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedModule.notes ?? ''"
-              title="备注 — 无全局快捷键"
-              @input="patchModuleField(selection.mi, 'notes', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <div class="cs-actions">
-            <button
-              type="button"
-              class="add-row"
-              title="在本模块下添加顶层命名空间 — 无全局快捷键"
-              @click="addTopLevelNs(selection.mi)"
-            >
-              ＋ 顶层命名空间
-            </button>
-            <button
-              type="button"
-              class="link-btn cs-danger"
-              title="删除模块 — 无全局快捷键"
-              @click="tryRequestDeleteModule(selection.mi)"
-            >
-              删除模块…
-            </button>
-          </div>
-        </template>
-
-        <template v-else-if="selection.t === 'ns' && selectedNs">
-          <h4 class="cs-detail-title">命名空间</h4>
-          <label class="field">
-            <span>name</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedNs.name"
-              title="命名空间名称 — 无全局快捷键"
-              @input="patchNsField(selection.mi, selection.path, 'name', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>qualifiedName</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedNs.qualifiedName ?? ''"
-              title="可选全名 — 无全局快捷键"
-              @input="patchNsField(selection.mi, selection.path, 'qualifiedName', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>notes</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedNs.notes ?? ''"
-              title="备注 — 无全局快捷键"
-              @input="patchNsField(selection.mi, selection.path, 'notes', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <div class="cs-actions">
-            <button type="button" class="add-row" title="子命名空间 — 无全局快捷键" @click="addChildNs(selection.mi, selection.path)">
-              ＋ 子命名空间
-            </button>
-            <button type="button" class="add-row" title="类 — 无全局快捷键" @click="addClass(selection.mi, selection.path)">＋ 类</button>
-            <button type="button" class="add-row" title="变量 — 无全局快捷键" @click="addVar(selection.mi, selection.path)">＋ 变量</button>
-            <button type="button" class="add-row" title="函数 — 无全局快捷键" @click="addFn(selection.mi, selection.path)">＋ 函数</button>
-            <button type="button" class="add-row" title="宏 — 无全局快捷键" @click="addMacro(selection.mi, selection.path)">＋ 宏</button>
-            <button
-              type="button"
-              class="link-btn cs-danger"
-              title="删除命名空间子树 — 无全局快捷键"
-              @click="requestDeleteNs(selection.mi, selection.path)"
-            >
-              删除命名空间…
-            </button>
-          </div>
-        </template>
-
-        <template v-else-if="selection.t === 'class' && selectedClass">
-          <h4 class="cs-detail-title">Classifier</h4>
-          <label class="field">
-            <span>id</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedClass.id"
-              title="类 id — 无全局快捷键"
-              @input="patchClassField(selection.mi, selection.path, selection.ci, 'id', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>name</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedClass.name"
-              title="类名 — 无全局快捷键"
-              @input="patchClassField(selection.mi, selection.path, selection.ci, 'name', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>kind</span>
-            <select
-              class="wide"
-              title="类型 — 无全局快捷键"
-              :value="selectedClass.kind ?? 'class'"
-              @change="
-                patchClassField(
-                  selection.mi,
-                  selection.path,
-                  selection.ci,
-                  'kind',
-                  ($event.target as HTMLSelectElement).value || undefined,
-                )
-              "
-            >
-              <option v-for="k in CLASSIFIER_KINDS" :key="k" :value="k">{{ k }}</option>
-            </select>
-          </label>
-          <label class="field cs-check">
-            <input
-              type="checkbox"
-              :checked="selectedClass.abstract === true"
-              title="abstract — 无全局快捷键"
-              @change="
-                patchClassField(
-                  selection.mi,
-                  selection.path,
-                  selection.ci,
-                  'abstract',
-                  ($event.target as HTMLInputElement).checked,
-                )
-              "
-            />
-            <span>abstract</span>
-          </label>
-          <label class="field">
-            <span>stereotype</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedClass.stereotype ?? ''"
-              title="版型 — 无全局快捷键"
-              @input="
-                patchClassField(
-                  selection.mi,
-                  selection.path,
-                  selection.ci,
-                  'stereotype',
-                  ($event.target as HTMLInputElement).value,
-                )
-              "
-            />
-          </label>
-          <label class="field">
-            <span>templateParams（逗号或换行分隔）</span>
-            <textarea
-              class="payload-ta"
-              rows="3"
-              spellcheck="false"
-              :value="classTemplateParamsStr(selection.mi, selection.path, selection.ci)"
-              title="模板形参 — 无全局快捷键"
-              @input="setClassTemplateParams(selection.mi, selection.path, selection.ci, ($event.target as HTMLTextAreaElement).value)"
-            />
-          </label>
-          <label class="field">
-            <span>notes</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedClass.notes ?? ''"
-              title="备注 — 无全局快捷键"
-              @input="patchClassField(selection.mi, selection.path, selection.ci, 'notes', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-
-          <h5 class="cs-subh">bases（继承 / 实现）</h5>
-          <div v-for="(b, bi) in selectedClass.bases ?? []" :key="bi" class="cs-rowline">
-            <select
-              title="targetId — 无全局快捷键"
-              :value="b.targetId"
-              @change="patchBase(selection.mi, selection.path, selection.ci, bi, { targetId: ($event.target as HTMLSelectElement).value })"
-            >
-              <option v-for="cid in classifierOptions" :key="cid" :value="cid">{{ cid }}</option>
-            </select>
-            <select
-              title="relation — 无全局快捷键"
-              :value="b.relation"
-              @change="
-                patchBase(selection.mi, selection.path, selection.ci, bi, {
-                  relation: ($event.target as HTMLSelectElement).value as MvCodespaceClassifierBase['relation'],
-                })
-              "
-            >
-              <option v-for="r in BASE_REL" :key="r" :value="r">{{ r }}</option>
-            </select>
-            <button type="button" class="link-btn" title="删除 — 无全局快捷键" @click="removeBase(selection.mi, selection.path, selection.ci, bi)">
-              删
-            </button>
-          </div>
-          <button type="button" class="add-row" title="添加 base — 无全局快捷键" @click="addBase(selection.mi, selection.path, selection.ci)">
-            ＋ base
-          </button>
-
-          <h5 class="cs-subh">members</h5>
-          <table v-if="(selectedClass.members?.length ?? 0) > 0" class="cs-table">
-            <thead>
-              <tr>
-                <th>name</th>
-                <th>kind</th>
-                <th>visibility</th>
-                <th>virtual</th>
-                <th>type / signature</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(mem, miIdx) in selectedClass.members" :key="miIdx">
-                <td>
-                  <input
-                    :value="mem.name"
-                    title="成员名 — 无全局快捷键"
-                    @input="patchMember(selection.mi, selection.path, selection.ci, miIdx, { name: ($event.target as HTMLInputElement).value })"
-                  />
-                </td>
-                <td>
-                  <select
-                    :value="mem.kind"
-                    title="成员种类 — 无全局快捷键"
-                    @change="
-                      patchMember(selection.mi, selection.path, selection.ci, miIdx, {
-                        kind: ($event.target as HTMLSelectElement).value as MvCodespaceMember['kind'],
-                      })
-                    "
-                  >
-                    <option v-for="mk in MEMBER_KINDS" :key="mk" :value="mk">{{ mk }}</option>
-                  </select>
-                </td>
-                <td>
-                  <input
-                    :value="mem.visibility ?? ''"
-                    title="可见性 — 无全局快捷键"
-                    @input="
-                      patchMember(selection.mi, selection.path, selection.ci, miIdx, {
-                        visibility: ($event.target as HTMLInputElement).value,
-                      })
-                    "
-                  />
-                </td>
-                <td class="cs-td-center">
-                  <input
-                    type="checkbox"
-                    :checked="mem.virtual === true"
-                    title="virtual — 无全局快捷键"
-                    @change="
-                      patchMember(selection.mi, selection.path, selection.ci, miIdx, {
-                        virtual: ($event.target as HTMLInputElement).checked,
-                      })
-                    "
-                  />
-                </td>
-                <td>
-                  <input
-                    :value="mem.kind === 'method' ? mem.signature ?? '' : mem.type ?? ''"
-                    :placeholder="mem.kind === 'method' ? 'signature' : 'type'"
-                    title="type 或 signature — 无全局快捷键"
-                    @input="
-                      patchMember(
-                        selection.mi,
-                        selection.path,
-                        selection.ci,
-                        miIdx,
-                        mem.kind === 'method'
-                          ? { signature: ($event.target as HTMLInputElement).value }
-                          : { type: ($event.target as HTMLInputElement).value },
-                      )
-                    "
-                  />
-                </td>
-                <td>
-                  <button type="button" class="link-btn" title="删除成员 — 无全局快捷键" @click="removeMember(selection.mi, selection.path, selection.ci, miIdx)">
-                    删
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <button type="button" class="add-row" title="添加成员 — 无全局快捷键" @click="addMember(selection.mi, selection.path, selection.ci)">
-            ＋ member
-          </button>
-
-          <div class="cs-actions">
-            <button type="button" class="link-btn cs-danger" title="删除该类 — 无全局快捷键" @click="removeClass(selection.mi, selection.path, selection.ci)">
-              删除类
-            </button>
-          </div>
-        </template>
-
-        <template v-else-if="selection.t === 'var' && selectedVar">
-          <h4 class="cs-detail-title">变量</h4>
-          <label class="field">
-            <span>id</span>
-            <input type="text" class="wide" :value="selectedVar.id" @input="patchVar(selection.mi, selection.path, selection.vi, { id: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <label class="field">
-            <span>name</span>
-            <input type="text" class="wide" :value="selectedVar.name" @input="patchVar(selection.mi, selection.path, selection.vi, { name: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <label class="field">
-            <span>type</span>
-            <input type="text" class="wide" :value="selectedVar.type ?? ''" @input="patchVar(selection.mi, selection.path, selection.vi, { type: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <label class="field">
-            <span>notes</span>
-            <input type="text" class="wide" :value="selectedVar.notes ?? ''" @input="patchVar(selection.mi, selection.path, selection.vi, { notes: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <button type="button" class="link-btn cs-danger" title="删除变量 — 无全局快捷键" @click="removeVar(selection.mi, selection.path, selection.vi)">删除变量</button>
-        </template>
-
-        <template v-else-if="selection.t === 'fn' && selectedFn">
-          <h4 class="cs-detail-title">函数</h4>
-          <label class="field">
-            <span>id</span>
-            <input type="text" class="wide" :value="selectedFn.id" @input="patchFn(selection.mi, selection.path, selection.fi, { id: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <label class="field">
-            <span>name</span>
-            <input type="text" class="wide" :value="selectedFn.name" @input="patchFn(selection.mi, selection.path, selection.fi, { name: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <label class="field">
-            <span>signature</span>
-            <input
-              type="text"
-              class="wide"
-              :value="selectedFn.signature ?? ''"
-              @input="patchFn(selection.mi, selection.path, selection.fi, { signature: ($event.target as HTMLInputElement).value })"
-            />
-          </label>
-          <label class="field">
-            <span>notes</span>
-            <input type="text" class="wide" :value="selectedFn.notes ?? ''" @input="patchFn(selection.mi, selection.path, selection.fi, { notes: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <button type="button" class="link-btn cs-danger" title="删除函数 — 无全局快捷键" @click="removeFn(selection.mi, selection.path, selection.fi)">删除函数</button>
-        </template>
-
-        <template v-else-if="selection.t === 'macro' && selectedMacro">
-          <h4 class="cs-detail-title">宏</h4>
-          <label class="field">
-            <span>id</span>
-            <input type="text" class="wide" :value="selectedMacro.id" @input="patchMacro(selection.mi, selection.path, selection.maci, { id: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <label class="field">
-            <span>name</span>
-            <input type="text" class="wide" :value="selectedMacro.name" @input="patchMacro(selection.mi, selection.path, selection.maci, { name: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <label class="field">
-            <span>params</span>
-            <input type="text" class="wide" :value="selectedMacro.params ?? ''" @input="patchMacro(selection.mi, selection.path, selection.maci, { params: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <label class="field">
-            <span>definitionSnippet</span>
-            <textarea
-              class="payload-ta"
-              rows="3"
-              spellcheck="false"
-              :value="selectedMacro.definitionSnippet ?? ''"
-              @input="
-                patchMacro(selection.mi, selection.path, selection.maci, {
-                  definitionSnippet: ($event.target as HTMLTextAreaElement).value,
-                })
-              "
-            />
-          </label>
-          <label class="field">
-            <span>notes</span>
-            <input type="text" class="wide" :value="selectedMacro.notes ?? ''" @input="patchMacro(selection.mi, selection.path, selection.maci, { notes: ($event.target as HTMLInputElement).value })" />
-          </label>
-          <button type="button" class="link-btn cs-danger" title="删除宏 — 无全局快捷键" @click="removeMacro(selection.mi, selection.path, selection.maci)">删除宏</button>
-        </template>
-
-        <p v-else class="canvas-hint">在左侧选择节点。</p>
-      </section>
+  <div class="cs-editor" :class="{ 'cs-editor--compact': compactLayout }">
+    <div class="cs-meta-bar">
+      <div
+        class="cs-meta-inline-wrap cs-meta-inline-bar"
+        title="围栏内 id 与文档块绑定，只读；title / workspaceRoot 可编辑 — 无全局快捷键"
+      >
+        <div class="cs-meta-inline" role="group" aria-label="id、title、workspaceRoot">
+          <span class="cs-meta-inline-lab">id</span>
+          <input
+            type="text"
+            class="cs-meta-inline-inp cs-meta-inline-id"
+            :value="modelValue.id"
+            readonly
+            title="围栏内 id 与文档块绑定，只读 — 无全局快捷键"
+          />
+          <span class="cs-meta-inline-lab">title</span>
+          <input
+            type="text"
+            class="cs-meta-inline-inp cs-meta-inline-grow"
+            :value="modelValue.title ?? ''"
+            title="标题 — 无全局快捷键"
+            @input="patchMetaTitle(($event.target as HTMLInputElement).value)"
+          />
+          <span class="cs-meta-inline-lab">workspaceRoot</span>
+          <input
+            type="text"
+            class="cs-meta-inline-inp cs-meta-inline-grow"
+            :value="modelValue.workspaceRoot ?? ''"
+            title="workspaceRoot 工作区根路径片段 — 无全局快捷键"
+            @input="patchMetaRoot(($event.target as HTMLInputElement).value)"
+          />
+        </div>
+      </div>
     </div>
+
+    <CodespaceModuleSvgCanvas
+      class="cs-svg-wrap"
+      :model-value="modelValue"
+      :selected="canvasSelection"
+      @select="onCanvasSelect"
+      @open-definition="openDefinition"
+      @add-module="addModule"
+    />
+
+    <CodespaceModuleFloat
+      v-if="moduleFloatCtx"
+      :open="floatOpen"
+      :model-value="modelValue"
+      :mi="moduleFloatCtx.mi"
+      :run-patch="patch"
+      @close="closeFloat"
+      @request-delete="onModuleFloatRequestDelete"
+      @add-top-level-ns="addTopLevelNs"
+    />
+    <CodespaceNamespaceFloat
+      v-if="nsFloatCtx"
+      :open="floatOpen"
+      :model-value="modelValue"
+      :mi="nsFloatCtx.mi"
+      :path="nsFloatCtx.path"
+      :run-patch="patch"
+      @close="closeFloat"
+      @add-child-ns="addChildNs"
+      @add-class="addClass"
+      @add-var="addVar"
+      @add-fn="addFn"
+      @add-macro="addMacro"
+      @request-delete-ns="requestDeleteNs"
+    />
+    <CodespaceClassifierFloat
+      v-if="classFloatCtx"
+      :open="floatOpen"
+      :model-value="modelValue"
+      :mi="classFloatCtx.mi"
+      :path="classFloatCtx.path"
+      :ci="classFloatCtx.ci"
+      :run-patch="patch"
+      @close="closeFloat"
+    />
+    <CodespaceVariableFloat
+      v-if="varFloatCtx"
+      :open="floatOpen"
+      :model-value="modelValue"
+      :mi="varFloatCtx.mi"
+      :path="varFloatCtx.path"
+      :vi="varFloatCtx.vi"
+      :run-patch="patch"
+      @close="closeFloat"
+    />
+    <CodespaceFunctionFloat
+      v-if="fnFloatCtx"
+      :open="floatOpen"
+      :model-value="modelValue"
+      :mi="fnFloatCtx.mi"
+      :path="fnFloatCtx.path"
+      :fi="fnFloatCtx.fi"
+      :run-patch="patch"
+      @close="closeFloat"
+    />
+    <CodespaceMacroFloat
+      v-if="macroFloatCtx"
+      :open="floatOpen"
+      :model-value="modelValue"
+      :mi="macroFloatCtx.mi"
+      :path="macroFloatCtx.path"
+      :maci="macroFloatCtx.maci"
+      :run-patch="patch"
+      @close="closeFloat"
+    />
 
     <details class="cs-advanced" @toggle="onAdvancedToggle">
       <summary>高级：原始 JSON</summary>
@@ -1034,116 +418,130 @@ function removeMacro(mi: number, path: number[], maci: number) {
 .cs-editor {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-height: 0;
 }
-.cs-split {
+.cs-meta-bar {
+  flex-shrink: 0;
   display: flex;
-  flex-direction: row;
-  gap: 12px;
-  align-items: stretch;
-  min-height: 280px;
-}
-.cs-tree {
-  flex: 0 0 240px;
-  max-width: 44%;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 8px;
-  overflow: auto;
-  background: #f8fafc;
-}
-.cs-tree-head {
-  font-weight: 700;
-  font-size: 0.78rem;
-  margin-bottom: 6px;
-  color: #334155;
-}
-.cs-tree-ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.cs-tree-li {
-  margin: 0 0 2px;
-}
-.cs-tree-btn {
-  width: 100%;
-  text-align: left;
-  padding: 4px 6px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  font: inherit;
-  font-size: 0.75rem;
-  cursor: pointer;
-  color: #0f172a;
-}
-.cs-tree-btn:hover {
-  background: #e2e8f0;
-}
-.cs-tree-btn--active {
-  background: #dbeafe;
-  border-color: #93c5fd;
-}
-.cs-add-mod {
-  margin-top: 8px;
-  width: 100%;
-}
-.cs-detail {
-  flex: 1;
+  flex-wrap: nowrap;
+  align-items: center;
   min-width: 0;
-  overflow: auto;
+  overflow-x: auto;
+}
+.cs-meta-inline-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  width: 100%;
+}
+.cs-meta-inline-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  width: 100%;
+}
+.cs-meta-inline {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: min-content;
+  font-size: 0.78rem;
+}
+.cs-meta-inline-lab {
+  flex-shrink: 0;
+  color: #64748b;
+  font-weight: 500;
+}
+.cs-meta-inline-inp {
   padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.8rem;
+  min-width: 0;
+  height: 28px;
+  box-sizing: border-box;
 }
-.cs-detail-title {
-  margin: 0 0 10px;
-  font-size: 0.95rem;
-}
-.cs-subh {
-  margin: 14px 0 6px;
-  font-size: 0.82rem;
+.cs-meta-inline-id {
+  width: 7.5em;
+  max-width: 18vw;
+  background: #f8fafc;
   color: #475569;
 }
-.cs-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-  align-items: center;
+.cs-meta-inline-grow {
+  flex: 1 1 5rem;
+  width: 5rem;
+  min-width: 4.5rem;
+  max-width: none;
 }
-.cs-danger {
-  color: #b91c1c;
+.cs-svg-wrap {
+  flex: 1;
+  min-height: 300px;
 }
-.cs-rowline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 6px;
-  font-size: 0.78rem;
+.cs-editor--compact {
+  gap: 5px;
 }
-.cs-check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.cs-editor--compact .cs-meta-inline {
+  gap: 4px 6px;
+  font-size: 0.72rem;
 }
-.cs-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.75rem;
-  margin-bottom: 8px;
+.cs-editor--compact .cs-meta-inline-lab {
+  font-size: 0.7rem;
 }
-.cs-table th,
-.cs-table td {
-  border: 1px solid #e2e8f0;
-  padding: 4px;
-  vertical-align: middle;
+.cs-editor--compact .cs-meta-inline-inp {
+  height: 26px;
+  padding: 2px 6px;
+  font-size: 0.74rem;
 }
-.cs-td-center {
-  text-align: center;
+.cs-editor--compact .cs-svg-wrap {
+  min-height: 0;
+}
+.cs-editor--compact :deep(.cs-svg-canvas) {
+  min-height: 0;
+  border-radius: 4px;
+}
+.cs-editor--compact :deep(.cs-svg-viewport) {
+  min-height: 0;
+}
+.cs-editor--compact :deep(.cs-svg-keys) {
+  top: 4px;
+  left: 4px;
+  max-width: min(240px, 50vw);
+  padding: 2px 6px;
+  font-size: 0.66rem;
+}
+.cs-editor--compact :deep(.cs-svg-keys-pre) {
+  margin-top: 4px;
+  font-size: 10px;
+}
+.cs-editor--compact :deep(.cs-svg-hud) {
+  left: 4px;
+  bottom: 4px;
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 0.7rem;
+  border-radius: 4px;
+}
+.cs-editor--compact :deep(.cs-svg-hud-btn) {
+  padding: 2px 6px;
+  font-size: 0.7rem;
+}
+.cs-editor--compact .cs-advanced {
+  margin-top: 2px;
+  font-size: 0.76rem;
+}
+.cs-editor--compact .payload-ta {
+  padding: 6px 8px;
+  font-size: 0.76rem;
+}
+.cs-editor--compact .add-row {
+  margin-top: 8px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
 }
 .cs-advanced {
+  flex-shrink: 0;
   margin-top: 4px;
   font-size: 0.8rem;
 }
@@ -1156,23 +554,6 @@ function removeMacro(mi: number, path: number[], maci: number) {
   font-size: 0.76rem;
   margin-bottom: 6px;
 }
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
-  max-width: 960px;
-}
-.field span {
-  font-size: 0.78rem;
-  color: #64748b;
-}
-.wide {
-  padding: 8px 10px;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  font: inherit;
-}
 .payload-ta {
   width: 100%;
   max-width: 960px;
@@ -1184,14 +565,6 @@ function removeMacro(mi: number, path: number[], maci: number) {
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   resize: vertical;
-}
-.link-btn {
-  border: none;
-  background: none;
-  color: #b91c1c;
-  cursor: pointer;
-  font-size: 0.78rem;
-  text-decoration: underline;
 }
 .add-row {
   margin-top: 12px;
