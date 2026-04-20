@@ -108,6 +108,8 @@ const selectedEdgeId = ref<string | null>(null);
 const selectedInheritHandleClassId = ref<string | null>(null);
 const edgeCtx = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
 const edgeEditor = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
+const associationAnchorByEdge = reactive<Record<string, { sectionIndex: number; lineIndex: number }>>({});
+const edgeRenderById = reactive<Record<string, 'straight' | 'orthogonal' | 'curve'>>({});
 
 function loadFromPayload(payload: string): void {
   const raw = (payload ?? '').trim();
@@ -118,6 +120,8 @@ function loadFromPayload(payload: string): void {
     Object.keys(folded).forEach((k) => delete folded[k]);
     edgeVisibility.inherit = true;
     edgeVisibility.association = true;
+    Object.keys(associationAnchorByEdge).forEach((k) => delete associationAnchorByEdge[k]);
+    Object.keys(edgeRenderById).forEach((k) => delete edgeRenderById[k]);
     lastSynced.value = payload;
     return;
   }
@@ -130,6 +134,8 @@ function loadFromPayload(payload: string): void {
   Object.assign(folded, f);
   edgeVisibility.inherit = ev.inherit;
   edgeVisibility.association = ev.association;
+  Object.keys(associationAnchorByEdge).forEach((k) => delete associationAnchorByEdge[k]);
+  Object.keys(edgeRenderById).forEach((k) => delete edgeRenderById[k]);
   normalizeClassIdentityFromModel(false);
   lastSynced.value = payload;
 }
@@ -521,12 +527,20 @@ function rightHandleTipY(c: ClassDef, h: { sectionIndex: number; lineIndex: numb
 }
 
 function associationSourceTip(
+  edgeId: string,
   fromClass: ClassDef,
   fromPos: { x: number; y: number },
   toPos: { x: number; y: number },
 ): { x: number; y: number } {
   const rows = rightHandleRows(fromClass);
   if (!rows.length) return { x: fromPos.x + 264, y: fromPos.y + 18 };
+  const pinned = associationAnchorByEdge[edgeId];
+  if (pinned) {
+    const found = rows.find((r) => r.sectionIndex === pinned.sectionIndex && r.lineIndex === pinned.lineIndex);
+    if (found) {
+      return { x: fromPos.x + 264, y: fromPos.y + rightHandleTipY(fromClass, found) };
+    }
+  }
   const targetY = toPos.y + 18;
   let best = rows[0]!;
   let bestD = Math.abs(fromPos.y + rightHandleTipY(fromClass, best) - targetY);
@@ -538,6 +552,7 @@ function associationSourceTip(
       bestD = d;
     }
   }
+  associationAnchorByEdge[edgeId] = { sectionIndex: best.sectionIndex, lineIndex: best.lineIndex };
   return { x: fromPos.x + 264, y: fromPos.y + rightHandleTipY(fromClass, best) };
 }
 
@@ -1084,6 +1099,8 @@ function onGlobalPointerUp(e: PointerEvent): void {
   if (associationDrag.value) {
     const fromId = associationDrag.value.fromId;
     const anchor = associationDrag.value.anchor;
+    const dragSectionIndex = associationDrag.value.sectionIndex;
+    const dragLineIndex = associationDrag.value.lineIndex;
     associationDrag.value = null;
     tempAssociationLine.value = null;
     const anchorTargetId =
@@ -1101,6 +1118,12 @@ function onGlobalPointerUp(e: PointerEvent): void {
         to,
         kind: 'association',
       });
+      if (anchor === 'right') {
+        associationAnchorByEdge[newId] = {
+          sectionIndex: dragSectionIndex,
+          lineIndex: dragLineIndex,
+        };
+      }
       selectedEdgeId.value = newId;
       pushPayload();
     }
@@ -1149,6 +1172,8 @@ function onEdgeDblClick(e: MouseEvent, edgeId: string): void {
 
 function deleteEdge(edgeId: string): void {
   state.links = state.links.filter((l) => l.id !== edgeId);
+  delete associationAnchorByEdge[edgeId];
+  delete edgeRenderById[edgeId];
   if (selectedEdgeId.value === edgeId) selectedEdgeId.value = null;
   edgeCtx.open = false;
   if (edgeEditor.edgeId === edgeId) edgeEditor.open = false;
@@ -1156,6 +1181,7 @@ function deleteEdge(edgeId: string): void {
 }
 
 const selectedEdge = computed(() => state.links.find((l) => l.id === edgeEditor.edgeId));
+const selectedEdgeRender = computed<'straight' | 'orthogonal' | 'curve'>(() => edgeRenderById[edgeEditor.edgeId] ?? 'straight');
 
 function patchEdge(part: Partial<{ kind: 'inherit' | 'association' | 'dependency'; fromMult: string; toMult: string }>): void {
   const edge = state.links.find((l) => l.id === edgeEditor.edgeId);
@@ -1164,6 +1190,11 @@ function patchEdge(part: Partial<{ kind: 'inherit' | 'association' | 'dependency
   if (part.fromMult !== undefined) edge.fromMult = part.fromMult || undefined;
   if (part.toMult !== undefined) edge.toMult = part.toMult || undefined;
   pushPayload();
+}
+
+function patchEdgeRender(mode: 'straight' | 'orthogonal' | 'curve'): void {
+  if (!edgeEditor.edgeId) return;
+  edgeRenderById[edgeEditor.edgeId] = mode;
 }
 
 function onSvgClassPointerDown(e: PointerEvent, classId: string): void {
@@ -1293,14 +1324,24 @@ const edgePaths = computed((): EdgePathItem[] => {
       y1 = p1.y;
       x2 = p2.x + s2.w / 2;
       y2 = p2.y + s2.h;
-      dpath = `M ${x1} ${y1} L ${x2} ${y2}`;
     } else {
       // Association anchors: from right triangle tip -> to left triangle tip.
-      const src = associationSourceTip(fc, p1, p2);
+      const src = associationSourceTip(l.id, fc, p1, p2);
       x1 = src.x;
       y1 = src.y;
       x2 = p2.x - 16;
       y2 = p2.y + 18;
+    }
+    const render = edgeRenderById[l.id] ?? 'straight';
+    if (render === 'orthogonal') {
+      const mx = (x1 + x2) / 2;
+      dpath = `M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2} ${y2}`;
+    } else if (render === 'curve') {
+      const dx = x2 - x1;
+      const c1x = x1 + dx * 0.33;
+      const c2x = x1 + dx * 0.66;
+      dpath = `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`;
+    } else {
       dpath = `M ${x1} ${y1} L ${x2} ${y2}`;
     }
     const dash = l.kind === 'dependency' ? '6 4' : undefined;
@@ -2051,6 +2092,17 @@ function deleteClass(classId: string): void {
             <option value="inherit">inherit</option>
             <option value="association">association</option>
             <option value="dependency">dependency</option>
+          </select>
+        </label>
+        <label class="cde-edgeedit-row">
+          <span>shape</span>
+          <select
+            :value="selectedEdgeRender"
+            @change="patchEdgeRender(($event.target as HTMLSelectElement).value as 'straight' | 'orthogonal' | 'curve')"
+          >
+            <option value="straight">{{ locale === 'en' ? 'Straight' : '直线' }}</option>
+            <option value="orthogonal">{{ locale === 'en' ? 'Orthogonal' : '折线' }}</option>
+            <option value="curve">{{ locale === 'en' ? 'Curve' : '曲线' }}</option>
           </select>
         </label>
         <label class="cde-edgeedit-row">
