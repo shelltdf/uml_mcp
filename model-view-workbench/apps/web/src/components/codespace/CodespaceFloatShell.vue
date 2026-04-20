@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { useId } from 'vue';
+import { inject, useId } from 'vue';
+import { CS_CANVAS_MSG_KEY } from '../../i18n/codespace-canvas-messages';
+
+const csMsg = inject(CS_CANVAS_MSG_KEY)!;
 
 defineProps<{
   open: boolean;
@@ -32,7 +35,7 @@ const titleId = `cs-float-title-${useId()}`;
       >
         <header class="cs-float-head">
           <h3 :id="titleId" class="cs-float-title">{{ title }}</h3>
-          <button type="button" class="cs-float-close" title="关闭 — 无全局快捷键" @click="$emit('close')">×</button>
+          <button type="button" class="cs-float-close" :title="csMsg.floatCloseTitle" @click="$emit('close')">×</button>
         </header>
         <div class="cff-wrap">
           <slot />

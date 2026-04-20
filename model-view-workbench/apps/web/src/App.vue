@@ -2,13 +2,11 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   MV_MAP_CANVAS_TITLE,
-  MV_MODEL_CODESPACE_CANVAS_TITLE,
   MV_MODEL_INTERFACE_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
   MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
-  MV_VIEW_KIND_METADATA,
   isMermaidViewKind,
   parseMarkdownBlocks,
   replaceBlockInnerById,
@@ -23,6 +21,52 @@ import {
   type MvViewPayload,
   type ParsedFenceBlock,
 } from '@mvwb/core';
+import { useAppLocale } from './composables/useAppLocale';
+import { fenceBlockSubtypeLabel } from './i18n/fence-subtype-label';
+import { mvViewKindStrings } from './i18n/mv-view-kind-locale';
+import {
+  shellChromeMessages,
+  trAlertExportFailed,
+  trCloseCanvasTabAria,
+  trCloseTabAria,
+  trCloseTabDirty,
+  trCloseTabTitle,
+  trDockKvDocumentLine,
+  trDockSqlTableLine,
+  trDockStructDatasetLine,
+  trDockStructGroupLine,
+  trLogAutoSaveFailed,
+  trLogBlockCanvasBrowserWindow,
+  trLogBlockCanvasElectronWindow,
+  trLogCanvasLaunchInvalid,
+  trLogCanvasLaunchMismatch,
+  trLogCanvasMissingData,
+  trLogCanvasTabSaved,
+  trLogElectronWorkspaceLoaded,
+  trLogExportFailed,
+  trLogExportOk,
+  trLogFullscreenFailed,
+  trLogInsertedFence,
+  trLogMergedFromCanvasWindow,
+  trLogNewMarkdown,
+  trLogOpenFilePickerFailed,
+  trLogOpenedCanvasTab,
+  trLogOpenedFile,
+  trLogOpenedFileNoWriteHandle,
+  trLogOpenedFolder,
+  trLogOutlineJumpMissing,
+  trLogSaveAsDone,
+  trLogSaveAsFallback,
+  trLogSaveAsDownloaded,
+  trLogSaveFailed,
+  trLogSavedPath,
+  trLogStartup,
+  trLogSwitchedCanvasTab,
+  trModalEditTitle,
+  trOutlineJumpTitle,
+  trOutlineLineTitle,
+  trSelectFenceTitle,
+} from './i18n/shell-chrome-messages';
 import { detectShell } from './platform';
 import MdMarkdownPreview from './components/MdMarkdownPreview.vue';
 import MdWysiwygEditor from './components/MdWysiwygEditor.vue';
@@ -39,6 +83,7 @@ import {
   stripMdExtension,
 } from './utils/export-document';
 
+const { locale, ui, setLocale } = useAppLocale();
 const shell = computed(() => detectShell());
 const files = ref<Map<string, string>>(new Map());
 const selectedPath = ref<string | null>(null);
@@ -46,7 +91,14 @@ const parseErrors = ref<string[]>([]);
 const editOpen = ref(false);
 const editJson = ref('');
 const editBlockId = ref<string | null>(null);
-const workspaceHint = ref('请用「打开文件夹」选择含 .md 的目录（浏览器）或使用 Electron / VS Code 扩展。');
+/** 画布 / 块 URL 错误时覆盖主提示；否则用当前语言的默认工作区说明 */
+const workspaceSurfaceError = ref<null | 'canvas' | 'block'>(null);
+const workspaceHintDisplay = computed(() => {
+  const L = shellChromeMessages[locale.value];
+  if (workspaceSurfaceError.value === 'canvas') return L.errCanvasRead;
+  if (workspaceSurfaceError.value === 'block') return L.errBlockRead;
+  return L.workspaceHintDefault;
+});
 const blockOnly = ref(false);
 const canvasOnly = ref(false);
 const canvasMarkdown = ref('');
@@ -70,7 +122,7 @@ const canvasTabs = ref<CanvasTabSpec[]>([]);
 /** `'markdown'` = 中间列仅 Markdown 编辑；否则为 `canvasTabs` 中某条 `id` */
 const activeEditorTab = ref<'markdown' | string>('markdown');
 const electronApi = computed(() => (typeof window !== 'undefined' ? window.electronAPI : undefined));
-const openMenu = ref<null | 'file' | 'view' | 'help'>(null);
+const openMenu = ref<null | 'file' | 'view' | 'language' | 'help'>(null);
 const chromeRef = ref<HTMLElement | null>(null);
 const layoutRootRef = ref<HTMLElement | null>(null);
 const appIsFullscreen = ref(false);
@@ -115,9 +167,9 @@ async function copyLogToClipboard() {
   const text = logTextPlain.value;
   try {
     await navigator.clipboard.writeText(text);
-    logLine('已复制日志全文到剪贴板', 'info');
+    logLine(shellChromeMessages[locale.value].logCopied, 'info');
   } catch {
-    window.alert('复制失败：浏览器未授予剪贴板权限或不可用。');
+    window.alert(shellChromeMessages[locale.value].alertCopyFail);
   }
 }
 
@@ -125,13 +177,18 @@ const logTextPlain = computed(() => logLines.value.join('\n'));
 
 const statusLeftText = computed(() => {
   const lines = logLines.value;
-  if (!lines.length) return '就绪 — 点击查看日志';
+  if (!lines.length) return shellChromeMessages[locale.value].statusReady;
   const last = lines[lines.length - 1]!;
   return last.length > 72 ? `${last.slice(0, 69)}…` : last;
 });
 
-function toggleMenu(id: 'file' | 'view' | 'help') {
+function toggleMenu(id: 'file' | 'view' | 'language' | 'help') {
   openMenu.value = openMenu.value === id ? null : id;
+}
+
+function setLocaleFromMenu(next: 'zh' | 'en') {
+  setLocale(next);
+  closeMenus();
 }
 
 function closeMenus() {
@@ -219,7 +276,7 @@ function exportMarkdownFromMenu() {
   if (!p) return;
   const base = stripMdExtension(p);
   exportMarkdownFile(base, currentContent.value);
-  logLine(`已导出：${base}.md`, 'info');
+  logLine(trLogExportOk(locale.value, base, 'md'), 'info');
 }
 
 async function exportHtmlFromMenu() {
@@ -229,11 +286,11 @@ async function exportHtmlFromMenu() {
   const base = stripMdExtension(p);
   try {
     await exportStandaloneHtml(currentContent.value, base, base, getExportVisualOpts());
-    logLine(`已导出：${base}.html`, 'info');
+    logLine(trLogExportOk(locale.value, base, 'html'), 'info');
   } catch (e) {
     const msg = String(e);
-    logLine(`导出 HTML 失败：${msg}`, 'error');
-    window.alert(`导出 HTML 失败：${msg}`);
+    logLine(trLogExportFailed(locale.value, 'HTML', msg), 'error');
+    window.alert(trAlertExportFailed(locale.value, 'HTML', msg));
   }
 }
 
@@ -244,11 +301,11 @@ async function exportSvgFromMenu() {
   const base = stripMdExtension(p);
   try {
     await exportSvg(currentContent.value, base, getExportVisualOpts());
-    logLine(`已导出：${base}.svg`, 'info');
+    logLine(trLogExportOk(locale.value, base, 'svg'), 'info');
   } catch (e) {
     const msg = String(e);
-    logLine(`导出 SVG 失败：${msg}`, 'error');
-    window.alert(`导出 SVG 失败：${msg}`);
+    logLine(trLogExportFailed(locale.value, 'SVG', msg), 'error');
+    window.alert(trAlertExportFailed(locale.value, 'SVG', msg));
   }
 }
 
@@ -259,11 +316,11 @@ async function exportPngFromMenu() {
   const base = stripMdExtension(p);
   try {
     await exportPng(currentContent.value, base, getExportVisualOpts());
-    logLine(`已导出：${base}.png`, 'info');
+    logLine(trLogExportOk(locale.value, base, 'png'), 'info');
   } catch (e) {
     const msg = String(e);
-    logLine(`导出 PNG 失败：${msg}`, 'error');
-    window.alert(`导出 PNG 失败：${msg}`);
+    logLine(trLogExportFailed(locale.value, 'PNG', msg), 'error');
+    window.alert(trAlertExportFailed(locale.value, 'PNG', msg));
   }
 }
 
@@ -274,16 +331,16 @@ async function pickFromMenu() {
 
 function showAbout() {
   closeMenus();
-  logLine('关于：已打开对话框', 'info');
-  window.alert(`MV Workbench 0.1\n\n${workspaceHint.value}`);
+  logLine(ui.value.aboutLog, 'info');
+  window.alert(`MV Workbench 0.1\n\n${workspaceHintDisplay.value}`);
 }
 
 function onGlobalPointerDown(ev: PointerEvent) {
   const el = chromeRef.value;
   const t = ev.target as Node;
   if (el && !el.contains(t)) closeMenus();
-  const menu = mdCtxMenuRef.value;
-  if (mdCtxOpen.value && menu && !menu.contains(t)) closeMdContextMenu();
+  const ctxMenu = mdCtxMenuRef.value;
+  if (mdCtxOpen.value && ctxMenu && !ctxMenu.contains(t)) closeMdContextMenu();
 }
 
 function onMdPaneContextMenu(e: MouseEvent) {
@@ -301,12 +358,13 @@ function onMdPaneContextMenu(e: MouseEvent) {
 
 function openInsertCodeBlockModal() {
   closeMdContextMenu();
+  const L = shellChromeMessages[locale.value];
   if (!selectedPath.value) {
-    logLine('请先打开或新建一个 Markdown 文档', 'warn');
+    logLine(L.logNeedDoc, 'warn');
     return;
   }
   if (mdPaneMode.value === 'preview') {
-    logLine('插入代码块请先将 Markdown 区切换到「富文本」或「原始文本」', 'warn');
+    logLine(L.logNeedRichOrSource, 'warn');
     return;
   }
   insertCodeBlockOpen.value = true;
@@ -340,6 +398,7 @@ function onInsertCodeBlockSelect(kind: InsertCodeBlockKind) {
   const fence = buildFenceMarkdownForInsert(kind, {
     currentFileRel: p,
     currentMarkdown: files.value.get(p) ?? '',
+    locale: locale.value,
   });
   insertCodeBlockOpen.value = false;
   if (mdPaneMode.value === 'rich') {
@@ -347,7 +406,7 @@ function onInsertCodeBlockSelect(kind: InsertCodeBlockKind) {
   } else {
     insertIntoSourceAtCursor(fence);
   }
-  logLine(`已插入围栏代码块：${kind}`, 'info');
+  logLine(trLogInsertedFence(locale.value, kind), 'info');
 }
 
 function closeMdContextMenu() {
@@ -402,7 +461,7 @@ function scheduleElectronWrite(path: string, text: string) {
         syncBaselineForPath(path, text);
       },
       (err: unknown) => {
-        logLine(`自动写盘失败：${String(err)}`, 'error');
+        logLine(trLogAutoSaveFailed(locale.value, String(err)), 'error');
       },
     );
   }, 400);
@@ -466,7 +525,7 @@ async function toggleAppFullscreen() {
       await el.requestFullscreen();
     }
   } catch {
-    logLine('全屏切换失败（浏览器可能不允许或需用户手势）', 'warn');
+    logLine(trLogFullscreenFailed(locale.value), 'warn');
   }
 }
 
@@ -504,65 +563,21 @@ function countCodespaceClassifiersInNamespaces(nodes: MvCodespaceNamespaceNode[]
   return c;
 }
 
-/** 索引行 / 子标签：围栏语言（mv-model-sql 等）之外的子类型（如 mv-view 的 kind、表标题） */
-function fenceBlockSubtypeLabel(b: ParsedFenceBlock): string {
-  if (b.kind === 'mv-model-sql') {
-    const p = b.payload as MvModelSqlPayload;
-    const t = p.title?.trim();
-    const ids = p.tables.map((x) => x.id).join(', ');
-    return t || `SQL · ${p.tables.length} 表 (${ids})`;
-  }
-  if (b.kind === 'mv-model-kv') {
-    const p = b.payload as MvModelKvPayload;
-    const t = p.title?.trim();
-    return t || `KV · ${p.documents.length} 条`;
-  }
-  if (b.kind === 'mv-model-struct') {
-    const p = b.payload as MvModelStructPayload;
-    const t = p.title?.trim();
-    return t || `Struct · ${p.root.name}`;
-  }
-  if (b.kind === 'mv-model-codespace') {
-    const p = b.payload as MvModelCodespacePayload;
-    const t = p.title?.trim();
-    const n = p.modules?.length ?? 0;
-    let ns = 0;
-    let cls = 0;
-    for (const m of p.modules ?? []) {
-      ns += countCodespaceNamespaceNodes(m.namespaces);
-      cls += countCodespaceClassifiersInNamespaces(m.namespaces);
-    }
-    if (ns > 0 || cls > 0) {
-      return t || `Codespace · ${n} 模块 · ${ns} NS · ${cls} 类`;
-    }
-    return t || `Codespace · ${n} 模块`;
-  }
-  if (b.kind === 'mv-model-interface') {
-    const p = b.payload as MvModelInterfacePayload;
-    const t = p.title?.trim();
-    const n = p.endpoints?.length ?? 0;
-    return t || `接口 · ${n} 端点`;
-  }
-  if (b.kind === 'mv-view') {
-    return (b.payload as MvViewPayload).kind;
-  }
-  if (b.kind === 'mv-map') {
-    const p = b.payload as MvMapPayload;
-    const n = p.rules?.length ?? 0;
-    return n > 0 ? `映射 · ${n} 条` : '映射';
-  }
-  return '—';
-}
-
 function refreshCanvasTabSubtypesForPath(relPath: string, markdown: string) {
   const { blocks: bl } = parseMarkdownBlocks(markdown);
   canvasTabs.value = canvasTabs.value.map((t) => {
     if (t.relPath !== relPath) return t;
     const hit = bl.find((b) => b.payload.id === t.blockId);
     if (!hit) return t;
-    return { ...t, fenceKind: hit.kind, subtypeLabel: fenceBlockSubtypeLabel(hit) };
+    return { ...t, fenceKind: hit.kind, subtypeLabel: fenceBlockSubtypeLabel(hit, locale.value) };
   });
 }
+
+watch(locale, () => {
+  for (const p of files.value.keys()) {
+    refreshCanvasTabSubtypesForPath(p, files.value.get(p) ?? '');
+  }
+});
 
 /** 左侧 Dock：当前选中的围栏块（用于大纲第二段与右侧属性） */
 const selectedBlockId = ref<string | null>(null);
@@ -600,100 +615,120 @@ interface DockPropLine {
 const selectedBlockDocLines = computed((): DockPropLine[] | null => {
   const b = selectedBlock.value;
   if (!b) return null;
+  const L = shellChromeMessages[locale.value];
   const lines: DockPropLine[] = [
-    { label: '类型', value: b.kind },
-    { label: '子类型', value: fenceBlockSubtypeLabel(b) },
-    { label: '块 ID', value: b.payload.id },
-    { label: '围栏行', value: `L${b.startLine}–L${b.endLine}` },
-    { label: '正文长度', value: `${b.rawInner.length} 字符` },
+    { label: L.labelKind, value: b.kind },
+    { label: L.labelSubtype, value: fenceBlockSubtypeLabel(b, locale.value) },
+    { label: L.labelBlockId, value: b.payload.id },
+    { label: L.labelFenceLines, value: `L${b.startLine}–L${b.endLine}` },
+    { label: L.labelBodyChars, value: `${b.rawInner.length} ${L.labelCharsUnit}` },
   ];
   if (b.kind === 'mv-model-sql') {
-    lines.push({ label: '代码块画布', value: MV_MODEL_SQL_CANVAS_TITLE });
+    lines.push({ label: L.labelCanvas, value: MV_MODEL_SQL_CANVAS_TITLE });
     const p = b.payload as MvModelSqlPayload;
-    if (p.title) lines.push({ label: '组标题', value: p.title });
-    lines.push({ label: '子表数', value: String(p.tables.length) });
-    lines.push({ label: '子表 id', value: p.tables.map((t) => t.id).join(', ') });
+    if (p.title) lines.push({ label: L.labelGroupTitle, value: p.title });
+    lines.push({ label: L.labelTableCount, value: String(p.tables.length) });
+    lines.push({ label: L.labelSubtableIds, value: p.tables.map((t) => t.id).join(', ') });
   } else if (b.kind === 'mv-model-kv') {
-    lines.push({ label: '代码块画布', value: MV_MODEL_KV_CANVAS_TITLE });
+    lines.push({ label: L.labelCanvas, value: MV_MODEL_KV_CANVAS_TITLE });
     const p = b.payload as MvModelKvPayload;
-    if (p.title) lines.push({ label: '标题', value: p.title });
-    lines.push({ label: '文档条数', value: String(p.documents.length) });
+    if (p.title) lines.push({ label: L.labelTitle, value: p.title });
+    lines.push({ label: L.labelDocCount, value: String(p.documents.length) });
   } else if (b.kind === 'mv-model-struct') {
-    lines.push({ label: '代码块画布', value: MV_MODEL_STRUCT_CANVAS_TITLE });
+    lines.push({ label: L.labelCanvas, value: MV_MODEL_STRUCT_CANVAS_TITLE });
     const p = b.payload as MvModelStructPayload;
-    if (p.title) lines.push({ label: '标题', value: p.title });
-    lines.push({ label: '根组名', value: p.root.name });
+    if (p.title) lines.push({ label: L.labelTitle, value: p.title });
+    lines.push({ label: L.labelRootGroupName, value: p.root.name });
   } else if (b.kind === 'mv-model-codespace') {
-    lines.push({ label: '代码块画布', value: MV_MODEL_CODESPACE_CANVAS_TITLE });
+    lines.push({ label: L.labelCanvas, value: L.canvasTitleMvModelCodespace });
     const p = b.payload as MvModelCodespacePayload;
-    if (p.title) lines.push({ label: '标题', value: p.title });
-    if (p.workspaceRoot) lines.push({ label: 'workspaceRoot', value: p.workspaceRoot });
-    lines.push({ label: '模块数', value: String(p.modules.length) });
-    lines.push({ label: '模块 id', value: p.modules.map((m) => m.id).join(', ') });
+    if (p.title) lines.push({ label: L.labelTitle, value: p.title });
+    if (p.workspaceRoot) lines.push({ label: L.labelWorkspaceRoot, value: p.workspaceRoot });
+    lines.push({ label: L.labelModuleCount, value: String(p.modules.length) });
+    lines.push({ label: L.labelModuleIds, value: p.modules.map((m) => m.id).join(', ') });
     let ns = 0;
     let cls = 0;
     for (const m of p.modules) {
       ns += countCodespaceNamespaceNodes(m.namespaces);
       cls += countCodespaceClassifiersInNamespaces(m.namespaces);
     }
-    if (ns > 0) lines.push({ label: '命名空间节点数', value: String(ns) });
-    if (cls > 0) lines.push({ label: 'Classifier 数', value: String(cls) });
+    if (ns > 0) lines.push({ label: L.labelNsNodeCount, value: String(ns) });
+    if (cls > 0) lines.push({ label: L.labelClassifierCount, value: String(cls) });
   } else if (b.kind === 'mv-model-interface') {
-    lines.push({ label: '代码块画布', value: MV_MODEL_INTERFACE_CANVAS_TITLE });
+    lines.push({ label: L.labelCanvas, value: MV_MODEL_INTERFACE_CANVAS_TITLE });
     const p = b.payload as MvModelInterfacePayload;
-    if (p.title) lines.push({ label: '标题', value: p.title });
-    lines.push({ label: '端点数', value: String(p.endpoints.length) });
-    lines.push({ label: '端点 id', value: p.endpoints.map((e) => e.id).join(', ') });
+    if (p.title) lines.push({ label: L.labelTitle, value: p.title });
+    lines.push({ label: L.labelEndpointCount, value: String(p.endpoints.length) });
+    lines.push({ label: L.labelEndpointIds, value: p.endpoints.map((e) => e.id).join(', ') });
   } else if (b.kind === 'mv-view') {
     const p = b.payload as MvViewPayload;
-    lines.push({ label: '代码块画布', value: MV_VIEW_KIND_METADATA[p.kind].canvasTitle });
-    if (p.title) lines.push({ label: '标题', value: p.title });
+    lines.push({ label: L.labelCanvas, value: mvViewKindStrings(p.kind, locale.value).canvasTitle });
+    if (p.title) lines.push({ label: L.labelTitle, value: p.title });
     lines.push({
-      label: 'Model 地址 (modelRefs)',
-      value: p.modelRefs.length ? p.modelRefs.join('；') : '（未绑定，须填写）',
+      label: L.labelModelRefs,
+      value: p.modelRefs.length ? p.modelRefs.join(locale.value === 'en' ? ', ' : '；') : L.labelModelRefsEmpty,
     });
     if (p.payload != null && String(p.payload).length) {
       const s = String(p.payload);
-      lines.push({ label: 'payload 概要', value: s.length > 140 ? `${s.slice(0, 137)}…` : s });
+      lines.push({ label: L.labelPayloadSummary, value: s.length > 140 ? `${s.slice(0, 137)}…` : s });
     }
   } else if (b.kind === 'mv-map') {
     const p = b.payload as MvMapPayload;
-    lines.push({ label: '代码块画布', value: MV_MAP_CANVAS_TITLE });
-    lines.push({ label: '映射规则', value: `${p.rules.length} 条` });
+    lines.push({ label: L.labelCanvas, value: MV_MAP_CANVAS_TITLE });
+    lines.push({
+      label: L.labelMapRules,
+      value:
+        locale.value === 'en'
+          ? `${p.rules.length} rule${p.rules.length === 1 ? '' : 's'}`
+          : `${p.rules.length} 条`,
+    });
   }
   return lines;
 });
 
+function canvasPrimaryActionLabel(b: ParsedFenceBlock): string {
+  const L = shellChromeMessages[locale.value];
+  const pfx = L.canvasOpenPrefix;
+  if (b.kind === 'mv-model-sql') return `${pfx}${MV_MODEL_SQL_CANVAS_TITLE}`;
+  if (b.kind === 'mv-model-kv') return `${pfx}${MV_MODEL_KV_CANVAS_TITLE}`;
+  if (b.kind === 'mv-model-struct') return `${pfx}${MV_MODEL_STRUCT_CANVAS_TITLE}`;
+  if (b.kind === 'mv-model-codespace') return `${pfx}${L.canvasTitleMvModelCodespace}`;
+  if (b.kind === 'mv-model-interface') return `${pfx}${MV_MODEL_INTERFACE_CANVAS_TITLE}`;
+  if (b.kind === 'mv-map') return `${pfx}${MV_MAP_CANVAS_TITLE}`;
+  if (b.kind === 'mv-view') {
+    const k = (b.payload as MvViewPayload).kind;
+    return `${pfx}${mvViewKindStrings(k, locale.value).canvasTitle}`;
+  }
+  return L.dockOpenCanvasLabelDefault;
+}
+
+function canvasPrimaryActionTitle(b: ParsedFenceBlock): string {
+  const L = shellChromeMessages[locale.value];
+  return `${canvasPrimaryActionLabel(b)} — ${L.canvasOpenInTabHint}`;
+}
+
 const canvasPrimaryActionLabelForSelected = computed(() => {
   const b = selectedBlock.value;
-  return b ? canvasPrimaryActionLabel(b) : '打开代码块画布';
+  return b ? canvasPrimaryActionLabel(b) : shellChromeMessages[locale.value].dockOpenCanvasLabelDefault;
 });
 
 const canvasPrimaryActionTitleForSelected = computed(() => {
   const b = selectedBlock.value;
-  return b ? canvasPrimaryActionTitle(b) : '打开代码块画布 — 无全局快捷键';
+  return b ? canvasPrimaryActionTitle(b) : shellChromeMessages[locale.value].dockOpenCanvasTitleDefault;
 });
 
 const selectedBlockCanvasHint = computed(() => {
   const b = selectedBlock.value;
   if (!b) return '';
-  if (b.kind === 'mv-model-sql')
-    return 'Model：文档内 ``mv-model-sql`` 围栏，一块内多张 SQL 风格子表；在画布中对子表增删改查并编辑列/行。';
-  if (b.kind === 'mv-model-kv') {
-    return 'mv-model-kv：文档型集合（类比 MongoDB）；在 KV 数据表画布中按条编辑 JSON 对象。';
-  }
-  if (b.kind === 'mv-model-struct') {
-    return 'mv-model-struct：根下递归组与数据集（类比 HDF5）；在结构化层次画布中编辑整段 JSON。';
-  }
-  if (b.kind === 'mv-model-codespace') {
-    return 'mv-model-codespace：工作区根与 modules[]（可选递归 namespaces、Classifier、bases、associations、变量/函数/宏）；在代码空间模型画布中编辑 JSON。';
-  }
-  if (b.kind === 'mv-model-interface') {
-    return 'mv-model-interface：endpoints[]（接口/端点示意）；在接口图模型画布中编辑 JSON。';
-  }
-  if (b.kind === 'mv-map') return 'Map 以 mv-map 围栏代码块存储：在映射规则代码块画布中编辑 JSON。';
+  const L = shellChromeMessages[locale.value];
+  if (b.kind === 'mv-model-sql') return L.canvasHintSql;
+  if (b.kind === 'mv-model-kv') return L.canvasHintKv;
+  if (b.kind === 'mv-model-struct') return L.canvasHintStruct;
+  if (b.kind === 'mv-model-codespace') return L.canvasHintCodespace;
+  if (b.kind === 'mv-model-interface') return L.canvasHintInterface;
+  if (b.kind === 'mv-map') return L.canvasHintMap;
   if (b.kind === 'mv-view') {
-    return MV_VIEW_KIND_METADATA[(b.payload as MvViewPayload).kind].description;
+    return mvViewKindStrings((b.payload as MvViewPayload).kind, locale.value).description;
   }
   return '';
 });
@@ -871,7 +906,7 @@ function scrollToOutlineIndex(index: number) {
       window.setTimeout(() => flashDomHeading(el), 420);
       return;
     }
-    logLine(`大纲跳转：未在页面上找到与「${meta.text}」对应的标题节点（索引 ${index + 1}）`, 'warn');
+    logLine(trLogOutlineJumpMissing(locale.value, meta.text, index + 1), 'warn');
   });
 }
 
@@ -881,15 +916,17 @@ function extractMermaidClassNames(src: string): string[] {
   return [...names].sort();
 }
 
-function extractMindmapNodeLabels(payload: string): string[] {
+function extractMindmapNodeLabels(payload: string, loc: 'zh' | 'en'): string[] {
+  const bad = shellChromeMessages[loc].mindmapPayloadBad;
   const s = payload.trim();
-  if (!s) return [];
+  if (!s) return [bad];
   try {
     const o = JSON.parse(s) as { nodes?: Array<{ id?: string; label?: string }> };
-    if (!o?.nodes || !Array.isArray(o.nodes)) return [];
-    return o.nodes.map((n) => (n.label ?? n.id ?? '?').toString()).filter(Boolean);
+    if (!o?.nodes || !Array.isArray(o.nodes)) return [bad];
+    const labels = o.nodes.map((n) => (n.label ?? n.id ?? '?').toString()).filter(Boolean);
+    return labels.length ? labels : [bad];
   } catch {
-    return ['（payload 非 JSON 或无法解析节点）'];
+    return [bad];
   }
 }
 
@@ -915,7 +952,8 @@ function extractSequenceParticipants(src: string): string[] {
   return [...names].sort();
 }
 
-function extractActivityOutline(src: string): string[] {
+function extractActivityOutline(src: string, loc: 'zh' | 'en'): string[] {
+  const empty = shellChromeMessages[loc].dockActNoSteps;
   const lines = (src || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const out: string[] = [];
   for (const l of lines) {
@@ -925,17 +963,18 @@ function extractActivityOutline(src: string): string[] {
     }
     if (out.length >= 14) break;
   }
-  return out.length ? out : ['（未从 payload 识别活动步骤，可在代码块画布中编辑）'];
+  return out.length ? out : [empty];
 }
 
-function uiDesignOutlineLines(payload: string): string[] {
+function uiDesignOutlineLines(payload: string, loc: 'zh' | 'en'): string[] {
+  const L = shellChromeMessages[loc];
   const t = (payload || '').trim();
-  if (!t) return ['（payload 为空）'];
+  if (!t) return [L.payloadEmptyShort];
   if (t.startsWith('{')) {
     try {
       const o = JSON.parse(t) as Record<string, unknown>;
       const keys = Object.keys(o);
-      return keys.length ? keys.slice(0, 18).map((k) => `· ${k}`) : ['（空对象）'];
+      return keys.length ? keys.slice(0, 18).map((k) => `· ${k}`) : [L.emptyObjectShort];
     } catch {
       return [t.length > 96 ? `${t.slice(0, 93)}…` : t];
     }
@@ -943,42 +982,25 @@ function uiDesignOutlineLines(payload: string): string[] {
   return [t.length > 96 ? `${t.slice(0, 93)}…` : t];
 }
 
-function canvasPrimaryActionLabel(b: ParsedFenceBlock): string {
-  if (b.kind === 'mv-model-sql') return `打开${MV_MODEL_SQL_CANVAS_TITLE}`;
-  if (b.kind === 'mv-model-kv') return `打开${MV_MODEL_KV_CANVAS_TITLE}`;
-  if (b.kind === 'mv-model-struct') return `打开${MV_MODEL_STRUCT_CANVAS_TITLE}`;
-  if (b.kind === 'mv-model-codespace') return `打开${MV_MODEL_CODESPACE_CANVAS_TITLE}`;
-  if (b.kind === 'mv-model-interface') return `打开${MV_MODEL_INTERFACE_CANVAS_TITLE}`;
-  if (b.kind === 'mv-map') return `打开${MV_MAP_CANVAS_TITLE}`;
-  if (b.kind === 'mv-view') {
-    const k = (b.payload as MvViewPayload).kind;
-    return `打开${MV_VIEW_KIND_METADATA[k].canvasTitle}`;
-  }
-  return '打开代码块画布';
-}
-
-function canvasPrimaryActionTitle(b: ParsedFenceBlock): string {
-  return `${canvasPrimaryActionLabel(b)} — 在中间列以标签打开 — 无全局快捷键`;
-}
-
 function collectStructOutlineLines(
   node: { name: string; groups?: unknown[]; datasets?: Array<{ name: string; dtype?: string }> },
   depth: number,
   out: string[],
   max: number,
+  loc: 'zh' | 'en',
 ): void {
   if (out.length >= max) return;
   const pad = '  '.repeat(depth);
-  out.push(`${pad}组 ${node.name}`);
+  out.push(trDockStructGroupLine(loc, pad, node.name));
   if (node.datasets?.length) {
     for (const ds of node.datasets) {
       if (out.length >= max) return;
-      out.push(`${pad}  数据集 ${ds.name}${ds.dtype ? ` · ${ds.dtype}` : ''}`);
+      out.push(trDockStructDatasetLine(loc, pad, ds.name, ds.dtype));
     }
   }
   if (node.groups?.length) {
     for (const g of node.groups as Array<{ name: string; groups?: unknown[]; datasets?: Array<{ name: string; dtype?: string }> }>) {
-      collectStructOutlineLines(g, depth + 1, out, max);
+      collectStructOutlineLines(g, depth + 1, out, max, loc);
       if (out.length >= max) return;
     }
   }
@@ -987,32 +1009,30 @@ function collectStructOutlineLines(
 const dockSecondaryOutline = computed((): { heading: string; lines: string[] } | null => {
   const b = selectedBlock.value;
   if (!b) return null;
+  const loc = locale.value;
+  const L = shellChromeMessages[loc];
   if (b.kind === 'mv-model-sql') {
     const p = b.payload as MvModelSqlPayload;
-    const lines: string[] = [];
-    for (const tbl of p.tables) {
-      const colHead = tbl.columns.map((c) => c.name).join(', ');
-      lines.push(`· ${tbl.id}: 列 [${colHead}] · 行 ${tbl.rows.length}`);
-    }
-    return { heading: '当前块 · SQL Model 组', lines: lines.length ? lines.slice(0, 24) : ['（无子表）'] };
+    const lines = p.tables.map((tbl) => trDockSqlTableLine(loc, tbl));
+    return { heading: L.dockSqlHeading, lines: lines.length ? lines.slice(0, 24) : [L.dockSqlNoTables] };
   }
   if (b.kind === 'mv-model-kv') {
     const p = b.payload as MvModelKvPayload;
     const lines = p.documents.map((d, i) => {
       const keys = Object.keys(d).slice(0, 8);
       const head = keys.join(', ');
-      return `文档 ${i + 1}: ${head || '（空对象）'}${Object.keys(d).length > 8 ? '…' : ''}`;
+      return trDockKvDocumentLine(loc, i, head, Object.keys(d).length > 8);
     });
     return {
-      heading: '当前块 · KV 文档集',
-      lines: lines.length ? lines.slice(0, 22) : ['（无文档）'],
+      heading: L.dockKvHeading,
+      lines: lines.length ? lines.slice(0, 22) : [L.dockKvNoDocs],
     };
   }
   if (b.kind === 'mv-model-struct') {
     const p = b.payload as MvModelStructPayload;
     const lines: string[] = [];
-    collectStructOutlineLines(p.root, 0, lines, 26);
-    return { heading: '当前块 · 层次结构', lines: lines.length ? lines : ['（空根）'] };
+    collectStructOutlineLines(p.root, 0, lines, 26, loc);
+    return { heading: L.dockStructHeading, lines: lines.length ? lines : [L.dockStructEmptyRoot] };
   }
   if (b.kind === 'mv-model-codespace') {
     const p = b.payload as MvModelCodespacePayload;
@@ -1021,8 +1041,8 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
         `· ${m.id}: ${m.name}${m.path ? ` @ ${m.path}` : ''}${m.role ? ` [${m.role}]` : ''}`,
     );
     return {
-      heading: '当前块 · 代码空间',
-      lines: lines.length ? lines.slice(0, 24) : ['（无模块）'],
+      heading: L.dockCodespaceHeading,
+      lines: lines.length ? lines.slice(0, 24) : [L.dockCodespaceNoModules],
     };
   }
   if (b.kind === 'mv-model-interface') {
@@ -1032,8 +1052,8 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
       return `· ${e.id}: ${e.name}${mp ? ` — ${mp}` : ''}`;
     });
     return {
-      heading: '当前块 · 接口图',
-      lines: lines.length ? lines.slice(0, 24) : ['（无端点）'],
+      heading: L.dockIfHeading,
+      lines: lines.length ? lines.slice(0, 24) : [L.dockIfNoEndpoints],
     };
   }
   if (b.kind === 'mv-view') {
@@ -1042,8 +1062,8 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
       if (p.kind === 'mermaid-class') {
         const cls = extractMermaidClassNames(p.payload ?? '');
         return {
-          heading: '当前块 · classDiagram',
-          lines: cls.length ? cls : ['（未匹配到 class 关键字）'],
+          heading: L.dockMermaidClassHeading,
+          lines: cls.length ? cls : [L.dockMermaidNoClass],
         };
       }
       const excerpt = (p.payload ?? '')
@@ -1051,45 +1071,45 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
         .map((l) => l.trim())
         .filter(Boolean)
         .slice(0, 12);
-      const shortTitle = MV_VIEW_KIND_METADATA[p.kind].canvasTitle.replace(/画布$/, '').trim();
+      const shortTitle = mvViewKindStrings(p.kind, loc).canvasTitle.replace(/画布$| canvas$/i, '').trim();
       return {
-        heading: `当前块 · ${shortTitle}`,
-        lines: excerpt.length ? excerpt : ['（payload 为空）'],
+        heading: `${L.dockSqlHeading.split(' · ')[0] ?? 'Block'} · ${shortTitle}`,
+        lines: excerpt.length ? excerpt : [L.dockPayloadEmpty],
       };
     }
     if (p.kind === 'mindmap-ui') {
-      const nodes = extractMindmapNodeLabels(p.payload ?? '');
-      return { heading: '当前块 · 脑图节点', lines: nodes };
+      const nodes = extractMindmapNodeLabels(p.payload ?? '', loc);
+      return { heading: L.dockMindmapHeading, lines: nodes };
     }
     if (p.kind === 'uml-diagram' || p.kind === 'uml-class') {
       const els = extractPlantumlNames(p.payload ?? '');
       return {
-        heading: p.kind === 'uml-class' ? '当前块 · Class (PlantUML)' : '当前块 · UML (通用)',
-        lines: els.length ? els : ['（未匹配 entity/class/interface/enum）'],
+        heading: p.kind === 'uml-class' ? L.dockUmlClassHeading : L.dockUmlGenericHeading,
+        lines: els.length ? els : [L.dockUmlNoEntities],
       };
     }
     if (p.kind === 'uml-sequence') {
       const parts = extractSequenceParticipants(p.payload ?? '');
       return {
-        heading: '当前块 · 序列图',
-        lines: parts.length ? parts : ['（未匹配 participant/actor）'],
+        heading: L.dockSeqHeading,
+        lines: parts.length ? parts : [L.dockSeqNoParticipants],
       };
     }
     if (p.kind === 'uml-activity') {
-      return { heading: '当前块 · 活动图', lines: extractActivityOutline(p.payload ?? '') };
+      return { heading: L.dockActHeading, lines: extractActivityOutline(p.payload ?? '', loc) };
     }
     if (p.kind === 'ui-design') {
-      return { heading: '当前块 · UI 设计', lines: uiDesignOutlineLines(p.payload ?? '') };
+      return { heading: L.dockUiHeading, lines: uiDesignOutlineLines(p.payload ?? '', loc) };
     }
     return {
-      heading: `当前块 · ${p.kind}`,
-      lines: [`modelRefs: ${p.modelRefs.join(', ') || '（无）'}`],
+      heading: `${L.dockSqlHeading.split(' · ')[0] ?? 'Block'} · ${p.kind}`,
+      lines: [`modelRefs: ${p.modelRefs.join(', ') || L.dockViewModelRefsNone}`],
     };
   }
   if (b.kind === 'mv-map') {
     const p = b.payload as MvMapPayload;
     return {
-      heading: '当前块 · 映射',
+      heading: L.dockMapHeading,
       lines: p.rules.map((r) => `${r.modelId} → ${r.targetPath}`),
     };
   }
@@ -1140,7 +1160,7 @@ function tabLabel(path: string): string {
 function closeTab(path: string) {
   if (!files.value.has(path)) return;
   if (isDirty(path)) {
-    if (!window.confirm(`「${tabLabel(path)}」有未保存的更改，确定关闭？`)) return;
+    if (!window.confirm(trCloseTabDirty(locale.value, tabLabel(path)))) return;
   }
   browserSaveHandles.delete(path);
   const bm0 = new Map(savedBaseline.value);
@@ -1196,7 +1216,7 @@ function onPickFolder(e: Event) {
     replaceAllBaselinesFromFiles(next);
     const keys = [...next.keys()].sort();
     selectedPath.value = keys[0] ?? null;
-    logLine(`已打开文件夹：${keys.length} 个 .md 文件`, 'info');
+    logLine(trLogOpenedFolder(locale.value, keys.length), 'info');
   });
   input.value = '';
 }
@@ -1209,11 +1229,11 @@ function newMarkdownFile() {
     i++;
     name = `${base}-${i}.md`;
   }
-  const initial = '# 新文档\n';
+  const initial = `# ${ui.value.newDocHeading}\n`;
   files.value = new Map(files.value).set(name, initial);
   selectedPath.value = name;
   syncBaselineForPath(name, initial);
-  logLine(`新建文档：${name}`, 'info');
+  logLine(trLogNewMarkdown(locale.value, name), 'info');
 }
 
 function fsaSupported(): boolean {
@@ -1232,7 +1252,7 @@ function fallbackDownloadMarkdown(suggestedName: string, text: string) {
 async function saveCurrentDocument(): Promise<void> {
   const p = selectedPath.value;
   if (!p) {
-    logLine('没有选中的文档', 'warn');
+    logLine(shellChromeMessages[locale.value].logNeedDoc, 'warn');
     return;
   }
   const text = currentContent.value;
@@ -1240,7 +1260,7 @@ async function saveCurrentDocument(): Promise<void> {
   if (electronApi.value?.writeWorkspaceFile) {
     try {
       await flushPendingElectronWrite();
-      logLine(`已保存：${p}`, 'info');
+      logLine(trLogSavedPath(locale.value, p), 'info');
     } catch {
       /* flush 已记录 */
     }
@@ -1254,9 +1274,9 @@ async function saveCurrentDocument(): Promise<void> {
       await w.write(text);
       await w.close();
       syncBaselineForPath(p, text);
-      logLine(`已保存：${tabLabel(p)}`, 'info');
+      logLine(trLogSavedPath(locale.value, tabLabel(p)), 'info');
     } catch (e) {
-      logLine(`保存失败：${String(e)}`, 'error');
+      logLine(trLogSaveFailed(locale.value, String(e)), 'error');
     }
     return;
   }
@@ -1267,17 +1287,18 @@ async function saveCurrentDocument(): Promise<void> {
 async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<void> {
   const p = selectedPath.value;
   if (!p) {
-    logLine('没有选中的文档', 'warn');
+    logLine(shellChromeMessages[locale.value].logNeedDoc, 'warn');
     return;
   }
   const text = currentContent.value;
+  const L = shellChromeMessages[locale.value];
 
   if (electronApi.value?.saveFileAs) {
     const r = await electronApi.value.saveFileAs(p, text);
     if (!r) return;
     if ('error' in r) {
-      if (r.error === 'no_workspace') window.alert('请先用菜单「文件 → 打开磁盘工作区」选择工作区目录。');
-      else if (r.error === 'outside_workspace') window.alert('只能保存到当前工作区目录内。');
+      if (r.error === 'no_workspace') window.alert(L.alertNoWorkspace);
+      else if (r.error === 'outside_workspace') window.alert(L.alertOutsideWorkspaceSave);
       return;
     }
     const newPath = r.relPath;
@@ -1287,7 +1308,7 @@ async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<voi
       files.value = new Map(files.value).set(p, text);
       syncBaselineForPath(p, text);
     }
-    logLine(fromSaveWithoutTarget ? `已保存：${newPath}` : `另存为：${newPath}`, 'info');
+    logLine(trLogSaveAsDone(locale.value, newPath, fromSaveWithoutTarget), 'info');
     return;
   }
 
@@ -1309,10 +1330,10 @@ async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<voi
       }
       const tabKey = selectedPath.value;
       if (tabKey) browserSaveHandles.set(tabKey, handle);
-      logLine(fromSaveWithoutTarget ? `已保存：${selectedPath.value}` : `另存为：${selectedPath.value}`, 'info');
+      logLine(trLogSaveAsDone(locale.value, selectedPath.value!, fromSaveWithoutTarget), 'info');
     } catch (e) {
       if (String(e).includes('abort')) return;
-      logLine(`另存为失败，改为下载：${String(e)}`, 'warn');
+      logLine(trLogSaveAsFallback(locale.value, String(e)), 'warn');
       fallbackDownloadMarkdown(tabLabel(p), text);
       syncBaselineForPath(p, text);
     }
@@ -1321,12 +1342,7 @@ async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<voi
 
   fallbackDownloadMarkdown(tabLabel(p), text);
   syncBaselineForPath(p, text);
-  logLine(
-    fromSaveWithoutTarget
-      ? `已触发下载保存（浏览器不支持 File System Access 时无法写回原路径）：${tabLabel(p)}`
-      : `已触发下载（另存为）：${tabLabel(p)}`,
-    'info',
-  );
+  logLine(trLogSaveAsDownloaded(locale.value, fromSaveWithoutTarget, tabLabel(p)), 'info');
 }
 
 async function openMarkdownFileUnified(): Promise<void> {
@@ -1334,14 +1350,15 @@ async function openMarkdownFileUnified(): Promise<void> {
     const r = await electronApi.value.openMarkdownInWorkspace();
     if (!r) return;
     if ('error' in r) {
-      if (r.error === 'no_workspace') window.alert('请先用「文件 → 打开磁盘工作区」选择工作区，再打开其中的 .md 文件。');
-      else if (r.error === 'outside_workspace') window.alert('只能选择当前工作区目录内的文件。');
+      const Lo = shellChromeMessages[locale.value];
+      if (r.error === 'no_workspace') window.alert(Lo.alertNoWorkspaceOpenFile);
+      else if (r.error === 'outside_workspace') window.alert(Lo.alertOutsideWorkspacePick);
       return;
     }
     files.value = new Map(files.value).set(r.relPath, r.text);
     syncBaselineForPath(r.relPath, r.text);
     selectedPath.value = r.relPath;
-    logLine(`已打开：${r.relPath}`, 'info');
+    logLine(trLogOpenedFile(locale.value, r.relPath), 'info');
     return;
   }
 
@@ -1358,10 +1375,10 @@ async function openMarkdownFileUnified(): Promise<void> {
       browserSaveHandles.set(name, handle);
       syncBaselineForPath(name, text);
       selectedPath.value = name;
-      logLine(`已打开：${name}`, 'info');
+      logLine(trLogOpenedFile(locale.value, name), 'info');
     } catch (e) {
       if (String(e).includes('abort')) return;
-      logLine(`打开文件失败：${String(e)}，改用传统文件选择`, 'warn');
+      logLine(trLogOpenFilePickerFailed(locale.value, String(e)), 'warn');
       singleFileInputRef.value?.click();
     }
     return;
@@ -1384,7 +1401,7 @@ function onPickSingleMdFile(e: Event) {
     files.value = new Map(files.value).set(name, text);
     syncBaselineForPath(name, text);
     selectedPath.value = name;
-    logLine(`已打开：${name}（无写盘句柄时请用「另存为」或换用 Chrome/Edge）`, 'info');
+    logLine(trLogOpenedFileNoWriteHandle(locale.value, name), 'info');
   };
   reader.readAsText(f);
   input.value = '';
@@ -1429,7 +1446,7 @@ async function pickWorkspaceElectron() {
   replaceAllBaselinesFromFiles(fm);
   const keys = [...files.value.keys()].sort();
   selectedPath.value = keys[0] ?? null;
-  logLine(`Electron 工作区已加载：${keys.length} 个文件`, 'info');
+  logLine(trLogElectronWorkspaceLoaded(locale.value, keys.length), 'info');
 }
 
 function openBlockInShell(block: ParsedFenceBlock) {
@@ -1503,7 +1520,7 @@ function openVisualCanvas(block: ParsedFenceBlock) {
   const existing = canvasTabs.value.find((t) => t.relPath === p && t.blockId === block.payload.id);
   if (existing) {
     activeEditorTab.value = existing.id;
-    logLine(`已切换到代码块画布标签：${block.payload.id}`, 'info');
+    logLine(trLogSwitchedCanvasTab(locale.value, block.payload.id), 'info');
     return;
   }
   const id = makeCanvasTabId();
@@ -1514,13 +1531,13 @@ function openVisualCanvas(block: ParsedFenceBlock) {
       relPath: p,
       blockId: block.payload.id,
       fenceKind: block.kind,
-      subtypeLabel: fenceBlockSubtypeLabel(block),
+      subtypeLabel: fenceBlockSubtypeLabel(block, locale.value),
       codespaceDockSummary: '',
       codespaceDockLines: [],
     },
   ];
   activeEditorTab.value = id;
-  logLine(`已打开代码块画布标签：${block.payload.id}`, 'info');
+  logLine(trLogOpenedCanvasTab(locale.value, block.payload.id), 'info');
 }
 
 function closeCanvasTab(tabId: string) {
@@ -1540,7 +1557,7 @@ async function onEmbeddedCanvasSaved(payload: { markdown: string; relPath: strin
   }
   syncBaselineForPath(payload.relPath, payload.markdown);
   refreshCanvasTabSubtypesForPath(payload.relPath, payload.markdown);
-  logLine(`代码块画布已保存：${payload.relPath}`, 'info');
+  logLine(trLogCanvasTabSaved(locale.value, payload.relPath), 'info');
 }
 
 async function onCanvasSavedInPopup(payload: { markdown: string; relPath: string }) {
@@ -1582,7 +1599,7 @@ function onOpenerCanvasSaved(ev: MessageEvent) {
   }
   syncBaselineForPath(relPath, markdown);
   refreshCanvasTabSubtypesForPath(relPath, markdown);
-  logLine(`已从代码块画布窗口合并保存：${relPath}`, 'info');
+  logLine(trLogMergedFromCanvasWindow(locale.value, relPath), 'info');
 }
 
 watch(
@@ -1615,7 +1632,7 @@ watch(
 );
 
 onMounted(async () => {
-  logLine('MV Workbench 已启动', 'info');
+  logLine(trLogStartup(locale.value), 'info');
   document.addEventListener('pointerdown', onGlobalPointerDown, true);
   document.addEventListener('keydown', onGlobalKeyDown, true);
   document.addEventListener('fullscreenchange', syncAppFullscreenFlag);
@@ -1631,10 +1648,10 @@ onMounted(async () => {
       try {
         canvasMarkdown.value = await electronApi.value.readWorkspaceFile(rel);
         canvasOnly.value = true;
-        logLine('代码块画布编辑窗口（Electron）', 'info');
+        logLine(trLogBlockCanvasElectronWindow(locale.value), 'info');
       } catch {
-        workspaceHint.value = '无法读取文件（代码块画布）。';
-        logLine(workspaceHint.value, 'error');
+        workspaceSurfaceError.value = 'canvas';
+        logLine(shellChromeMessages[locale.value].errCanvasRead, 'error');
       }
       return;
     }
@@ -1652,15 +1669,15 @@ onMounted(async () => {
           canvasWorkspaceFiles.value = o.workspaceFiles && typeof o.workspaceFiles === 'object' ? o.workspaceFiles : {};
           canvasOnly.value = true;
           sessionStorage.removeItem('mvwb_canvas_launch');
-          logLine('代码块画布编辑窗口（浏览器）', 'info');
+          logLine(trLogBlockCanvasBrowserWindow(locale.value), 'info');
         } else {
-          logLine('代码块画布启动数据与 URL 不一致', 'warn');
+          logLine(trLogCanvasLaunchMismatch(locale.value), 'warn');
         }
       } catch {
-        logLine('代码块画布启动数据无效', 'error');
+        logLine(trLogCanvasLaunchInvalid(locale.value), 'error');
       }
     } else {
-      logLine('缺少代码块画布数据：请从主窗口属性区「打开…画布」按钮打开', 'error');
+      logLine(trLogCanvasMissingData(locale.value), 'error');
     }
     return;
   }
@@ -1677,8 +1694,8 @@ onMounted(async () => {
         editOpen.value = true;
       }
     } catch {
-      workspaceHint.value = '无法读取块文件（请先在工作区主窗口选择磁盘目录）。';
-      logLine(workspaceHint.value, 'error');
+      workspaceSurfaceError.value = 'block';
+      logLine(shellChromeMessages[locale.value].errBlockRead, 'error');
     }
     return;
   }
@@ -1726,29 +1743,29 @@ onUnmounted(() => {
         <span class="app-title">MV Workbench</span>
         <span class="app-title-ver">0.1</span>
       </div>
-      <nav class="menu-bar" aria-label="主菜单">
+      <nav class="menu-bar" :aria-label="ui.navAria">
         <div class="menu-entry">
-          <button type="button" class="menu-top" @click.stop="toggleMenu('file')">文件(F)</button>
+          <button type="button" class="menu-top" @click.stop="toggleMenu('file')">{{ ui.file }}</button>
           <ul v-show="openMenu === 'file'" class="menu-dropdown" role="menu" @click.stop>
             <li role="none">
-              <button type="button" class="menu-item" role="menuitem" @click="newFromMenu">新建</button>
+              <button type="button" class="menu-item" role="menuitem" @click="newFromMenu">{{ ui.new }}</button>
             </li>
             <li class="menu-sep" role="separator" />
             <li role="none">
-              <button type="button" class="menu-item" role="menuitem" @click="openMarkdownFileFromMenu">打开…</button>
+              <button type="button" class="menu-item" role="menuitem" @click="openMarkdownFileFromMenu">{{ ui.open }}</button>
             </li>
             <li role="none">
-              <button type="button" class="menu-item" role="menuitem" @click="openFolderDialog">打开文件夹…</button>
+              <button type="button" class="menu-item" role="menuitem" @click="openFolderDialog">{{ ui.openFolder }}</button>
             </li>
             <li class="menu-sep" role="separator" />
             <li role="none">
               <button type="button" class="menu-item" role="menuitem" :disabled="!selectedPath" @click="saveFromMenu">
-                保存
+                {{ ui.save }}
               </button>
             </li>
             <li role="none">
               <button type="button" class="menu-item" role="menuitem" :disabled="!selectedPath" @click="saveAsFromMenu">
-                另存为…
+                {{ ui.saveAs }}
               </button>
             </li>
             <li class="menu-sep" role="separator" />
@@ -1758,10 +1775,10 @@ onUnmounted(() => {
                 class="menu-item"
                 role="menuitem"
                 :disabled="!selectedPath"
-                title="导出当前文档为 .md 副本（浏览器下载）— 无全局快捷键"
+                :title="ui.exportMdTitle"
                 @click="exportMarkdownFromMenu"
               >
-                导出 Markdown…
+                {{ ui.exportMd }}
               </button>
             </li>
             <li role="none">
@@ -1770,10 +1787,10 @@ onUnmounted(() => {
                 class="menu-item"
                 role="menuitem"
                 :disabled="!selectedPath"
-                title="导出独立 HTML（Vditor 样式外链）。预览模式用可见预览 DOM；富文本/原始文本为同参数离屏 Vditor.preview — 无全局快捷键"
+                :title="ui.exportHtmlTitle"
                 @click="exportHtmlFromMenu"
               >
-                导出 HTML…
+                {{ ui.exportHtml }}
               </button>
             </li>
             <li role="none">
@@ -1782,10 +1799,10 @@ onUnmounted(() => {
                 class="menu-item"
                 role="menuitem"
                 :disabled="!selectedPath"
-                title="导出 SVG：预览模式截取可见预览；否则离屏 Vditor.preview — 无全局快捷键"
+                :title="ui.exportSvgTitle"
                 @click="exportSvgFromMenu"
               >
-                导出 SVG…
+                {{ ui.exportSvg }}
               </button>
             </li>
             <li role="none">
@@ -1794,94 +1811,121 @@ onUnmounted(() => {
                 class="menu-item"
                 role="menuitem"
                 :disabled="!selectedPath"
-                title="导出 PNG：预览模式截取可见预览；否则离屏 Vditor.preview — 无全局快捷键"
+                :title="ui.exportPngTitle"
                 @click="exportPngFromMenu"
               >
-                导出 PNG…
+                {{ ui.exportPng }}
               </button>
             </li>
             <li class="menu-sep" role="separator" />
             <li role="none">
               <button type="button" class="menu-item" role="menuitem" :disabled="!selectedPath" @click="closeCurrentDocumentFromMenu">
-                关闭
+                {{ ui.close }}
               </button>
             </li>
             <template v-if="electronApi?.pickWorkspace">
               <li class="menu-sep" role="separator" />
               <li role="none">
-                <button type="button" class="menu-item" role="menuitem" @click="pickFromMenu">打开磁盘工作区…</button>
+                <button type="button" class="menu-item" role="menuitem" @click="pickFromMenu">{{ ui.pickWorkspace }}</button>
               </li>
             </template>
           </ul>
         </div>
         <div class="menu-entry">
-          <button type="button" class="menu-top" @click.stop="toggleMenu('view')">视图(V)</button>
+          <button type="button" class="menu-top" @click.stop="toggleMenu('view')">{{ ui.view }}</button>
           <ul v-show="openMenu === 'view'" class="menu-dropdown" role="menu" @click.stop>
             <li role="none">
               <button type="button" class="menu-item" role="menuitem" @click="toggleShowOutlineDockMenu">
-                {{ showOutlineDock ? '隐藏' : '显示' }}大纲 Dock
+                {{ showOutlineDock ? ui.viewOutlineHide : ui.viewOutlineShow }}
               </button>
             </li>
             <li role="none">
               <button type="button" class="menu-item" role="menuitem" @click="toggleShowPropsDockMenu">
-                {{ showPropsDock ? '隐藏' : '显示' }}属性 Dock
+                {{ showPropsDock ? ui.viewPropsHide : ui.viewPropsShow }}
               </button>
             </li>
             <li class="menu-sep" role="separator" />
-            <li class="menu-info" role="none">
-              文档标签在**中间编辑区**顶部切换；同一文档下打开「代码块画布」后在文档标签下方出现**文档 / 代码块**子标签。关闭标签用 ×。中间列**仅 Markdown**；**代码块大纲**在**左侧大纲 Dock**。其左右为大纲 Dock 与属性 Dock（各自标题栏可**折叠/展开**为窄条；视图菜单可整侧隐藏）。Markdown 支持<strong>预览 / 富文本 / 原始文本</strong>（右键切换）；插入代码块仅在富文本或原始文本下可用。
+            <li class="menu-info" role="none" v-html="ui.viewHintHtml" />
+          </ul>
+        </div>
+        <div class="menu-entry">
+          <button type="button" class="menu-top" @click.stop="toggleMenu('language')">{{ ui.language }}</button>
+          <ul v-show="openMenu === 'language'" class="menu-dropdown" role="menu" @click.stop>
+            <li role="none">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitemradio"
+                :aria-checked="locale === 'zh'"
+                title="简体中文 — 无全局快捷键"
+                @click="setLocaleFromMenu('zh')"
+              >
+                {{ ui.langZh }}
+              </button>
+            </li>
+            <li role="none">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitemradio"
+                :aria-checked="locale === 'en'"
+                title="English — no global shortcut"
+                @click="setLocaleFromMenu('en')"
+              >
+                {{ ui.langEn }}
+              </button>
             </li>
           </ul>
         </div>
         <div class="menu-entry">
-          <button type="button" class="menu-top" @click.stop="toggleMenu('help')">帮助(H)</button>
+          <button type="button" class="menu-top" @click.stop="toggleMenu('help')">{{ ui.help }}</button>
           <ul v-show="openMenu === 'help'" class="menu-dropdown" role="menu" @click.stop>
             <li role="none">
-              <button type="button" class="menu-item" role="menuitem" @click="showAbout">关于 MV Workbench…</button>
+              <button type="button" class="menu-item" role="menuitem" @click="showAbout">{{ ui.about }}</button>
             </li>
           </ul>
         </div>
       </nav>
-      <div class="toolbar-row" aria-label="工具栏">
+      <div class="toolbar-row" :aria-label="ui.tbAria">
         <div class="toolbar-start">
-          <button type="button" class="tb-btn" title="新建 Markdown — 无全局快捷键" @click="newMarkdownFile">新建</button>
+          <button type="button" class="tb-btn" :title="ui.tbNewTitle" @click="newMarkdownFile">{{ ui.tbNew }}</button>
           <span class="tb-sep" aria-hidden="true" />
-          <button type="button" class="tb-btn" title="打开单个 .md（Chrome/Edge 可获写盘句柄）— 无全局快捷键" @click="openMarkdownFileUnified">
-            打开
+          <button type="button" class="tb-btn" :title="ui.tbOpenTitle" @click="openMarkdownFileUnified">
+            {{ ui.tbOpen }}
           </button>
-          <button type="button" class="tb-btn" title="打开文件夹（批量 .md）— 无全局快捷键" @click="openFolderDialog">打开文件夹</button>
+          <button type="button" class="tb-btn" :title="ui.tbOpenFolderTitle" @click="openFolderDialog">{{ ui.tbOpenFolder }}</button>
           <span class="tb-sep" aria-hidden="true" />
           <button
             type="button"
             class="tb-btn"
             :disabled="!selectedPath"
-            title="保存 Ctrl+S — 无全局快捷键"
+            :title="ui.tbSaveTitle"
             @click="saveCurrentDocument"
           >
-            保存
+            {{ ui.tbSave }}
           </button>
           <button
             type="button"
             class="tb-btn"
             :disabled="!selectedPath"
-            title="另存为 Ctrl+Shift+S — 无全局快捷键"
+            :title="ui.tbSaveAsTitle"
             @click="saveCurrentDocumentAs"
           >
-            另存为
+            {{ ui.tbSaveAs }}
           </button>
           <button
             type="button"
             class="tb-btn"
             :disabled="!selectedPath"
-            title="关闭当前文档 Ctrl+W — 无全局快捷键"
+            :title="ui.tbCloseTitle"
             @click="closeCurrentDocumentFromMenu"
           >
-            关闭
+            {{ ui.tbClose }}
           </button>
           <template v-if="electronApi?.pickWorkspace">
             <span class="tb-sep" aria-hidden="true" />
-            <button type="button" class="tb-btn" title="Electron 工作区 — 无全局快捷键" @click="pickWorkspaceElectron">
-              磁盘工作区
+            <button type="button" class="tb-btn" :title="ui.tbDiskWorkspaceTitle" @click="pickWorkspaceElectron">
+              {{ ui.tbDiskWorkspace }}
             </button>
           </template>
         </div>
@@ -1889,14 +1933,10 @@ onUnmounted(() => {
         <button
           type="button"
           class="tb-btn tb-btn-fullscreen"
-          :title="
-            appIsFullscreen
-              ? '退出全屏 — 无全局快捷键（也可按 Esc 视浏览器而定）'
-              : '全屏显示工作台 — 无全局快捷键'
-          "
+          :title="appIsFullscreen ? ui.tbFullscreenExitTitle : ui.tbFullscreenTitle"
           @click="toggleAppFullscreen"
         >
-          {{ appIsFullscreen ? '退出全屏' : '全屏' }}
+          {{ appIsFullscreen ? ui.tbFullscreenExit : ui.tbFullscreen }}
         </button>
       </div>
     </header>
@@ -1907,34 +1947,34 @@ onUnmounted(() => {
             v-if="!blockOnly && showOutlineDock"
             class="dock dock-left"
             :class="{ 'dock--collapsed': outlineDockCollapsed }"
-            aria-label="大纲视图"
+            :aria-label="ui.dockOutlineAria"
           >
             <div class="dock-titlebar">
-              <span v-show="!outlineDockCollapsed" class="dock-title">大纲</span>
+              <span v-show="!outlineDockCollapsed" class="dock-title">{{ ui.dockOutlineTitle }}</span>
               <button
                 v-show="!outlineDockCollapsed"
                 type="button"
                 class="dock-ghost"
-                title="取消围栏块选中 — 无全局快捷键"
+                :title="ui.dockClearSelectionTitle"
                 @click="clearFenceSelection"
               >
-                清空块
+                {{ ui.dockClearSelection }}
               </button>
               <button
                 type="button"
                 class="dock-collapse-toggle"
                 :class="{ 'dock-collapse-toggle--fill': outlineDockCollapsed }"
-                :title="outlineDockCollapsed ? '展开大纲 Dock — 无全局快捷键' : '折叠大纲 Dock — 无全局快捷键'"
+                :title="outlineDockCollapsed ? ui.dockExpandOutline : ui.dockCollapseOutline"
                 :aria-expanded="!outlineDockCollapsed"
                 @click="outlineDockCollapsed = !outlineDockCollapsed"
               >
-                <span v-if="outlineDockCollapsed" class="dock-vlabel">大纲</span>
+                <span v-if="outlineDockCollapsed" class="dock-vlabel">{{ ui.dockOutlineTitle }}</span>
                 <span v-else aria-hidden="true">‹</span>
               </button>
             </div>
             <div v-show="!outlineDockCollapsed" class="dock-scroll">
               <section class="dock-section">
-                <h3 class="dock-subh">文档章节</h3>
+                <h3 class="dock-subh">{{ ui.dockSectionDoc }}</h3>
                 <ul v-if="mdOutlineHeadings.length" class="dock-outline-list">
                   <li
                     v-for="(h, i) in mdOutlineHeadings"
@@ -1952,8 +1992,8 @@ onUnmounted(() => {
                         tabindex="0"
                         role="button"
                         :aria-expanded="!isOutlineBranchCollapsed(i)"
-                        :aria-label="isOutlineBranchCollapsed(i) ? '展开子章节' : '折叠子章节'"
-                        :title="isOutlineBranchCollapsed(i) ? '展开子章节' : '折叠子章节'"
+                        :aria-label="isOutlineBranchCollapsed(i) ? ui.outlineExpandChild : ui.outlineCollapseChild"
+                        :title="isOutlineBranchCollapsed(i) ? ui.outlineExpandChild : ui.outlineCollapseChild"
                         @click.stop="toggleOutlineCollapse(i)"
                         @keydown.enter.prevent.stop="toggleOutlineCollapse(i)"
                         @keydown.space.prevent.stop="toggleOutlineCollapse(i)"
@@ -1964,22 +2004,22 @@ onUnmounted(() => {
                       <button
                         type="button"
                         class="dock-outline-item dock-outline-item--btn"
-                        :title="`跳转到第 ${h.line} 行 — 无全局快捷键`"
+                        :title="trOutlineJumpTitle(locale, h.line)"
                         @click="scrollToOutlineIndex(i)"
                       >
                         <span class="dock-outline-level" :aria-hidden="true">H{{ h.level }}</span>
                         <span class="dock-outline-text">{{ h.text }}</span>
-                        <span class="dock-outline-ln" :title="`第 ${h.line} 行`">L{{ h.line }}</span>
+                        <span class="dock-outline-ln" :title="trOutlineLineTitle(locale, h.line)">L{{ h.line }}</span>
                       </button>
                     </div>
                   </li>
                 </ul>
-                <p v-else class="dock-muted">（当前文档无 ATX 标题）</p>
+                <p v-else class="dock-muted">{{ ui.dockNoHeadings }}</p>
               </section>
               <section class="dock-section">
-                <h3 class="dock-subh">代码块大纲</h3>
+                <h3 class="dock-subh">{{ ui.dockFenceOutline }}</h3>
                 <p class="dock-muted dock-hint dock-hint--tight">
-                  中间列仅 Markdown；光标在围栏内时右侧属性会随动；亦可在此选中下列块，行末「代码块」打开代码块画布子标签。
+                  {{ ui.dockFenceOutlineHint }}
                 </p>
                 <ul v-if="blocks.length" class="dock-fence-list" role="list">
                   <li
@@ -1991,12 +2031,12 @@ onUnmounted(() => {
                     <button
                       type="button"
                       class="dock-fence-select"
-                      :title="`选中 ${b.kind} · ${fenceBlockSubtypeLabel(b)} · ${b.payload.id} — 无全局快捷键`"
+                      :title="trSelectFenceTitle(locale, b.kind, fenceBlockSubtypeLabel(b, locale), b.payload.id)"
                       @click="selectFenceBlock(b)"
                     >
                       <span class="dock-fence-type-line">
                         <span class="dock-fence-kind">{{ b.kind }}</span>
-                        <span class="dock-fence-sub">{{ fenceBlockSubtypeLabel(b) }}</span>
+                        <span class="dock-fence-sub">{{ fenceBlockSubtypeLabel(b, locale) }}</span>
                       </span>
                       <code class="dock-fence-id">{{ b.payload.id }}</code>
                     </button>
@@ -2006,11 +2046,11 @@ onUnmounted(() => {
                       :title="canvasPrimaryActionTitle(b)"
                       @click.stop="openVisualCanvas(b)"
                     >
-                      代码块
+                      {{ ui.dockFenceOpenCanvas }}
                     </button>
                   </li>
                 </ul>
-                <p v-else class="dock-muted">（当前文档无 mv-model-sql / mv-model-kv / mv-model-struct / mv-model-codespace / mv-model-interface / mv-view / mv-map 围栏）</p>
+                <p v-else class="dock-muted">{{ ui.dockNoFenceKinds }}</p>
               </section>
               <section v-if="dockSecondaryOutline" class="dock-section">
                 <h3 class="dock-subh">{{ dockSecondaryOutline.heading }}</h3>
@@ -2018,12 +2058,12 @@ onUnmounted(() => {
                   <li v-for="(ln, i) in dockSecondaryOutline.lines" :key="i" class="dock-outline-item">{{ ln }}</li>
                 </ul>
               </section>
-              <p v-else class="dock-muted dock-hint">在上方「代码块大纲」中选中块后，此处将显示该块相关结构（如 class 列表、表字段等）。</p>
+              <p v-else class="dock-muted dock-hint">{{ ui.dockSecondaryPlaceholder }}</p>
             </div>
           </aside>
           <div class="editor-column">
             <header class="doc-tabs">
-              <nav class="tab-strip" role="tablist" aria-label="已打开文档">
+              <nav class="tab-strip" role="tablist" :aria-label="ui.docTabsAria">
                 <div
                   v-for="path in sortedPaths"
                   :key="path"
@@ -2044,8 +2084,8 @@ onUnmounted(() => {
                   <button
                     type="button"
                     class="tab-close"
-                    :title="`关闭 ${path}`"
-                    :aria-label="`关闭 ${tabLabel(path)}`"
+                    :title="trCloseTabTitle(locale, path)"
+                    :aria-label="trCloseTabAria(locale, tabLabel(path))"
                     @click.stop="closeTab(path)"
                   >
                     ×
@@ -2057,17 +2097,17 @@ onUnmounted(() => {
               v-if="selectedPath && canvasTabsForCurrentFile.length"
               class="editor-subtabs"
               role="tablist"
-              aria-label="文档与代码块画布"
+              :aria-label="ui.subtabsAria"
             >
               <button
                 type="button"
                 class="subtab"
                 role="tab"
                 :aria-selected="activeEditorTab === 'markdown'"
-                title="文档编辑（仅 Markdown）— 无全局快捷键"
+                :title="ui.subtabDocTitle"
                 @click="activeEditorTab = 'markdown'"
               >
-                文档
+                {{ ui.subtabDoc }}
               </button>
               <div
                 v-for="t in canvasTabsForCurrentFile"
@@ -2081,7 +2121,7 @@ onUnmounted(() => {
                   class="subtab subtab-main"
                   role="tab"
                   :aria-selected="activeEditorTab === t.id"
-                  :title="`${t.fenceKind} · ${t.subtypeLabel} · ${t.blockId} — 无全局快捷键`"
+                  :title="`${t.fenceKind} · ${t.subtypeLabel} · ${t.blockId} — ${ui.hintNoShortcut}`"
                   @click="activeEditorTab = t.id"
                 >
                   <span class="subtab-meta">
@@ -2094,8 +2134,8 @@ onUnmounted(() => {
                 <button
                   type="button"
                   class="subtab-close"
-                  title="关闭代码块画布标签 — 无全局快捷键"
-                  :aria-label="`关闭代码块画布 ${t.blockId}`"
+                  :title="ui.closeCanvasTabTitle"
+                  :aria-label="trCloseCanvasTabAria(locale, t.blockId)"
                   @click.stop="closeCanvasTab(t.id)"
                 >
                   ×
@@ -2108,18 +2148,18 @@ onUnmounted(() => {
                 <div class="split">
           <section ref="mdPaneRef" class="md-pane" @contextmenu.prevent="onMdPaneContextMenu">
             <h2 class="md-pane-head">
-              Markdown
-              <span class="md-mode-switch" role="radiogroup" aria-label="Markdown 显示模式">
+              {{ ui.mdHeadingMarkdown }}
+              <span class="md-mode-switch" role="radiogroup" :aria-label="ui.mdModeAria">
                 <button
                   type="button"
                   class="md-mode-btn"
                   :class="{ 'md-mode-btn--active': mdPaneMode === 'preview' }"
                   role="radio"
                   :aria-checked="mdPaneMode === 'preview'"
-                  title="预览（只读）— 无全局快捷键"
+                  :title="ui.mdPreviewTitle"
                   @click="setMdPaneMode('preview')"
                 >
-                  预览
+                  {{ ui.mdPreview }}
                 </button>
                 <button
                   type="button"
@@ -2127,10 +2167,10 @@ onUnmounted(() => {
                   :class="{ 'md-mode-btn--active': mdPaneMode === 'rich' }"
                   role="radio"
                   :aria-checked="mdPaneMode === 'rich'"
-                  title="富文本（Vditor）— 无全局快捷键"
+                  :title="ui.mdRichTitle"
                   @click="setMdPaneMode('rich')"
                 >
-                  富文本
+                  {{ ui.mdRich }}
                 </button>
                 <button
                   type="button"
@@ -2138,10 +2178,10 @@ onUnmounted(() => {
                   :class="{ 'md-mode-btn--active': mdPaneMode === 'source' }"
                   role="radio"
                   :aria-checked="mdPaneMode === 'source'"
-                  title="原始文本 — 无全局快捷键"
+                  :title="ui.mdSourceTitle"
                   @click="setMdPaneMode('source')"
                 >
-                  原始文本
+                  {{ ui.mdSource }}
                 </button>
               </span>
             </h2>
@@ -2166,8 +2206,8 @@ onUnmounted(() => {
               v-model="sourceEditorText"
               class="md-source"
               spellcheck="false"
-              aria-label="Markdown 原始文本"
-              title="原始文本编辑 — 无全局快捷键"
+              :aria-label="ui.mdSourceAreaAria"
+              :title="ui.mdSourceAreaTitle"
               @input="onMdSourceInput"
               @click="onMdSourceSelectionSync"
               @keyup="onMdSourceSelectionSync"
@@ -2191,31 +2231,31 @@ onUnmounted(() => {
                 />
               </div>
             </template>
-            <p v-else class="empty empty--in-column">请选择标签</p>
+            <p v-else class="empty empty--in-column">{{ ui.emptyPickTab }}</p>
           </div>
           <aside
             v-if="!blockOnly && showPropsDock"
             class="dock dock-right"
             :class="{ 'dock--collapsed': propsDockCollapsed }"
-            aria-label="属性"
+            :aria-label="ui.propsAria"
           >
             <div class="dock-titlebar dock-titlebar--right">
               <button
                 type="button"
                 class="dock-collapse-toggle"
                 :class="{ 'dock-collapse-toggle--fill': propsDockCollapsed }"
-                :title="propsDockCollapsed ? '展开属性 Dock — 无全局快捷键' : '折叠属性 Dock — 无全局快捷键'"
+                :title="propsDockCollapsed ? ui.propsExpand : ui.propsCollapse"
                 :aria-expanded="!propsDockCollapsed"
                 @click="propsDockCollapsed = !propsDockCollapsed"
               >
-                <span v-if="propsDockCollapsed" class="dock-vlabel">属性</span>
+                <span v-if="propsDockCollapsed" class="dock-vlabel">{{ ui.propsTitle }}</span>
                 <span v-else aria-hidden="true">›</span>
               </button>
-              <span v-show="!propsDockCollapsed" class="dock-title dock-title--trailing">属性</span>
+              <span v-show="!propsDockCollapsed" class="dock-title dock-title--trailing">{{ ui.propsTitle }}</span>
             </div>
             <div v-show="!propsDockCollapsed" class="dock-scroll">
               <template v-if="selectedBlock && selectedBlockDocLines">
-                <div class="dock-props-actions" role="group" aria-label="块操作">
+                <div class="dock-props-actions" role="group" :aria-label="ui.dockBlockActionsAria">
                   <button
                     type="button"
                     class="dock-action dock-action--primary"
@@ -2227,22 +2267,22 @@ onUnmounted(() => {
                   <button
                     type="button"
                     class="dock-action"
-                    title="在对话框中编辑该块 JSON — 无全局快捷键"
+                    :title="ui.editJsonTitle"
                     @click="openJsonForSelected"
                   >
-                    编辑 JSON
+                    {{ ui.editJson }}
                   </button>
                   <button
                     type="button"
                     class="dock-action"
-                    title="独立编辑（Electron 宿主或回退为 JSON 对话框）— 无全局快捷键"
+                    :title="ui.shellEditTitle"
                     @click="openShellForSelected"
                   >
-                    独立编辑
+                    {{ ui.shellEdit }}
                   </button>
                 </div>
                 <p v-if="selectedBlockCanvasHint" class="dock-muted dock-canvas-hint">{{ selectedBlockCanvasHint }}</p>
-                <h3 class="dock-subh">基本属性</h3>
+                <h3 class="dock-subh">{{ ui.basicProps }}</h3>
                 <dl class="dock-dl dock-dl--props">
                   <template v-for="(row, i) in selectedBlockDocLines" :key="i">
                     <dt>{{ row.label }}</dt>
@@ -2250,9 +2290,9 @@ onUnmounted(() => {
                   </template>
                 </dl>
                 <template v-if="showCodespaceDockCanvasSelection">
-                  <h3 class="dock-subh">画布选中</h3>
-                  <p class="dock-muted dock-canvas-hint" title="代码空间画布当前单击选中 — 无全局快捷键">
-                    {{ codespaceDockCanvasSelectionText || '（在画布上单击节点）' }}
+                  <h3 class="dock-subh">{{ ui.codespaceDockSelectionHeading }}</h3>
+                  <p class="dock-muted dock-canvas-hint" :title="ui.codespaceCanvasSelectionTitle">
+                    {{ codespaceDockCanvasSelectionText || ui.codespaceClickCanvas }}
                   </p>
                   <dl v-if="codespaceDockCanvasLines.length" class="dock-dl dock-dl--props">
                     <template v-for="(row, i) in codespaceDockCanvasLines" :key="'csdock-' + i">
@@ -2262,38 +2302,38 @@ onUnmounted(() => {
                   </dl>
                 </template>
                 <details v-if="selectedBlock.kind === 'mv-view'" class="dock-json-details dock-ref-details">
-                  <summary class="dock-json-summary" title="modelRefs 书写约定 — 无全局快捷键">modelRefs 地址说明</summary>
+                  <summary class="dock-json-summary" :title="ui.modelRefsSummaryHover">{{ ui.modelRefsSummaryTitle }}</summary>
                   <p class="dock-muted dock-ref-doc">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>
                 </details>
                 <details class="dock-json-details">
-                  <summary class="dock-json-summary" title="展开或折叠完整 JSON — 无全局快捷键">完整 JSON</summary>
+                  <summary class="dock-json-summary" :title="ui.fullJsonSummaryHover">{{ ui.fullJsonSummary }}</summary>
                   <pre class="dock-json dock-json--nested" tabindex="0">{{ JSON.stringify(selectedBlock.payload, null, 2) }}</pre>
                 </details>
               </template>
               <template v-else>
                 <dl class="dock-dl">
-                  <dt>路径</dt>
+                  <dt>{{ ui.propsPath }}</dt>
                   <dd>{{ selectedPath }}</dd>
-                  <dt>字符数</dt>
+                  <dt>{{ ui.propsChars }}</dt>
                   <dd>{{ currentContent.length }}</dd>
-                  <dt>围栏块数</dt>
+                  <dt>{{ ui.propsFenceCount }}</dt>
                   <dd>{{ blocks.length }}</dd>
-                  <dt>解析警告</dt>
+                  <dt>{{ ui.propsParseWarns }}</dt>
                   <dd>{{ parseErrors.length }}</dd>
                 </dl>
-                <p class="dock-muted">在左侧「代码块大纲」中选中块后，此处显示基本属性、操作按钮与可展开的完整 JSON。</p>
+                <p class="dock-muted">{{ ui.propsPickBlockHint }}</p>
               </template>
             </div>
           </aside>
         </div>
       </template>
     </main>
-    <footer v-if="!blockOnly" class="statusbar" role="status" title="点击查看完整日志" @click="onStatusClick">
+    <footer v-if="!blockOnly" class="statusbar" role="status" :title="ui.statusReady" @click="onStatusClick">
       <span class="status-left" :title="statusLeftText">{{ statusLeftText }}</span>
       <span class="status-right">
-        <span title="运行壳">壳 {{ shell }}</span>
+        <span :title="ui.statusShellTooltip">{{ ui.statusShellPrefix }} {{ shell }}</span>
         <span class="status-sep" aria-hidden="true">|</span>
-        <span title="已打开文档数">文档 {{ sortedPaths.length }}</span>
+        <span :title="ui.statusDocTooltip">{{ ui.statusDocPrefix }} {{ sortedPaths.length }}</span>
         <template v-if="selectedPath">
           <span class="status-sep" aria-hidden="true">|</span>
           <span class="status-path" :title="selectedPath">{{ selectedPath }}</span>
@@ -2302,11 +2342,11 @@ onUnmounted(() => {
     </footer>
     <div v-if="editOpen" class="modal-back" @click.self="editOpen = false">
       <div class="modal">
-        <h3>编辑块 {{ editBlockId }}</h3>
+        <h3>{{ trModalEditTitle(locale, editBlockId ?? '') }}</h3>
         <textarea v-model="editJson" class="json-area" spellcheck="false" />
         <div class="modal-actions">
-          <button type="button" @click="editOpen = false">取消</button>
-          <button type="button" class="primary" @click="applyEdit">保存到 MD</button>
+          <button type="button" @click="editOpen = false">{{ ui.modalCancel }}</button>
+          <button type="button" class="primary" @click="applyEdit">{{ ui.modalSaveMd }}</button>
         </div>
       </div>
     </div>
@@ -2316,7 +2356,7 @@ onUnmounted(() => {
         ref="mdCtxMenuRef"
         class="md-ctx-menu"
         role="menu"
-        aria-label="Markdown 区域"
+        :aria-label="ui.mdCtxAria"
         :style="{ left: mdCtxX + 'px', top: mdCtxY + 'px' }"
         @click.stop
         @contextmenu.prevent
@@ -2326,30 +2366,30 @@ onUnmounted(() => {
           class="ctx-item"
           role="menuitemradio"
           :aria-checked="mdPaneMode === 'preview'"
-          title="切换到只读预览 — 无全局快捷键"
+          :title="ui.ctxPreviewTitle"
           @click="setMdPaneMode('preview')"
         >
-          预览（只读）
+          {{ ui.ctxPreview }}
         </button>
         <button
           type="button"
           class="ctx-item"
           role="menuitemradio"
           :aria-checked="mdPaneMode === 'rich'"
-          title="切换到富文本（Vditor）— 无全局快捷键"
+          :title="ui.ctxRichTitle"
           @click="setMdPaneMode('rich')"
         >
-          富文本（Vditor）
+          {{ ui.ctxRich }}
         </button>
         <button
           type="button"
           class="ctx-item"
           role="menuitemradio"
           :aria-checked="mdPaneMode === 'source'"
-          title="切换到原始文本 — 无全局快捷键"
+          :title="ui.ctxSourceTitle"
           @click="setMdPaneMode('source')"
         >
-          原始文本
+          {{ ui.ctxSource }}
         </button>
         <div class="ctx-sep" role="separator" aria-hidden="true" />
         <button
@@ -2359,14 +2399,14 @@ onUnmounted(() => {
           :disabled="!selectedPath || mdPaneMode === 'preview'"
           :title="
             !selectedPath
-              ? '请先打开或新建文档 — 无全局快捷键'
+              ? ui.ctxInsertNoDocTitle
               : mdPaneMode === 'preview'
-                ? '预览模式下不可用：请先切换到富文本或原始文本 — 无全局快捷键'
-                : '选择代码块类型并插入 mv-view / mv-model* 围栏 — 无全局快捷键'
+                ? ui.ctxInsertPreviewTitle
+                : ui.ctxInsertTitle
           "
           @click="openInsertCodeBlockModal"
         >
-          插入代码块…
+          {{ ui.ctxInsert }}
         </button>
       </div>
     </Teleport>
@@ -2377,12 +2417,12 @@ onUnmounted(() => {
     />
     <div v-if="logOpen" class="modal-back log-modal-back" @click.self="logOpen = false">
       <div class="modal log-modal">
-        <h3>日志</h3>
-        <p class="log-hint">纯文本历史记录；「复制」写入当前全文（与下方文本一致）。</p>
+        <h3>{{ ui.logTitle }}</h3>
+        <p class="log-hint">{{ ui.logHint }}</p>
         <pre class="log-body" tabindex="0">{{ logTextPlain }}</pre>
         <div class="modal-actions">
-          <button type="button" @click="logOpen = false">关闭</button>
-          <button type="button" class="primary" title="复制全部日志 — 无全局快捷键" @click="copyLogToClipboard">复制全文</button>
+          <button type="button" @click="logOpen = false">{{ ui.logClose }}</button>
+          <button type="button" class="primary" :title="`${ui.logCopyAll} — ${ui.hintNoShortcut}`" @click="copyLogToClipboard">{{ ui.logCopyAll }}</button>
         </div>
       </div>
     </div>

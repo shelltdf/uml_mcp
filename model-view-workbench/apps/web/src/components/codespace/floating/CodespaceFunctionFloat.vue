@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
 import type { MvCodespaceFunction, MvModelCodespacePayload } from '@mvwb/core';
+import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from '../../../utils/codespace-canvas';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
+
+const csMsg = inject(CS_CANVAS_MSG_KEY)!;
 
 const props = defineProps<{
   open: boolean;
@@ -38,15 +41,31 @@ function removeFn() {
 </script>
 
 <template>
-  <CodespaceFloatShell :open="open && !!fn" :title="fn ? `函数 · ${fn.name}` : '函数'" @close="emit('close')">
+  <CodespaceFloatShell
+    :open="open && !!fn"
+    :title="fn ? csMsg.flFnTitle(fn.name) : csMsg.flFnBare"
+    @close="emit('close')"
+  >
     <template v-if="fn">
       <label class="field">
         <span>id</span>
-        <input type="text" class="wide" :value="fn.id" title="id — 无全局快捷键" @input="patchFn({ id: ($event.target as HTMLInputElement).value })" />
+        <input
+          type="text"
+          class="wide"
+          :value="fn.id"
+          :title="csMsg.flTechIdTitle"
+          @input="patchFn({ id: ($event.target as HTMLInputElement).value })"
+        />
       </label>
       <label class="field">
         <span>name</span>
-        <input type="text" class="wide" :value="fn.name" title="name — 无全局快捷键" @input="patchFn({ name: ($event.target as HTMLInputElement).value })" />
+        <input
+          type="text"
+          class="wide"
+          :value="fn.name"
+          :title="csMsg.flTechNameTitle"
+          @input="patchFn({ name: ($event.target as HTMLInputElement).value })"
+        />
       </label>
       <label class="field">
         <span>signature</span>
@@ -54,15 +73,23 @@ function removeFn() {
           type="text"
           class="wide"
           :value="fn.signature ?? ''"
-          title="signature — 无全局快捷键"
+          :title="csMsg.flTechSignatureTitle"
           @input="patchFn({ signature: ($event.target as HTMLInputElement).value })"
         />
       </label>
       <label class="field">
         <span>notes</span>
-        <input type="text" class="wide" :value="fn.notes ?? ''" title="notes — 无全局快捷键" @input="patchFn({ notes: ($event.target as HTMLInputElement).value })" />
+        <input
+          type="text"
+          class="wide"
+          :value="fn.notes ?? ''"
+          :title="csMsg.flTechNotesTitle"
+          @input="patchFn({ notes: ($event.target as HTMLInputElement).value })"
+        />
       </label>
-      <button type="button" class="link-btn cs-danger" title="删除函数 — 无全局快捷键" @click="removeFn">删除函数</button>
+      <button type="button" class="link-btn cs-danger" :title="csMsg.flFnDeleteTitle" @click="removeFn">
+        {{ csMsg.flFnDeleteLabel }}
+      </button>
     </template>
   </CodespaceFloatShell>
 </template>

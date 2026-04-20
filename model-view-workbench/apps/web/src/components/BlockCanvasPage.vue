@@ -3,13 +3,11 @@ import { computed, nextTick, ref, watch } from 'vue';
 import CodespaceCanvasEditor from './codespace/CodespaceCanvasEditor.vue';
 import {
   MV_MAP_CANVAS_TITLE,
-  MV_MODEL_CODESPACE_CANVAS_TITLE,
   MV_MODEL_INTERFACE_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_REFS_SCHEME_DOC,
   MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
-  MV_VIEW_KIND_METADATA,
   isMermaidViewKind,
   isPlantUmlViewKind,
   parseMarkdownBlocks,
@@ -24,7 +22,11 @@ import {
   type MvViewPayload,
   type ParsedFenceBlock,
 } from '@mvwb/core';
+import { useAppLocale } from '../composables/useAppLocale';
+import { mvViewKindStrings } from '../i18n/mv-view-kind-locale';
 import type { CodespaceDockContextPayload } from '../utils/codespace-dock-context';
+
+const { locale, ui } = useAppLocale();
 
 const MODEL_COL_TYPES = ['string', 'int', 'float', 'boolean', 'json'] as const;
 
@@ -173,12 +175,12 @@ const canvasSurfaceTitle = computed(() => {
   if (b.kind === 'mv-model-sql') return MV_MODEL_SQL_CANVAS_TITLE;
   if (b.kind === 'mv-model-kv') return MV_MODEL_KV_CANVAS_TITLE;
   if (b.kind === 'mv-model-struct') return MV_MODEL_STRUCT_CANVAS_TITLE;
-  if (b.kind === 'mv-model-codespace') return MV_MODEL_CODESPACE_CANVAS_TITLE;
+  if (b.kind === 'mv-model-codespace') return ui.value.canvasTitleMvModelCodespace;
   if (b.kind === 'mv-model-interface') return MV_MODEL_INTERFACE_CANVAS_TITLE;
   if (b.kind === 'mv-map') return MV_MAP_CANVAS_TITLE;
   if (b.kind === 'mv-view') {
     const k = (b.payload as MvViewPayload).kind;
-    return MV_VIEW_KIND_METADATA[k].canvasTitle;
+    return mvViewKindStrings(k, locale.value).canvasTitle;
   }
   return '';
 });
@@ -186,13 +188,13 @@ const canvasSurfaceTitle = computed(() => {
 const viewKindDescription = computed(() => {
   const b = block.value;
   if (!b || b.kind !== 'mv-view' || !viewDraft.value) return '';
-  return MV_VIEW_KIND_METADATA[viewDraft.value.kind as MvViewKind].description;
+  return mvViewKindStrings(viewDraft.value.kind as MvViewKind, locale.value).description;
 });
 
 const viewPayloadPlaceholder = computed(() => {
   const b = block.value;
   if (!b || b.kind !== 'mv-view' || !viewDraft.value) return '';
-  return MV_VIEW_KIND_METADATA[viewDraft.value.kind as MvViewKind].payloadPlaceholder;
+  return mvViewKindStrings(viewDraft.value.kind as MvViewKind, locale.value).payloadPlaceholder;
 });
 
 const filteredModelRowEntries = computed(() => {
@@ -837,7 +839,7 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
   <div class="canvas-root" :class="{ 'canvas-root--embedded': embedded }">
     <header class="canvas-toolbar">
       <div class="canvas-title">
-        <span class="canvas-badge">代码块画布</span>
+        <span class="canvas-badge">{{ ui.labelCanvas }}</span>
         <template v-if="block">
           <strong>{{ canvasSurfaceTitle }}</strong>
           <span class="canvas-sep">·</span>
@@ -845,23 +847,31 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
           <span class="canvas-sep">·</span>
           <code>{{ block.payload.id }}</code>
         </template>
-        <span v-else class="canvas-err">未找到块</span>
+        <span v-else class="canvas-err">{{ ui.blockCanvasNotFound }}</span>
       </div>
       <div class="canvas-actions">
         <button
           type="button"
           class="tb"
-          :title="embedded ? '关闭代码块画布标签 — 无全局快捷键' : '关闭窗口 — 无全局快捷键'"
+          :title="embedded ? ui.closeCanvasTabTitle : ui.blockCanvasClosePopupTitle"
           @click="closeWin"
         >
-          关闭
+          {{ ui.tbClose }}
         </button>
-        <button type="button" class="tb primary" :disabled="!block" title="保存到 Markdown — 无全局快捷键" @click="save">保存</button>
+        <button
+          type="button"
+          class="tb primary"
+          :disabled="!block"
+          :title="ui.blockCanvasSaveTitle"
+          @click="save"
+        >
+          {{ ui.tbSave }}
+        </button>
       </div>
     </header>
 
     <main v-if="block" class="canvas-body">
-      <div class="canvas-surface" aria-label="Markdown 围栏代码块编辑画布">
+      <div class="canvas-surface" :aria-label="ui.blockCanvasBodyAria">
         <template v-if="block.kind === 'mv-model-sql' && modelSqlDraft">
           <div class="model-sql-surface">
           <p class="canvas-hint canvas-hint--compact">

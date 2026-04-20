@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, provide, ref, watch } from 'vue';
 import type { MvModelCodespacePayload } from '@mvwb/core';
+import { useAppLocale } from '../../composables/useAppLocale';
+import { CS_CANVAS_MSG_KEY, codespaceCanvasMessages } from '../../i18n/codespace-canvas-messages';
 import {
   getNamespaceAtPath,
   insertNamespaceChild,
@@ -20,6 +22,10 @@ import CodespaceMacroFloat from './floating/CodespaceMacroFloat.vue';
 import CodespaceModuleFloat from './floating/CodespaceModuleFloat.vue';
 import CodespaceNamespaceFloat from './floating/CodespaceNamespaceFloat.vue';
 import CodespaceVariableFloat from './floating/CodespaceVariableFloat.vue';
+
+const { locale } = useAppLocale();
+const csCanvasMsg = computed(() => codespaceCanvasMessages[locale.value]);
+provide(CS_CANVAS_MSG_KEY, csCanvasMsg);
 
 const props = withDefaults(
   defineProps<{
@@ -78,14 +84,14 @@ function applyAdvancedJson() {
   try {
     const p = JSON.parse(advancedJsonText.value) as MvModelCodespacePayload;
     if (!p || typeof p !== 'object' || !Array.isArray(p.modules)) {
-      window.alert('JSON 须为对象且含 modules 数组。');
+      window.alert(csCanvasMsg.value.edJsonNeedObjectModules);
       return;
     }
     emit('update:modelValue', p);
     selection.value = { t: 'meta' };
     advancedJsonText.value = JSON.stringify(p, null, 2);
   } catch {
-    window.alert('JSON 解析失败。');
+    window.alert(csCanvasMsg.value.edJsonParseFail);
   }
 }
 
@@ -110,9 +116,12 @@ function closeFloat() {
 }
 
 watch(
-  [selection, () => props.modelValue],
+  [selection, () => props.modelValue, locale],
   () => {
-    emit('codespaceDockContext', buildCodespaceDockContext(selection.value, props.modelValue));
+    emit(
+      'codespaceDockContext',
+      buildCodespaceDockContext(selection.value, props.modelValue, locale.value),
+    );
   },
   { deep: true, immediate: true },
 );
@@ -121,14 +130,14 @@ function addModule() {
   patch((d) => {
     d.modules.push({
       id: newCodespaceUniqueId('mod', d),
-      name: '新模块',
+      name: csCanvasMsg.value.newModuleName,
     });
   });
 }
 
 function tryRequestDeleteModule(mi: number) {
   if (props.modelValue.modules.length <= 1) {
-    window.alert('至少保留一个模块。');
+    window.alert(csCanvasMsg.value.edKeepOneModule);
     return;
   }
   moduleDeleteMi.value = mi;
@@ -177,7 +186,7 @@ function addTopLevelNs(mi: number) {
   patch((d) => {
     insertNamespaceChild(d, mi, [], {
       id: newCodespaceUniqueId('ns', d),
-      name: '新命名空间',
+      name: csCanvasMsg.value.newNsName,
       namespaces: [],
     });
   });
@@ -187,7 +196,7 @@ function addChildNs(mi: number, parentPath: number[]) {
   patch((d) => {
     insertNamespaceChild(d, mi, parentPath, {
       id: newCodespaceUniqueId('ns', d),
-      name: '子命名空间',
+      name: csCanvasMsg.value.newChildNsName,
       namespaces: [],
     });
   });
@@ -200,7 +209,7 @@ function addClass(mi: number, path: number[]) {
     if (!n.classes) n.classes = [];
     n.classes.push({
       id: newCodespaceUniqueId('cls', d),
-      name: '新类',
+      name: csCanvasMsg.value.newClassName,
       kind: 'class',
     });
   });
@@ -211,7 +220,7 @@ function addVar(mi: number, path: number[]) {
     const n = getNamespaceAtPath(d, mi, path);
     if (!n) return;
     if (!n.variables) n.variables = [];
-    n.variables.push({ id: newCodespaceUniqueId('var', d), name: '新变量' });
+    n.variables.push({ id: newCodespaceUniqueId('var', d), name: csCanvasMsg.value.newVarName });
   });
 }
 
@@ -220,7 +229,7 @@ function addFn(mi: number, path: number[]) {
     const n = getNamespaceAtPath(d, mi, path);
     if (!n) return;
     if (!n.functions) n.functions = [];
-    n.functions.push({ id: newCodespaceUniqueId('fn', d), name: '新函数' });
+    n.functions.push({ id: newCodespaceUniqueId('fn', d), name: csCanvasMsg.value.newFnName });
   });
 }
 
@@ -229,7 +238,7 @@ function addMacro(mi: number, path: number[]) {
     const n = getNamespaceAtPath(d, mi, path);
     if (!n) return;
     if (!n.macros) n.macros = [];
-    n.macros.push({ id: newCodespaceUniqueId('mac', d), name: '新宏' });
+    n.macros.push({ id: newCodespaceUniqueId('mac', d), name: csCanvasMsg.value.newMacroName });
   });
 }
 
@@ -251,23 +260,23 @@ function patchMetaRoot(root: string) {
     <div class="cs-meta-bar">
       <div
         class="cs-meta-inline-wrap cs-meta-inline-bar"
-        title="围栏内 id 与文档块绑定，只读；title / workspaceRoot 可编辑 — 无全局快捷键"
+        :title="csCanvasMsg.edMetaBarTitle"
       >
-        <div class="cs-meta-inline" role="group" aria-label="id、title、workspaceRoot">
+        <div class="cs-meta-inline" role="group" :aria-label="csCanvasMsg.edMetaAria">
           <span class="cs-meta-inline-lab">id</span>
           <input
             type="text"
             class="cs-meta-inline-inp cs-meta-inline-id"
             :value="modelValue.id"
             readonly
-            title="围栏内 id 与文档块绑定，只读 — 无全局快捷键"
+            :title="csCanvasMsg.edIdReadonlyTitle"
           />
           <span class="cs-meta-inline-lab">title</span>
           <input
             type="text"
             class="cs-meta-inline-inp cs-meta-inline-grow"
             :value="modelValue.title ?? ''"
-            title="标题 — 无全局快捷键"
+            :title="csCanvasMsg.edTitleFieldTitle"
             @input="patchMetaTitle(($event.target as HTMLInputElement).value)"
           />
           <span class="cs-meta-inline-lab">workspaceRoot</span>
@@ -275,7 +284,7 @@ function patchMetaRoot(root: string) {
             type="text"
             class="cs-meta-inline-inp cs-meta-inline-grow"
             :value="modelValue.workspaceRoot ?? ''"
-            title="workspaceRoot 工作区根路径片段 — 无全局快捷键"
+            :title="csCanvasMsg.edWorkspaceRootTitle"
             @input="patchMetaRoot(($event.target as HTMLInputElement).value)"
           />
         </div>
@@ -358,10 +367,12 @@ function patchMetaRoot(root: string) {
     />
 
     <details class="cs-advanced" @toggle="onAdvancedToggle">
-      <summary>高级：原始 JSON</summary>
-      <p class="canvas-hint canvas-hint--compact">编辑后点「应用到树」；须能通过解析校验。</p>
+      <summary>{{ csCanvasMsg.edAdvancedSummary }}</summary>
+      <p class="canvas-hint canvas-hint--compact">{{ csCanvasMsg.edAdvancedHint }}</p>
       <textarea v-model="advancedJsonText" class="payload-ta" spellcheck="false" rows="12" aria-label="codespace raw json" />
-      <button type="button" class="add-row" title="应用 JSON — 无全局快捷键" @click="applyAdvancedJson">应用到树</button>
+      <button type="button" class="add-row" :title="csCanvasMsg.edAdvancedApplyTitle" @click="applyAdvancedJson">
+        {{ csCanvasMsg.edAdvancedApplyLabel }}
+      </button>
     </details>
 
     <Teleport to="body">
@@ -380,12 +391,19 @@ function patchMetaRoot(root: string) {
           tabindex="-1"
           @keydown.esc.stop="cancelDeleteModule"
         >
-          <h2 id="cs-mod-del-title" class="msc-del-title">删除模块</h2>
-          <p class="msc-del-desc">确定从代码空间模型中删除该模块？未保存前可关闭画布放弃。</p>
+          <h2 id="cs-mod-del-title" class="msc-del-title">{{ csCanvasMsg.edDelModuleTitle }}</h2>
+          <p class="msc-del-desc">{{ csCanvasMsg.edDelModuleDesc }}</p>
           <div class="msc-del-actions">
-            <button type="button" class="msc-del-btn" title="取消 — 无全局快捷键" @click="cancelDeleteModule">取消</button>
-            <button type="button" class="msc-del-btn msc-del-btn--danger" title="确定删除 — 无全局快捷键" @click="confirmDeleteModule">
-              确定删除
+            <button type="button" class="msc-del-btn" :title="csCanvasMsg.edCancelBtnTitle" @click="cancelDeleteModule">
+              {{ csCanvasMsg.edCancel }}
+            </button>
+            <button
+              type="button"
+              class="msc-del-btn msc-del-btn--danger"
+              :title="csCanvasMsg.edConfirmDeleteBtnTitle"
+              @click="confirmDeleteModule"
+            >
+              {{ csCanvasMsg.edConfirmDelete }}
             </button>
           </div>
         </div>
@@ -402,11 +420,20 @@ function patchMetaRoot(root: string) {
           tabindex="-1"
           @keydown.esc.stop="cancelDeleteNs"
         >
-          <h2 id="cs-ns-del-title" class="msc-del-title">删除命名空间</h2>
-          <p class="msc-del-desc">将删除该节点及其子命名空间与挂载内容。</p>
+          <h2 id="cs-ns-del-title" class="msc-del-title">{{ csCanvasMsg.edDelNsTitle }}</h2>
+          <p class="msc-del-desc">{{ csCanvasMsg.edDelNsDesc }}</p>
           <div class="msc-del-actions">
-            <button type="button" class="msc-del-btn" title="取消 — 无全局快捷键" @click="cancelDeleteNs">取消</button>
-            <button type="button" class="msc-del-btn msc-del-btn--danger" title="确定删除 — 无全局快捷键" @click="confirmDeleteNs">确定删除</button>
+            <button type="button" class="msc-del-btn" :title="csCanvasMsg.edCancelBtnTitle" @click="cancelDeleteNs">
+              {{ csCanvasMsg.edCancel }}
+            </button>
+            <button
+              type="button"
+              class="msc-del-btn msc-del-btn--danger"
+              :title="csCanvasMsg.edConfirmDeleteBtnTitle"
+              @click="confirmDeleteNs"
+            >
+              {{ csCanvasMsg.edConfirmDelete }}
+            </button>
           </div>
         </div>
       </div>
@@ -464,8 +491,11 @@ function patchMetaRoot(root: string) {
   box-sizing: border-box;
 }
 .cs-meta-inline-id {
-  width: 7.5em;
-  max-width: 18vw;
+  flex: 0 0 auto;
+  /* 典型围栏 id：前缀 + base36 时间戳 + 随机段，约 20–26 字；ch 按数字宽估算 */
+  width: 26ch;
+  min-width: 26ch;
+  max-width: 40ch;
   background: #f8fafc;
   color: #475569;
 }

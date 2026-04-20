@@ -1,5 +1,7 @@
 import type { MvModelSqlPayload, MvViewKind, MvViewPayload } from '@mvwb/core';
-import { MV_VIEW_KIND_METADATA, isMermaidViewKind, parseMarkdownBlocks, resolveRefPath } from '@mvwb/core';
+import { isMermaidViewKind, parseMarkdownBlocks, resolveRefPath } from '@mvwb/core';
+import type { AppLocale } from '../i18n/app-locale';
+import { mvViewKindDefaultBlockTitle, mvViewKindStrings } from '../i18n/mv-view-kind-locale';
 
 /** 可通过「插入代码块」对话框插入的围栏类型（各 mv-model* 或各 mv-view kind） */
 export type InsertCodeBlockKind =
@@ -15,6 +17,8 @@ export interface InsertFenceContext {
   currentFileRel: string;
   /** 当前文档全文（用于探测同文件已有 mv-model-sql） */
   currentMarkdown: string;
+  /** 影响插入的 mv-view 默认 title / payload 占位等；缺省为 zh */
+  locale?: AppLocale;
 }
 
 function newBlockId(prefix: string): string {
@@ -80,15 +84,15 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     const id = newBlockId('cs');
     const body = {
       id,
-      title: '新代码空间模型',
+      title: 'New codespace model',
       workspaceRoot: '.',
       modules: [
         {
           id: 'core',
-          name: '核心库',
+          name: 'CoreLib',
           path: 'packages/core',
           role: 'lib',
-          notes: '解析与类型（示意）',
+          notes: 'Parser and types (sample)',
           namespaces: [
             {
               id: 'ns-core-root',
@@ -108,10 +112,10 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
         },
         {
           id: 'web',
-          name: 'Web 壳',
+          name: 'WebShell',
           path: 'apps/web',
           role: 'app',
-          notes: 'Workbench 前端（示意）',
+          notes: 'Workbench frontend (sample)',
         },
       ],
     };
@@ -142,10 +146,11 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     return `\n\n\`\`\`mv-model-interface\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
   }
   const id = newBlockId('v');
-  const meta = MV_VIEW_KIND_METADATA[kind];
+  const loc = ctx.locale ?? 'zh';
+  const meta = mvViewKindStrings(kind, loc);
   const ph = meta.payloadPlaceholder;
   const skipPayload = ph.startsWith('（');
-  const title = meta.canvasTitle.replace(/画布$/, '').trim() || meta.canvasTitle;
+  const title = mvViewKindDefaultBlockTitle(kind, loc);
 
   const obj: MvViewPayload = {
     id,

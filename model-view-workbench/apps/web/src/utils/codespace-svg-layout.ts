@@ -33,6 +33,18 @@ export interface CodespaceLayoutResult {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
+/** 画布节点框前缀（由 `makeCodespaceLayoutLabels` 从 i18n 注入） */
+export interface CodespaceLayoutLabelFns {
+  moduleBar: (name: string) => string;
+  nsHeader: (name: string) => string;
+  classRow: (name: string) => string;
+  varRow: (name: string) => string;
+  fnRow: (name: string) => string;
+  macroRow: (name: string) => string;
+  moduleNode: (name: string) => string;
+  moduleFallback: (mi: number) => string;
+}
+
 const PAD = 10;
 const ROW_H = 20;
 /** 行与行之间留白，供连线水平母线在矩形外通过 */
@@ -89,13 +101,13 @@ function labelCellW(label: string): number {
   return Math.min(240, Math.max(52, 14 + w));
 }
 
-function nsBlockW(nsName: string): number {
-  const label = `NS · ${nsName}`;
+function nsBlockW(nsName: string, lbl: CodespaceLayoutLabelFns): number {
+  const label = lbl.nsHeader(nsName);
   return Math.max(MIN_NS_COL_W, Math.min(240, 36 + Math.min(label.length, 36) * 6.5));
 }
 
-function moduleLeftBarW(m: MvModelCodespaceModule): number {
-  const label = `模块 · ${m.name}`;
+function moduleLeftBarW(m: MvModelCodespaceModule, lbl: CodespaceLayoutLabelFns): number {
+  const label = lbl.moduleBar(m.name);
   return Math.min(220, Math.max(80, labelCellW(label) + 12));
 }
 
@@ -165,15 +177,15 @@ function pushCurvedLREdge(
 }
 
 /** 从左到右树：子树外包宽高（与 `layoutNsTreeLR` 一致；同级叶与子 NS 头共一列宽 `col1w`） */
-function measureLrSubtree(ns: MvCodespaceNamespaceNode): { w: number; h: number } {
-  const nsW = nsBlockW(ns.name);
+function measureLrSubtree(ns: MvCodespaceNamespaceNode, lbl: CodespaceLayoutLabelFns): { w: number; h: number } {
+  const nsW = nsBlockW(ns.name, lbl);
   const children = ns.namespaces ?? [];
 
   const leafLabels: string[] = [];
-  (ns.classes ?? []).forEach((c) => leafLabels.push(`类 · ${c.name}`));
-  (ns.variables ?? []).forEach((v) => leafLabels.push(`变量 · ${v.name}`));
-  (ns.functions ?? []).forEach((f) => leafLabels.push(`函数 · ${f.name}`));
-  (ns.macros ?? []).forEach((m) => leafLabels.push(`宏 · ${m.name}`));
+  (ns.classes ?? []).forEach((c) => leafLabels.push(lbl.classRow(c.name)));
+  (ns.variables ?? []).forEach((v) => leafLabels.push(lbl.varRow(v.name)));
+  (ns.functions ?? []).forEach((f) => leafLabels.push(lbl.fnRow(f.name)));
+  (ns.macros ?? []).forEach((m) => leafLabels.push(lbl.macroRow(m.name)));
 
   const nL = leafLabels.length;
   let col1w = 0;
@@ -183,7 +195,7 @@ function measureLrSubtree(ns: MvCodespaceNamespaceNode): { w: number; h: number 
     leafColH = nL * ROW_H + (nL - 1) * ROW_GAP;
   }
   for (const ch of children) {
-    col1w = Math.max(col1w, nsBlockW(ch.name));
+    col1w = Math.max(col1w, nsBlockW(ch.name, lbl));
   }
   if (nL === 0 && children.length === 0) {
     return { w: nsW, h: ROW_H };
@@ -193,7 +205,7 @@ function measureLrSubtree(ns: MvCodespaceNamespaceNode): { w: number; h: number 
   let maxChildW = 0;
   let sumChildH = 0;
   children.forEach((ch, i) => {
-    const s = measureLrSubtree(ch);
+    const s = measureLrSubtree(ch, lbl);
     maxChildW = Math.max(maxChildW, s.w);
     sumChildH += s.h + (i > 0 ? ROW_GAP : 0);
   });
@@ -238,14 +250,15 @@ function layoutNsTreeLR(
   out: CodespaceLayoutNode[],
   bounds: CodespaceLayoutResult['bounds'],
   edges: CodespaceLayoutEdge[],
+  lbl: CodespaceLayoutLabelFns,
 ): { w: number; h: number; nsHeader: Rect } {
-  const { w: W, h: H } = measureLrSubtree(ns);
-  const nsW = nsBlockW(ns.name);
+  const { w: W, h: H } = measureLrSubtree(ns, lbl);
+  const nsW = nsBlockW(ns.name, lbl);
   const ny = y0 + (H - ROW_H) / 2;
   const nsHeader: Rect = { x: x0, y: ny, w: nsW, h: ROW_H };
   out.push({
     pick: { t: 'ns', mi, path },
-    label: `NS · ${ns.name}`,
+    label: lbl.nsHeader(ns.name),
     x: nsHeader.x,
     y: nsHeader.y,
     w: nsHeader.w,
@@ -260,22 +273,22 @@ function layoutNsTreeLR(
   type RowPick = CodespaceSvgPick;
   const rowItems: { pick: RowPick; label: string }[] = [];
   (ns.classes ?? []).forEach((c, ci) => {
-    rowItems.push({ pick: { t: 'class', mi, path, ci }, label: `类 · ${c.name}` });
+    rowItems.push({ pick: { t: 'class', mi, path, ci }, label: lbl.classRow(c.name) });
   });
   (ns.variables ?? []).forEach((v, vi) => {
-    rowItems.push({ pick: { t: 'var', mi, path, vi }, label: `变量 · ${v.name}` });
+    rowItems.push({ pick: { t: 'var', mi, path, vi }, label: lbl.varRow(v.name) });
   });
   (ns.functions ?? []).forEach((f, fi) => {
-    rowItems.push({ pick: { t: 'fn', mi, path, fi }, label: `函数 · ${f.name}` });
+    rowItems.push({ pick: { t: 'fn', mi, path, fi }, label: lbl.fnRow(f.name) });
   });
   (ns.macros ?? []).forEach((m, maci) => {
-    rowItems.push({ pick: { t: 'macro', mi, path, maci }, label: `宏 · ${m.name}` });
+    rowItems.push({ pick: { t: 'macro', mi, path, maci }, label: lbl.macroRow(m.name) });
   });
 
   const children = ns.namespaces ?? [];
   let col1w = 0;
   for (const it of rowItems) col1w = Math.max(col1w, labelCellW(it.label));
-  for (const ch of children) col1w = Math.max(col1w, nsBlockW(ch.name));
+  for (const ch of children) col1w = Math.max(col1w, nsBlockW(ch.name, lbl));
   if (rowItems.length || children.length) col1w = Math.max(MIN_NS_COL_W, col1w);
 
   const nL = rowItems.length;
@@ -284,7 +297,7 @@ function layoutNsTreeLR(
 
   let sumChildH = 0;
   children.forEach((ch, i) => {
-    sumChildH += measureLrSubtree(ch).h + (i > 0 ? ROW_GAP : 0);
+    sumChildH += measureLrSubtree(ch, lbl).h + (i > 0 ? ROW_GAP : 0);
   });
   let stackH = leafColH;
   if (nL && children.length) stackH += ROW_GAP;
@@ -294,7 +307,7 @@ function layoutNsTreeLR(
   let yc = y0 + (H - stackH) / 2;
 
   const childOrder = children
-    .map((child, origI) => ({ child, origI, span: measureLrSubtree(child).w }))
+    .map((child, origI) => ({ child, origI, span: measureLrSubtree(child, lbl).w }))
     .sort((a, b) => b.span - a.span || a.origI - b.origI);
 
   const nEdges = rowItems.length + childOrder.length;
@@ -331,8 +344,8 @@ function layoutNsTreeLR(
 
   childOrder.forEach(({ child, origI }, idx) => {
     const pth = [...path, origI];
-    const subH = measureLrSubtree(child).h;
-    const { nsHeader: chHead } = layoutNsTreeLR(child, mi, pth, x1, yc, out, bounds, edges);
+    const subH = measureLrSubtree(child, lbl).h;
+    const { nsHeader: chHead } = layoutNsTreeLR(child, mi, pth, x1, yc, out, bounds, edges, lbl);
     const pl = leftMid(chHead);
     pushCurvedLREdge(
       edges,
@@ -358,8 +371,9 @@ function layoutModuleStrip(
   nodesOut: CodespaceLayoutNode[],
   bounds: CodespaceLayoutResult['bounds'],
   edges: CodespaceLayoutEdge[],
+  lbl: CodespaceLayoutLabelFns,
 ): { w: number; h: number } {
-  const barW = moduleLeftBarW(m);
+  const barW = moduleLeftBarW(m, lbl);
   const innerX = x0 + barW + LR_MODULE_TO_INNER;
   const innerY = y0;
   const roots = m.namespaces ?? [];
@@ -369,7 +383,7 @@ function layoutModuleStrip(
     const h = Math.max(ROW_H * 2, 36);
     nodesOut.push({
       pick: { t: 'module', mi },
-      label: `模块 · ${m.name}`,
+      label: lbl.moduleNode(m.name),
       x: x0,
       y: y0,
       w: barW,
@@ -383,10 +397,10 @@ function layoutModuleStrip(
   let innerMaxW = 0;
   const rootHeaders: Rect[] = [];
   const rootOrder = roots
-    .map((ns, origI) => ({ ns, origI, span: measureLrSubtree(ns).w }))
+    .map((ns, origI) => ({ ns, origI, span: measureLrSubtree(ns, lbl).w }))
     .sort((a, b) => b.span - a.span || a.origI - b.origI);
   rootOrder.forEach(({ ns, origI }) => {
-    const { w: cw, h: ch, nsHeader } = layoutNsTreeLR(ns, mi, [origI], innerX, yCur, segment, bounds, edges);
+    const { w: cw, h: ch, nsHeader } = layoutNsTreeLR(ns, mi, [origI], innerX, yCur, segment, bounds, edges, lbl);
     rootHeaders.push(nsHeader);
     innerMaxW = Math.max(innerMaxW, cw);
     yCur += ch + NS_COL_GAP;
@@ -418,7 +432,7 @@ function layoutModuleStrip(
 
   nodesOut.push({
     pick: { t: 'module', mi },
-    label: `模块 · ${m.name}`,
+    label: lbl.moduleNode(m.name),
     x: modRect.x,
     y: modRect.y,
     w: modRect.w,
@@ -431,7 +445,10 @@ function layoutModuleStrip(
 }
 
 /** 将 codespace payload 排版为平面节点 + 树状贝塞尔连线（世界坐标） */
-export function layoutCodespaceSvg(payload: MvModelCodespacePayload): CodespaceLayoutResult {
+export function layoutCodespaceSvg(
+  payload: MvModelCodespacePayload,
+  labels: CodespaceLayoutLabelFns,
+): CodespaceLayoutResult {
   const modules = payload.modules ?? [];
   const nodesOut: CodespaceLayoutNode[] = [];
   const edgesOut: CodespaceLayoutEdge[] = [];
@@ -444,7 +461,7 @@ export function layoutCodespaceSvg(payload: MvModelCodespacePayload): CodespaceL
   let cursorY = PAD;
   let maxW = 0;
   modules.forEach((m, mi) => {
-    const { w, h } = layoutModuleStrip(m, mi, PAD, cursorY, nodesOut, bounds, edgesOut);
+    const { w, h } = layoutModuleStrip(m, mi, PAD, cursorY, nodesOut, bounds, edgesOut, labels);
     maxW = Math.max(maxW, w);
     cursorY += h + MODULE_GAP;
   });

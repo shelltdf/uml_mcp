@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue';
 import type { MvModelCodespacePayload } from '@mvwb/core';
 import { useCanvasViewport } from '../../composables/useCanvasViewport';
+import { CS_CANVAS_MSG_KEY, makeCodespaceLayoutLabels } from '../../i18n/codespace-canvas-messages';
 import { layoutCodespaceSvg, type CodespaceLayoutNode, type CodespaceSvgPick } from '../../utils/codespace-svg-layout';
+
+const csMsg = inject(CS_CANVAS_MSG_KEY)!;
 
 const props = defineProps<{
   modelValue: MvModelCodespacePayload;
@@ -18,7 +21,9 @@ const emit = defineEmits<{
 const viewportRef = ref<HTMLElement | null>(null);
 const vp = useCanvasViewport(viewportRef);
 
-const layout = computed(() => layoutCodespaceSvg(props.modelValue));
+const layout = computed(() =>
+  layoutCodespaceSvg(props.modelValue, makeCodespaceLayoutLabels(csMsg.value)),
+);
 
 const worldMetrics = computed(() => {
   const b = layout.value.bounds;
@@ -137,12 +142,8 @@ onUnmounted(() => {
 <template>
   <div class="cs-svg-canvas">
     <details class="cs-svg-keys">
-      <summary title="展开/折叠 — 无全局快捷键">快捷键与操作</summary>
-      <pre class="cs-svg-keys-pre">中键拖拽：平移视口
-滚轮：缩放（以指针为锚点）
-单击：选中节点
-双击：打开定义悬浮窗
-右键：画布菜单（添加模块等）</pre>
+      <summary :title="csMsg.svgKeysTitle">{{ csMsg.svgKeysSummary }}</summary>
+      <pre class="cs-svg-keys-pre">{{ csMsg.svgKeysBody }}</pre>
     </details>
 
     <div
@@ -162,7 +163,7 @@ onUnmounted(() => {
           :width="worldMetrics.w"
           :height="worldMetrics.h"
           :viewBox="`0 0 ${worldMetrics.w} ${worldMetrics.h}`"
-          aria-label="代码空间模块树"
+          :aria-label="csMsg.svgAriaModuleTree"
         >
           <rect :width="worldMetrics.w" :height="worldMetrics.h" fill="#fafafa" />
           <defs>
@@ -230,13 +231,17 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="cs-svg-hud" aria-label="视口缩放">
-      <button type="button" class="cs-svg-hud-btn" title="缩小 — 无全局快捷键" @click="vp.zoomDelta(-0.1)">−</button>
-      <span class="cs-svg-hud-pct" :title="'当前缩放 — 无全局快捷键'">{{ vp.zoomPercent }}</span>
-      <button type="button" class="cs-svg-hud-btn" title="放大 — 无全局快捷键" @click="vp.zoomDelta(0.1)">+</button>
-      <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" title="适应全部 — 无全局快捷键" @click="fitView">适应</button>
-      <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" title="原点（内容中心对齐视口）— 无全局快捷键" @click="originView">原点</button>
-      <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" title="还原 100%（以视口中心为锚）— 无全局快捷键" @click="vp.resetZoom">还原</button>
+    <div class="cs-svg-hud" :aria-label="csMsg.svgHudAria">
+      <button type="button" class="cs-svg-hud-btn" :title="csMsg.svgZoomOutTitle" @click="vp.zoomDelta(-0.1)">−</button>
+      <span class="cs-svg-hud-pct" :title="csMsg.svgZoomPctTitle">{{ vp.zoomPercent }}</span>
+      <button type="button" class="cs-svg-hud-btn" :title="csMsg.svgZoomInTitle" @click="vp.zoomDelta(0.1)">+</button>
+      <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" :title="csMsg.svgFitTitle" @click="fitView">{{ csMsg.svgFitLabel }}</button>
+      <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" :title="csMsg.svgOriginTitle" @click="originView">
+        {{ csMsg.svgOriginLabel }}
+      </button>
+      <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" :title="csMsg.svgResetTitle" @click="vp.resetZoom">
+        {{ csMsg.svgResetLabel }}
+      </button>
     </div>
 
     <Teleport to="body">
@@ -258,10 +263,10 @@ onUnmounted(() => {
             type="button"
             class="cs-ctx-menu-item"
             role="menuitem"
-            title="添加模块 — 无全局快捷键"
+            :title="csMsg.svgCtxAddModuleTitle"
             @click="onAddModuleFromMenu"
           >
-            ＋ 添加模块
+            {{ csMsg.svgCtxAddModuleLabel }}
           </button>
         </div>
       </template>

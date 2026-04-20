@@ -3,6 +3,8 @@ import type {
   MvCodespaceClassifierBase,
   MvModelCodespacePayload,
 } from '@mvwb/core';
+import type { AppLocale } from '../i18n/app-locale';
+import { codespaceCanvasMessages, type CodespaceCanvasMessages } from '../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from './codespace-canvas';
 import type { CodespaceSvgPick } from './codespace-svg-layout';
 
@@ -19,7 +21,7 @@ export interface CodespaceDockContextPayload {
 
 export type CsDockSelection = { t: 'meta' } | CodespaceSvgPick;
 
-function emptyLabel(v: string | undefined | null, empty = '（未填）'): string {
+function emptyLabel(v: string | undefined | null, empty: string): string {
   const t = typeof v === 'string' ? v.trim() : '';
   return t ? t : empty;
 }
@@ -29,16 +31,21 @@ function trunc(s: string, max: number): string {
   return `${s.slice(0, max - 1)}…`;
 }
 
-function basesSummary(bases: MvCodespaceClassifierBase[] | undefined): string {
-  if (!bases?.length) return '（无）';
-  return bases.map((b) => `${b.relation}→${b.targetId}`).join('；');
+function basesSummary(bases: MvCodespaceClassifierBase[] | undefined, M: CodespaceCanvasMessages): string {
+  if (!bases?.length) return M.dockBasesNone;
+  return bases.map((b) => `${b.relation}→${b.targetId}`).join(M.dockBasesJoin);
 }
 
 /** 从模块根沿 path 拼面包屑（模块名 › NS › …） */
-function namespaceBreadcrumb(payload: MvModelCodespacePayload, mi: number, path: number[]): string {
+function namespaceBreadcrumb(
+  payload: MvModelCodespacePayload,
+  mi: number,
+  path: number[],
+  M: CodespaceCanvasMessages,
+): string {
   const mod = payload.modules[mi];
-  const parts: string[] = [mod?.name?.trim() ? mod.name : `模块[${mi}]`];
-  if (!mod?.namespaces?.length || !path.length) return parts.join(' › ');
+  const parts: string[] = [mod?.name?.trim() ? mod.name : M.formatModuleFallback(mi)];
+  if (!mod?.namespaces?.length || !path.length) return parts.join(M.dockBreadcrumbSep);
   let list = mod.namespaces;
   for (const idx of path) {
     const n = list[idx];
@@ -46,158 +53,161 @@ function namespaceBreadcrumb(payload: MvModelCodespacePayload, mi: number, path:
     parts.push(n.name);
     list = n.namespaces ?? [];
   }
-  return parts.join(' › ');
+  return parts.join(M.dockBreadcrumbSep);
 }
 
-function formatSummary(s: CsDockSelection, p: MvModelCodespacePayload): string {
-  if (s.t === 'meta') return '块与工作区';
+function formatSummary(s: CsDockSelection, p: MvModelCodespacePayload, M: CodespaceCanvasMessages): string {
+  if (s.t === 'meta') return M.dockSummaryMeta;
   if (s.t === 'module') {
     const m = p.modules[s.mi];
-    return m ? `模块 · ${m.name}` : '模块';
+    return m ? M.formatModuleLabel(m.name) : M.dockSummaryModuleBare;
   }
   if (s.t === 'ns') {
     const n = getNamespaceAtPath(p, s.mi, s.path);
-    return n ? `命名空间 · ${n.name}` : '命名空间';
+    return n ? M.formatNsLabel(n.name) : M.dockSummaryNsBare;
   }
   if (s.t === 'class') {
     const c = getNamespaceAtPath(p, s.mi, s.path)?.classes?.[s.ci];
-    return c ? `类 · ${c.name}` : '类';
+    return c ? M.formatClassLabel(c.name) : M.dockSummaryClassBare;
   }
   if (s.t === 'var') {
     const v = getNamespaceAtPath(p, s.mi, s.path)?.variables?.[s.vi];
-    return v ? `变量 · ${v.name}` : '变量';
+    return v ? M.formatVarLabel(v.name) : M.dockSummaryVarBare;
   }
   if (s.t === 'fn') {
     const f = getNamespaceAtPath(p, s.mi, s.path)?.functions?.[s.fi];
-    return f ? `函数 · ${f.name}` : '函数';
+    return f ? M.formatFnLabel(f.name) : M.dockSummaryFnBare;
   }
   const mac = getNamespaceAtPath(p, s.mi, s.path)?.macros?.[s.maci];
-  return mac ? `宏 · ${mac.name}` : '宏';
+  return mac ? M.formatMacroLabel(mac.name) : M.dockSummaryMacroBare;
 }
 
-function formatLines(s: CsDockSelection, p: MvModelCodespacePayload): CodespaceDockPropLine[] {
+function formatLines(s: CsDockSelection, p: MvModelCodespacePayload, M: CodespaceCanvasMessages): CodespaceDockPropLine[] {
   const lines: CodespaceDockPropLine[] = [];
   const push = (label: string, value: string) => lines.push({ label, value });
 
   if (s.t === 'meta') {
-    push('节点类型', '块与工作区');
-    push('块 id', p.id);
-    push('title', emptyLabel(p.title));
-    push('workspaceRoot', emptyLabel(p.workspaceRoot));
-    push('模块数', String(p.modules?.length ?? 0));
+    push(M.dockNodeType, M.dockBlockWorkspace);
+    push(M.dockBlockId, p.id);
+    push(M.dockTitle, emptyLabel(p.title, M.dockUnset));
+    push(M.dockWorkspaceRoot, emptyLabel(p.workspaceRoot, M.dockUnset));
+    push(M.dockModuleCount, String(p.modules?.length ?? 0));
     return lines;
   }
 
   if (s.t === 'module') {
     const m = p.modules[s.mi];
     if (!m) {
-      push('节点类型', '模块');
-      push('错误', `模块索引 ${s.mi} 无效`);
+      push(M.dockNodeType, M.dockModule);
+      push(M.dockError, M.dockInvalidModuleIndex(s.mi));
       return lines;
     }
-    push('节点类型', '模块');
+    push(M.dockNodeType, M.dockModule);
     push('id', m.id);
     push('name', m.name);
-    push('path', emptyLabel(m.path));
-    push('role', emptyLabel(m.role));
-    push('notes', emptyLabel(m.notes));
-    push('顶层命名空间数', String(m.namespaces?.length ?? 0));
+    push('path', emptyLabel(m.path, M.dockUnset));
+    push('role', emptyLabel(m.role, M.dockUnset));
+    push('notes', emptyLabel(m.notes, M.dockUnset));
+    push(M.dockTopLevelNsCount, String(m.namespaces?.length ?? 0));
     return lines;
   }
 
   if (s.t === 'ns') {
     const n = getNamespaceAtPath(p, s.mi, s.path);
-    push('节点类型', '命名空间');
-    push('层级', namespaceBreadcrumb(p, s.mi, s.path));
-    push('path 索引', s.path.length ? s.path.join(' / ') : '（顶层）');
+    push(M.dockNodeType, M.dockSummaryNsBare);
+    push(M.dockHierarchy, namespaceBreadcrumb(p, s.mi, s.path, M));
+    push(M.dockPathIndices, s.path.length ? s.path.join(' / ') : M.dockTopLevel);
     if (!n) {
-      push('错误', '无法解析该命名空间节点');
+      push(M.dockError, M.dockCannotResolveNs);
       return lines;
     }
     push('id', n.id);
     push('name', n.name);
-    push('qualifiedName', emptyLabel(n.qualifiedName));
-    push('notes', emptyLabel(n.notes));
-    push('子命名空间', String(n.namespaces?.length ?? 0));
-    push('类', String(n.classes?.length ?? 0));
-    push('变量', String(n.variables?.length ?? 0));
-    push('函数', String(n.functions?.length ?? 0));
-    push('宏', String(n.macros?.length ?? 0));
-    push('关联', String(n.associations?.length ?? 0));
+    push('qualifiedName', emptyLabel(n.qualifiedName, M.dockUnset));
+    push('notes', emptyLabel(n.notes, M.dockUnset));
+    push(M.dockChildNsCount, String(n.namespaces?.length ?? 0));
+    push(M.dockClassCount, String(n.classes?.length ?? 0));
+    push(M.dockVarCount, String(n.variables?.length ?? 0));
+    push(M.dockFnCount, String(n.functions?.length ?? 0));
+    push(M.dockMacroCount, String(n.macros?.length ?? 0));
+    push(M.dockAssocCount, String(n.associations?.length ?? 0));
     return lines;
   }
 
   const ns = getNamespaceAtPath(p, s.mi, s.path);
   if (!ns) {
-    push('错误', '父命名空间无效');
+    push(M.dockError, M.dockParentNsInvalid);
     return lines;
   }
 
   if (s.t === 'class') {
     const c: MvCodespaceClassifier | undefined = ns.classes?.[s.ci];
-    push('节点类型', 'Classifier（类 / 接口 / 结构）');
-    push('层级', namespaceBreadcrumb(p, s.mi, s.path));
+    push(M.dockNodeType, M.dockClassifierNode);
+    push(M.dockHierarchy, namespaceBreadcrumb(p, s.mi, s.path, M));
     if (!c) {
-      push('错误', `类索引 ${s.ci} 无效`);
+      push(M.dockError, M.dockInvalidClassIndex(s.ci));
       return lines;
     }
     push('id', c.id);
     push('name', c.name);
-    push('kind', emptyLabel(c.kind, '（未标，默认 class）'));
-    push('qualifiedName', emptyLabel(c.qualifiedName));
-    push('stereotype', emptyLabel(c.stereotype));
-    push('abstract', c.abstract === true ? '是' : c.abstract === false ? '否' : '（未填）');
-    push('notes', emptyLabel(c.notes));
+    push('kind', emptyLabel(c.kind, M.dockKindUnsetClass));
+    push('qualifiedName', emptyLabel(c.qualifiedName, M.dockUnset));
+    push('stereotype', emptyLabel(c.stereotype, M.dockUnset));
+    push(
+      'abstract',
+      c.abstract === true ? M.dockYes : c.abstract === false ? M.dockNo : M.dockUnset,
+    );
+    push('notes', emptyLabel(c.notes, M.dockUnset));
     const tp = c.templateParams?.filter(Boolean).join(', ');
-    push('templateParams', emptyLabel(tp));
-    push('bases', basesSummary(c.bases));
-    push('成员 members', String(c.members?.length ?? 0));
+    push('templateParams', emptyLabel(tp, M.dockUnset));
+    push('bases', basesSummary(c.bases, M));
+    push(M.dockMembersCount, String(c.members?.length ?? 0));
     return lines;
   }
 
   if (s.t === 'var') {
     const v = ns.variables?.[s.vi];
-    push('节点类型', '变量');
-    push('层级', namespaceBreadcrumb(p, s.mi, s.path));
+    push(M.dockNodeType, M.dockSummaryVarBare);
+    push(M.dockHierarchy, namespaceBreadcrumb(p, s.mi, s.path, M));
     if (!v) {
-      push('错误', `变量索引 ${s.vi} 无效`);
+      push(M.dockError, M.dockInvalidVarIndex(s.vi));
       return lines;
     }
     push('id', v.id);
     push('name', v.name);
-    push('type', emptyLabel(v.type));
-    push('notes', emptyLabel(v.notes));
+    push('type', emptyLabel(v.type, M.dockUnset));
+    push('notes', emptyLabel(v.notes, M.dockUnset));
     return lines;
   }
 
   if (s.t === 'fn') {
     const f = ns.functions?.[s.fi];
-    push('节点类型', '函数');
-    push('层级', namespaceBreadcrumb(p, s.mi, s.path));
+    push(M.dockNodeType, M.dockSummaryFnBare);
+    push(M.dockHierarchy, namespaceBreadcrumb(p, s.mi, s.path, M));
     if (!f) {
-      push('错误', `函数索引 ${s.fi} 无效`);
+      push(M.dockError, M.dockInvalidFnIndex(s.fi));
       return lines;
     }
     push('id', f.id);
     push('name', f.name);
-    push('signature', emptyLabel(f.signature));
-    push('notes', emptyLabel(f.notes));
+    push('signature', emptyLabel(f.signature, M.dockUnset));
+    push('notes', emptyLabel(f.notes, M.dockUnset));
     return lines;
   }
 
   const mac = ns.macros?.[s.maci];
-  push('节点类型', '宏');
-  push('层级', namespaceBreadcrumb(p, s.mi, s.path));
+  push(M.dockNodeType, M.dockSummaryMacroBare);
+  push(M.dockHierarchy, namespaceBreadcrumb(p, s.mi, s.path, M));
   if (!mac) {
-    push('错误', `宏索引 ${s.maci} 无效`);
+    push(M.dockError, M.dockInvalidMacroIndex(s.maci));
     return lines;
   }
   push('id', mac.id);
   push('name', mac.name);
-  push('params', emptyLabel(mac.params));
-  push('notes', emptyLabel(mac.notes));
+  push('params', emptyLabel(mac.params, M.dockUnset));
+  push('notes', emptyLabel(mac.notes, M.dockUnset));
   const def = mac.definitionSnippet?.trim();
-  push('definitionSnippet', def ? trunc(def, 200) : '（未填）');
+  push('definitionSnippet', def ? trunc(def, 200) : M.dockUnset);
   return lines;
 }
 
@@ -205,9 +215,11 @@ function formatLines(s: CsDockSelection, p: MvModelCodespacePayload): CodespaceD
 export function buildCodespaceDockContext(
   selection: CsDockSelection,
   payload: MvModelCodespacePayload,
+  locale: AppLocale = 'zh',
 ): CodespaceDockContextPayload {
+  const M = codespaceCanvasMessages[locale];
   return {
-    summary: formatSummary(selection, payload),
-    lines: formatLines(selection, payload),
+    summary: formatSummary(selection, payload, M),
+    lines: formatLines(selection, payload, M),
   };
 }

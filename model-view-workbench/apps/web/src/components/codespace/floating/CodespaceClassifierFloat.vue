@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
 import type {
   MvCodespaceClassifier,
   MvCodespaceClassifierBase,
   MvCodespaceMember,
   MvModelCodespacePayload,
 } from '@mvwb/core';
+import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { collectClassifierIds, getNamespaceAtPath } from '../../../utils/codespace-canvas';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
+
+const csMsg = inject(CS_CANVAS_MSG_KEY)!;
 
 const CLASSIFIER_KINDS = ['class', 'interface', 'struct'] as const;
 const MEMBER_KINDS = ['field', 'method', 'enumLiteral'] as const;
@@ -100,11 +103,12 @@ function removeBase(bi: number) {
 }
 
 function addMember() {
+  const name = csMsg.value.newMemberName;
   props.runPatch((d) => {
     const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
     if (!c) return;
     if (!c.members) c.members = [];
-    c.members.push({ name: 'member', kind: 'field' });
+    c.members.push({ name, kind: 'field' });
   });
 }
 
@@ -133,7 +137,7 @@ function removeClass() {
 <template>
   <CodespaceFloatShell
     :open="open && !!selectedClass"
-    :title="selectedClass ? `Classifier · ${selectedClass.name}` : 'Classifier'"
+    :title="selectedClass ? csMsg.flClassifierTitle(selectedClass.name) : csMsg.flClassifierBare"
     @close="emit('close')"
   >
     <template v-if="selectedClass">
@@ -143,7 +147,7 @@ function removeClass() {
           type="text"
           class="wide"
           :value="selectedClass.id"
-          title="类 id — 无全局快捷键"
+          :title="csMsg.flClsIdTitle"
           @input="patchClassField('id', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -153,7 +157,7 @@ function removeClass() {
           type="text"
           class="wide"
           :value="selectedClass.name"
-          title="类名 — 无全局快捷键"
+          :title="csMsg.flClsNameTitle"
           @input="patchClassField('name', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -161,7 +165,7 @@ function removeClass() {
         <span>kind</span>
         <select
           class="wide"
-          title="类型 — 无全局快捷键"
+          :title="csMsg.flClsKindTitle"
           :value="selectedClass.kind ?? 'class'"
           @change="patchClassField('kind', ($event.target as HTMLSelectElement).value || undefined)"
         >
@@ -172,7 +176,7 @@ function removeClass() {
         <input
           type="checkbox"
           :checked="selectedClass.abstract === true"
-          title="abstract — 无全局快捷键"
+          :title="csMsg.flClsAbstractTitle"
           @change="patchClassField('abstract', ($event.target as HTMLInputElement).checked)"
         />
         <span>abstract</span>
@@ -183,18 +187,18 @@ function removeClass() {
           type="text"
           class="wide"
           :value="selectedClass.stereotype ?? ''"
-          title="版型 — 无全局快捷键"
+          :title="csMsg.flClsStereotypeTitle"
           @input="patchClassField('stereotype', ($event.target as HTMLInputElement).value)"
         />
       </label>
       <label class="field">
-        <span>templateParams（逗号或换行分隔）</span>
+        <span>{{ csMsg.flClsTemplateParamsLabel }}</span>
         <textarea
           class="payload-ta"
           rows="3"
           spellcheck="false"
           :value="classTemplateParamsStr()"
-          title="模板形参 — 无全局快捷键"
+          :title="csMsg.flClsTemplateParamsTitle"
           @input="setClassTemplateParams(($event.target as HTMLTextAreaElement).value)"
         />
       </label>
@@ -204,22 +208,22 @@ function removeClass() {
           type="text"
           class="wide"
           :value="selectedClass.notes ?? ''"
-          title="备注 — 无全局快捷键"
+          :title="csMsg.flClsNotesTitle"
           @input="patchClassField('notes', ($event.target as HTMLInputElement).value)"
         />
       </label>
 
-      <h5 class="cs-subh">bases（继承 / 实现）</h5>
+      <h5 class="cs-subh">{{ csMsg.flClsBasesHeading }}</h5>
       <div v-for="(b, bi) in selectedClass.bases ?? []" :key="bi" class="cs-rowline">
         <select
-          title="targetId — 无全局快捷键"
+          :title="csMsg.flClsTargetIdTitle"
           :value="b.targetId"
           @change="patchBase(bi, { targetId: ($event.target as HTMLSelectElement).value })"
         >
           <option v-for="cid in classifierOptions" :key="cid" :value="cid">{{ cid }}</option>
         </select>
         <select
-          title="relation — 无全局快捷键"
+          :title="csMsg.flClsRelationTitle"
           :value="b.relation"
           @change="
             patchBase(bi, {
@@ -229,11 +233,15 @@ function removeClass() {
         >
           <option v-for="r in BASE_REL" :key="r" :value="r">{{ r }}</option>
         </select>
-        <button type="button" class="link-btn" title="删除 — 无全局快捷键" @click="removeBase(bi)">删</button>
+        <button type="button" class="link-btn" :title="csMsg.flClsDelShortTitle" @click="removeBase(bi)">
+          {{ csMsg.flClsDelShortLabel }}
+        </button>
       </div>
-      <button type="button" class="add-row" title="添加 base — 无全局快捷键" @click="addBase">＋ base</button>
+      <button type="button" class="add-row" :title="csMsg.flClsAddBaseTitle" @click="addBase">
+        {{ csMsg.flClsAddBaseLabel }}
+      </button>
 
-      <h5 class="cs-subh">members</h5>
+      <h5 class="cs-subh">{{ csMsg.flClsMembersHeading }}</h5>
       <table v-if="(selectedClass.members?.length ?? 0) > 0" class="cs-table">
         <thead>
           <tr>
@@ -250,14 +258,14 @@ function removeClass() {
             <td>
               <input
                 :value="mem.name"
-                title="成员名 — 无全局快捷键"
+                :title="csMsg.flClsMemberNameTitle"
                 @input="patchMember(miIdx, { name: ($event.target as HTMLInputElement).value })"
               />
             </td>
             <td>
               <select
                 :value="mem.kind"
-                title="成员种类 — 无全局快捷键"
+                :title="csMsg.flClsMemberKindTitle"
                 @change="
                   patchMember(miIdx, {
                     kind: ($event.target as HTMLSelectElement).value as MvCodespaceMember['kind'],
@@ -270,7 +278,7 @@ function removeClass() {
             <td>
               <input
                 :value="mem.visibility ?? ''"
-                title="可见性 — 无全局快捷键"
+                :title="csMsg.flClsMemberVisTitle"
                 @input="patchMember(miIdx, { visibility: ($event.target as HTMLInputElement).value })"
               />
             </td>
@@ -278,7 +286,7 @@ function removeClass() {
               <input
                 type="checkbox"
                 :checked="mem.virtual === true"
-                title="virtual — 无全局快捷键"
+                :title="csMsg.flClsMemberVirtualTitle"
                 @change="patchMember(miIdx, { virtual: ($event.target as HTMLInputElement).checked })"
               />
             </td>
@@ -286,7 +294,7 @@ function removeClass() {
               <input
                 :value="mem.kind === 'method' ? mem.signature ?? '' : mem.type ?? ''"
                 :placeholder="mem.kind === 'method' ? 'signature' : 'type'"
-                title="type 或 signature — 无全局快捷键"
+                :title="csMsg.flClsMemberTypeSigTitle"
                 @input="
                   patchMember(
                     miIdx,
@@ -298,15 +306,21 @@ function removeClass() {
               />
             </td>
             <td>
-              <button type="button" class="link-btn" title="删除成员 — 无全局快捷键" @click="removeMember(miIdx)">删</button>
+              <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeMember(miIdx)">
+                {{ csMsg.flClsRemoveMemberLabel }}
+              </button>
             </td>
           </tr>
         </tbody>
       </table>
-      <button type="button" class="add-row" title="添加成员 — 无全局快捷键" @click="addMember">＋ member</button>
+      <button type="button" class="add-row" :title="csMsg.flClsAddMemberTitle" @click="addMember">
+        {{ csMsg.flClsAddMemberLabel }}
+      </button>
 
       <div class="cs-actions">
-        <button type="button" class="link-btn cs-danger" title="删除该类 — 无全局快捷键" @click="removeClass">删除类</button>
+        <button type="button" class="link-btn cs-danger" :title="csMsg.flClsRemoveClassTitle" @click="removeClass">
+          {{ csMsg.flClsRemoveClassLabel }}
+        </button>
       </div>
     </template>
   </CodespaceFloatShell>

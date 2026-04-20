@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
 import type { MvCodespaceNamespaceNode, MvModelCodespacePayload } from '@mvwb/core';
+import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from '../../../utils/codespace-canvas';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
+
+const cs = inject(CS_CANVAS_MSG_KEY)!;
 
 const props = defineProps<{
   open: boolean;
@@ -42,7 +45,7 @@ function patchNsField(key: 'name' | 'qualifiedName' | 'notes', value: string) {
 <template>
   <CodespaceFloatShell
     :open="open && !!ns"
-    :title="ns ? `命名空间 · ${ns.name}` : '命名空间'"
+    :title="ns ? cs.flNsTitle(ns.name) : cs.flNsBare"
     @close="emit('close')"
   >
     <template v-if="ns">
@@ -52,7 +55,7 @@ function patchNsField(key: 'name' | 'qualifiedName' | 'notes', value: string) {
           type="text"
           class="wide"
           :value="ns.name"
-          title="命名空间名称 — 无全局快捷键"
+          :title="cs.flNsNameTitle"
           @input="patchNsField('name', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -62,7 +65,7 @@ function patchNsField(key: 'name' | 'qualifiedName' | 'notes', value: string) {
           type="text"
           class="wide"
           :value="ns.qualifiedName ?? ''"
-          title="可选全名 — 无全局快捷键"
+          :title="cs.flNsQNameTitle"
           @input="patchNsField('qualifiedName', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -72,25 +75,33 @@ function patchNsField(key: 'name' | 'qualifiedName' | 'notes', value: string) {
           type="text"
           class="wide"
           :value="ns.notes ?? ''"
-          title="备注 — 无全局快捷键"
+          :title="cs.flNsNotesTitle"
           @input="patchNsField('notes', ($event.target as HTMLInputElement).value)"
         />
       </label>
       <div class="cs-actions">
-        <button type="button" class="add-row" title="子命名空间 — 无全局快捷键" @click="emit('addChildNs', props.mi, props.path)">
-          ＋ 子命名空间
+        <button type="button" class="add-row" :title="cs.flNsAddChildNsTitle" @click="emit('addChildNs', props.mi, props.path)">
+          {{ cs.flNsAddChildNsLabel }}
         </button>
-        <button type="button" class="add-row" title="类 — 无全局快捷键" @click="emit('addClass', props.mi, props.path)">＋ 类</button>
-        <button type="button" class="add-row" title="变量 — 无全局快捷键" @click="emit('addVar', props.mi, props.path)">＋ 变量</button>
-        <button type="button" class="add-row" title="函数 — 无全局快捷键" @click="emit('addFn', props.mi, props.path)">＋ 函数</button>
-        <button type="button" class="add-row" title="宏 — 无全局快捷键" @click="emit('addMacro', props.mi, props.path)">＋ 宏</button>
+        <button type="button" class="add-row" :title="cs.flNsAddClassTitle" @click="emit('addClass', props.mi, props.path)">
+          {{ cs.flNsAddClassLabel }}
+        </button>
+        <button type="button" class="add-row" :title="cs.flNsAddVarTitle" @click="emit('addVar', props.mi, props.path)">
+          {{ cs.flNsAddVarLabel }}
+        </button>
+        <button type="button" class="add-row" :title="cs.flNsAddFnTitle" @click="emit('addFn', props.mi, props.path)">
+          {{ cs.flNsAddFnLabel }}
+        </button>
+        <button type="button" class="add-row" :title="cs.flNsAddMacroTitle" @click="emit('addMacro', props.mi, props.path)">
+          {{ cs.flNsAddMacroLabel }}
+        </button>
         <button
           type="button"
           class="link-btn cs-danger"
-          title="删除命名空间子树 — 无全局快捷键"
+          :title="cs.flNsDeleteTitle"
           @click="emit('requestDeleteNs', props.mi, props.path)"
         >
-          删除命名空间…
+          {{ cs.flNsDeleteLabel }}
         </button>
       </div>
     </template>

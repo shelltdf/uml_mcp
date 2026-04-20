@@ -472,6 +472,7 @@ export const MV_MODEL_KV_CANVAS_TITLE = 'KV 数据表画布';
 export const MV_MODEL_STRUCT_CANVAS_TITLE = '结构化层次画布';
 
 /** 代码空间 / 软件仓库结构示意（mv-model-codespace）画布名称 */
+/** 与代码/文档 id 对齐：ASCII，壳层可按 `locale` 另行展示本地化副标题 */
 export const MV_MODEL_CODESPACE_CANVAS_TITLE = '代码空间模型画布';
 
 /** 接口模型 / 接口图示意（mv-model-interface）画布名称 */

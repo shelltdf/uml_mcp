@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
 import type { MvCodespaceMacro, MvModelCodespacePayload } from '@mvwb/core';
+import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from '../../../utils/codespace-canvas';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
+
+const csMsg = inject(CS_CANVAS_MSG_KEY)!;
 
 const props = defineProps<{
   open: boolean;
@@ -38,19 +41,41 @@ function removeMacro() {
 </script>
 
 <template>
-  <CodespaceFloatShell :open="open && !!mac" :title="mac ? `宏 · ${mac.name}` : '宏'" @close="emit('close')">
+  <CodespaceFloatShell
+    :open="open && !!mac"
+    :title="mac ? csMsg.flMacroTitle(mac.name) : csMsg.flMacroBare"
+    @close="emit('close')"
+  >
     <template v-if="mac">
       <label class="field">
         <span>id</span>
-        <input type="text" class="wide" :value="mac.id" title="id — 无全局快捷键" @input="patchMacro({ id: ($event.target as HTMLInputElement).value })" />
+        <input
+          type="text"
+          class="wide"
+          :value="mac.id"
+          :title="csMsg.flTechIdTitle"
+          @input="patchMacro({ id: ($event.target as HTMLInputElement).value })"
+        />
       </label>
       <label class="field">
         <span>name</span>
-        <input type="text" class="wide" :value="mac.name" title="name — 无全局快捷键" @input="patchMacro({ name: ($event.target as HTMLInputElement).value })" />
+        <input
+          type="text"
+          class="wide"
+          :value="mac.name"
+          :title="csMsg.flTechNameTitle"
+          @input="patchMacro({ name: ($event.target as HTMLInputElement).value })"
+        />
       </label>
       <label class="field">
         <span>params</span>
-        <input type="text" class="wide" :value="mac.params ?? ''" title="params — 无全局快捷键" @input="patchMacro({ params: ($event.target as HTMLInputElement).value })" />
+        <input
+          type="text"
+          class="wide"
+          :value="mac.params ?? ''"
+          :title="csMsg.flTechParamsTitle"
+          @input="patchMacro({ params: ($event.target as HTMLInputElement).value })"
+        />
       </label>
       <label class="field">
         <span>definitionSnippet</span>
@@ -59,15 +84,23 @@ function removeMacro() {
           rows="3"
           spellcheck="false"
           :value="mac.definitionSnippet ?? ''"
-          title="definitionSnippet — 无全局快捷键"
+          :title="csMsg.flTechDefSnippetTitle"
           @input="patchMacro({ definitionSnippet: ($event.target as HTMLTextAreaElement).value })"
         />
       </label>
       <label class="field">
         <span>notes</span>
-        <input type="text" class="wide" :value="mac.notes ?? ''" title="notes — 无全局快捷键" @input="patchMacro({ notes: ($event.target as HTMLInputElement).value })" />
+        <input
+          type="text"
+          class="wide"
+          :value="mac.notes ?? ''"
+          :title="csMsg.flTechNotesTitle"
+          @input="patchMacro({ notes: ($event.target as HTMLInputElement).value })"
+        />
       </label>
-      <button type="button" class="link-btn cs-danger" title="删除宏 — 无全局快捷键" @click="removeMacro">删除宏</button>
+      <button type="button" class="link-btn cs-danger" :title="csMsg.flMacroDeleteTitle" @click="removeMacro">
+        {{ csMsg.flMacroDeleteLabel }}
+      </button>
     </template>
   </CodespaceFloatShell>
 </template>

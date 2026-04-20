@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
 import type { MvModelCodespaceModule, MvModelCodespacePayload } from '@mvwb/core';
+import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
+
+const cs = inject(CS_CANVAS_MSG_KEY)!;
 
 const props = defineProps<{
   open: boolean;
@@ -33,7 +36,11 @@ function patchModuleField(key: keyof MvModelCodespaceModule, value: string) {
 </script>
 
 <template>
-  <CodespaceFloatShell :open="open && !!mod" :title="mod ? `模块 · ${mod.name}` : '模块'" @close="emit('close')">
+  <CodespaceFloatShell
+    :open="open && !!mod"
+    :title="mod ? cs.flModuleTitle(mod.name) : cs.flModuleBare"
+    @close="emit('close')"
+  >
     <template v-if="mod">
       <label class="field">
         <span>id</span>
@@ -41,7 +48,7 @@ function patchModuleField(key: keyof MvModelCodespaceModule, value: string) {
           type="text"
           class="wide"
           :value="mod.id"
-          title="模块 id — 无全局快捷键"
+          :title="cs.flModIdTitle"
           @input="patchModuleField('id', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -51,7 +58,7 @@ function patchModuleField(key: keyof MvModelCodespaceModule, value: string) {
           type="text"
           class="wide"
           :value="mod.name"
-          title="模块名称 — 无全局快捷键"
+          :title="cs.flModNameTitle"
           @input="patchModuleField('name', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -61,7 +68,7 @@ function patchModuleField(key: keyof MvModelCodespaceModule, value: string) {
           type="text"
           class="wide"
           :value="mod.path ?? ''"
-          title="相对路径 — 无全局快捷键"
+          :title="cs.flModPathTitle"
           @input="patchModuleField('path', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -71,7 +78,7 @@ function patchModuleField(key: keyof MvModelCodespaceModule, value: string) {
           type="text"
           class="wide"
           :value="mod.role ?? ''"
-          title="角色 — 无全局快捷键"
+          :title="cs.flModRoleTitle"
           @input="patchModuleField('role', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -81,21 +88,16 @@ function patchModuleField(key: keyof MvModelCodespaceModule, value: string) {
           type="text"
           class="wide"
           :value="mod.notes ?? ''"
-          title="备注 — 无全局快捷键"
+          :title="cs.flModNotesTitle"
           @input="patchModuleField('notes', ($event.target as HTMLInputElement).value)"
         />
       </label>
       <div class="cs-actions">
-        <button
-          type="button"
-          class="add-row"
-          title="在本模块下添加顶层命名空间 — 无全局快捷键"
-          @click="emit('addTopLevelNs', props.mi)"
-        >
-          ＋ 顶层命名空间
+        <button type="button" class="add-row" :title="cs.flModAddRootNsTitle" @click="emit('addTopLevelNs', props.mi)">
+          {{ cs.flModAddRootNsLabel }}
         </button>
-        <button type="button" class="link-btn cs-danger" title="删除模块 — 无全局快捷键" @click="emit('requestDelete', props.mi)">
-          删除模块…
+        <button type="button" class="link-btn cs-danger" :title="cs.flModDeleteTitle" @click="emit('requestDelete', props.mi)">
+          {{ cs.flModDeleteLabel }}
         </button>
       </div>
     </template>
