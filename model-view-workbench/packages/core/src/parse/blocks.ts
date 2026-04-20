@@ -458,7 +458,7 @@ function validateCodespaceNamespaceNode(
               message: `${mp}.kind must be one of: field, method, enumLiteral`,
             };
           }
-          const ms = validateCodespaceOptionalString(mo, mp, ['visibility', 'type', 'signature', 'notes']);
+          const ms = validateCodespaceOptionalString(mo, mp, ['visibility', 'type', 'signature', 'enumGroup', 'notes']);
           if (!ms.ok) return ms;
           if ('methodKind' in mo && mo.methodKind !== undefined) {
             if (typeof mo.methodKind !== 'string' || !CODESPACE_METHOD_KINDS.has(mo.methodKind)) {

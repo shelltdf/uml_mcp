@@ -453,29 +453,57 @@ function displayMethods(c: ClassDef): string[] {
   return lines.length ? lines : [EMPTY_MEMBER_LINE];
 }
 
+type PreviewSection = { label: string; lines: string[] };
+const PREVIEW_LINE_HEIGHT = 12;
+const PREVIEW_TOP_PAD = 8;
+const PREVIEW_BOTTOM_PAD = 8;
+const PREVIEW_LABEL_TO_LINES_GAP = 2;
+const PREVIEW_SECTION_GAP = 4;
+
+function previewSections(c: ClassDef): PreviewSection[] {
+  return [
+    { label: 'MEMB', lines: displayAttributes(c) },
+    { label: 'PROP', lines: displayProperties(c) },
+    { label: 'ENUM', lines: displayEnumLiterals(c) },
+    { label: 'METH', lines: displayMethods(c) },
+  ];
+}
+
+function previewSectionHeight(sec: PreviewSection): number {
+  return PREVIEW_LINE_HEIGHT + PREVIEW_LABEL_TO_LINES_GAP + sec.lines.length * PREVIEW_LINE_HEIGHT + PREVIEW_SECTION_GAP;
+}
+
+function previewBaseY(c: ClassDef): number {
+  return classDiagramHeaderHeight(c) + PREVIEW_TOP_PAD;
+}
+
+function previewSectionStartY(c: ClassDef, index: number): number {
+  let y = previewBaseY(c);
+  const secs = previewSections(c);
+  for (let i = 0; i < index; i++) y += previewSectionHeight(secs[i]!);
+  return y;
+}
+
+function previewSectionLabelY(c: ClassDef, index: number): number {
+  return previewSectionStartY(c, index);
+}
+
+function previewSectionLineY(c: ClassDef, index: number, lineIndex: number): number {
+  return previewSectionStartY(c, index) + PREVIEW_LINE_HEIGHT + PREVIEW_LABEL_TO_LINES_GAP + lineIndex * PREVIEW_LINE_HEIGHT;
+}
+
+function previewIndentedLine(line: string): string {
+  return `    ${line}`;
+}
+
 function classBoxSize(c: ClassDef): { w: number; h: number } {
   const w = 248;
-  const header = classDiagramHeaderHeight(c);
-  const label = 10;
-  const row = 22;
-  const pad = 6;
-  const sep = 2;
-  const attrsH = label + displayAttributes(c).length * row + pad;
-  const propH = label + displayProperties(c).length * row + pad;
-  const enumH = label + displayEnumLiterals(c).length * row + pad;
-  const methH = label + displayMethods(c).length * row + pad;
   const h =
-    header +
-    sep +
-    attrsH +
-    sep +
-    propH +
-    sep +
-    enumH +
-    sep +
-    methH +
-    6;
-  return { w, h: Math.max(h, 220) };
+    classDiagramHeaderHeight(c) +
+    PREVIEW_TOP_PAD +
+    previewSections(c).reduce((sum, sec) => sum + previewSectionHeight(sec), 0) +
+    PREVIEW_BOTTOM_PAD;
+  return { w, h };
 }
 
 function classDisplayLabel(c: ClassDef): string {
@@ -1172,10 +1200,6 @@ function propTextY(c: ClassDef, i: number): number {
   return propBlockTopY(c) + SECTION_LAB + 4 + i * 22;
 }
 
-function previewLine(lines: string[]): string {
-  return lines[0] ?? EMPTY_MEMBER_LINE;
-}
-
 function titleNameY(c: ClassDef): number {
   return c.stereotype ? 30 : 20;
 }
@@ -1332,10 +1356,8 @@ function deleteClass(classId: string): void {
             @dblclick.stop="onClassDblClick(c.id)"
             @contextmenu="onClassContextMenu($event, c.id)"
           >
-            <circle
-              :cx="124"
-              :cy="-10"
-              r="8"
+            <polygon
+              points="124,-18 116,-4 132,-4"
               :fill="isClassSelected(c.id) ? '#2563eb' : '#94a3b8'"
               stroke="#334155"
               stroke-width="1"
@@ -1343,7 +1365,7 @@ function deleteClass(classId: string): void {
               @pointerdown.stop="startInheritDrag($event, c.id)"
             >
               <title>{{ cd.cdsInheritHandleHint }}</title>
-            </circle>
+            </polygon>
             <rect
               class="cde-class-body"
               x="0"
@@ -1393,47 +1415,32 @@ function deleteClass(classId: string): void {
               <title>{{ classDisplayLabel(c) }}</title>
               {{ escapeXml(classDisplayLabel(c)) }}
             </text>
-            <text
-              x="10"
-              y="42"
-              font-size="9"
-              font-family="ui-monospace, Consolas, monospace"
-              :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
-              style="pointer-events: none; user-select: none"
-            >
-              A: {{ escapeXml(previewLine(displayAttributes(c))) }}
-            </text>
-            <text
-              x="10"
-              y="56"
-              font-size="9"
-              font-family="ui-monospace, Consolas, monospace"
-              :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
-              style="pointer-events: none; user-select: none"
-            >
-              P: {{ escapeXml(previewLine(displayProperties(c))) }}
-            </text>
-            <text
-              x="10"
-              y="70"
-              font-size="9"
-              font-family="ui-monospace, Consolas, monospace"
-              :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
-              style="pointer-events: none; user-select: none"
-            >
-              E: {{ escapeXml(previewLine(displayEnumLiterals(c))) }}
-            </text>
-            <text
-              x="10"
-              y="84"
-              font-size="9"
-              font-family="ui-monospace, Consolas, monospace"
-              :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
-              style="pointer-events: none; user-select: none"
-            >
-              M: {{ escapeXml(previewLine(displayMethods(c))) }}
-            </text>
-            <template>
+            <template v-for="(sec, si) in previewSections(c)" :key="'pv-sec-' + si">
+              <text
+                x="10"
+                :y="previewSectionLabelY(c, si)"
+                font-size="9"
+                font-family="ui-monospace, Consolas, monospace"
+                :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
+                style="pointer-events: none; user-select: none"
+              >
+                {{ sec.label }}:
+              </text>
+              <text
+                v-for="(line, li) in sec.lines"
+                :key="'pv-ln-' + si + '-' + li"
+                x="10"
+                :y="previewSectionLineY(c, si, li)"
+                font-size="9"
+                font-family="ui-monospace, Consolas, monospace"
+                xml:space="preserve"
+                :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
+                style="pointer-events: none; user-select: none"
+              >
+                {{ escapeXml(previewIndentedLine(line)) }}
+              </text>
+            </template>
+            <template v-if="false">
               <line
                 :x1="6"
                 :y1="attrBlockTopY(c) - 1"

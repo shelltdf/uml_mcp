@@ -29,6 +29,18 @@ const METHOD_KINDS: readonly MvCodespaceMethodKind[] = [
   'operator',
 ];
 const ACCESS_VIS: readonly MvCodespaceAccessorVisibility[] = ['public', 'protected', 'private', 'package'];
+const MEMBER_VIS_OPTIONS: readonly string[] = ['public', 'protected', 'private', 'package'];
+const MEMBER_TYPE_OPTIONS: readonly string[] = [
+  'string',
+  'int',
+  'float',
+  'boolean',
+  'json',
+  'number',
+  'void',
+  'any',
+  'unknown',
+];
 const OPERATOR_SYMBOL_OPTIONS = ['+', '-', '*', '/', '%', '==', '!=', '<', '>', '<=', '>=', '[]', '()'] as const;
 
 const props = defineProps<{
@@ -104,13 +116,16 @@ function normalizeMemberByKind(mem: MvCodespaceMember): void {
     if (!mem.visibility) mem.visibility = 'private';
     // members 语义收敛为“普通成员变量”，不承载 accessor 关系
     delete mem.accessor;
+    delete mem.enumGroup;
     return;
   }
   if (mem.kind === 'method') {
-    delete mem.type;
     delete mem.accessor;
     if (!mem.methodKind) mem.methodKind = 'normal';
+    if (!mem.signature) mem.signature = '()';
+    if (!mem.type) mem.type = 'int';
     if (mem.methodKind !== 'operator') delete mem.operatorSymbol;
+    delete mem.enumGroup;
     return;
   }
   delete mem.type;
@@ -158,61 +173,74 @@ function removeBase(bi: number) {
 }
 
 function addMember() {
-  const name = csMsg.value.newMemberName;
   props.runPatch((d) => {
     const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
     if (!c) return;
     if (!c.members) c.members = [];
-    c.members.push({ name, kind: 'field', visibility: 'private' });
-  });
-}
-
-function addPlainMember() {
-  const name = csMsg.value.newMemberName;
-  props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
-    if (!c) return;
-    if (!c.members) c.members = [];
-    c.members.push({ name, kind: 'field', visibility: 'private' });
-  });
-}
-
-function addMethodMember() {
-  const name = csMsg.value.newMemberName;
-  props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
-    if (!c) return;
-    if (!c.members) c.members = [];
-    c.members.push({ name, kind: 'method', methodKind: 'normal', signature: `${name}()` });
-  });
-}
-
-function addEnumMember() {
-  const name = csMsg.value.newMemberName.toUpperCase();
-  props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
-    if (!c) return;
-    if (!c.members) c.members = [];
-    c.members.push({ name, kind: 'enumLiteral' });
+    const name = ensureUniqueMemberName(c.members, csMsg.value.newMemberName);
+    c.members.push({ name, kind: 'field', visibility: 'public', type: 'int' });
   });
 }
 
 function addProperty() {
-  const name = csMsg.value.newMemberName;
   props.runPatch((d) => {
     const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
     if (!c) return;
     if (!c.properties) c.properties = [];
+    const name = ensureUniquePropertyName(c.properties, 'property');
     c.properties.push({
       name,
       backingFieldName: `_${name}`,
       backingVisibility: 'private',
-      type: '',
+      type: 'int',
       hasGetter: true,
       hasSetter: true,
       getterVisibility: 'public',
       setterVisibility: 'public',
     });
+  });
+}
+
+function ensureUniqueMemberName(members: MvCodespaceMember[], preferred: string): string {
+  const base = (preferred || 'member').trim() || 'member';
+  const used = new Set(members.map((m) => (m.name ?? '').trim()).filter(Boolean));
+  if (!used.has(base)) return base;
+  let i = 2;
+  while (used.has(`${base}_${i}`)) i++;
+  return `${base}_${i}`;
+}
+
+function ensureUniquePropertyName(properties: MvCodespaceProperty[], preferred: string): string {
+  const base = (preferred || 'property').trim() || 'property';
+  const used = new Set(properties.map((p) => (p.name ?? '').trim()).filter(Boolean));
+  if (!used.has(base)) return base;
+  let i = 2;
+  while (used.has(`${base}_${i}`)) i++;
+  return `${base}_${i}`;
+}
+
+function memberTypeKnown(v: string | undefined): boolean {
+  const t = (v ?? '').trim();
+  return !!t && MEMBER_TYPE_OPTIONS.includes(t);
+}
+
+function addMethodMember() {
+  props.runPatch((d) => {
+    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    if (!c) return;
+    if (!c.members) c.members = [];
+    const name = ensureUniqueMemberName(c.members, 'method');
+    c.members.push({ name, kind: 'method', methodKind: 'normal', signature: '()', type: 'int' });
+  });
+}
+
+function addEnumMember() {
+  props.runPatch((d) => {
+    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    if (!c) return;
+    if (!c.members) c.members = [];
+    const name = ensureUniqueMemberName(c.members, 'ENUM');
+    c.members.push({ name, kind: 'enumLiteral', enumGroup: 'default' });
   });
 }
 
@@ -391,18 +419,25 @@ function removeClass() {
               />
             </td>
             <td>
-              <input
-                :value="mem.visibility ?? ''"
+              <select
+                :value="mem.visibility ?? 'public'"
                 :title="csMsg.flClsMemberVisTitle"
-                @input="patchMember(idx, { visibility: ($event.target as HTMLInputElement).value })"
-              />
+                @change="patchMember(idx, { visibility: ($event.target as HTMLSelectElement).value })"
+              >
+                <option v-for="v in MEMBER_VIS_OPTIONS" :key="'mv-' + v" :value="v">{{ v }}</option>
+              </select>
             </td>
             <td>
-              <input
-                :value="mem.type ?? ''"
+              <select
+                :value="mem.type ?? 'int'"
                 :title="csMsg.flClsMemberTypeSigTitle"
-                @input="patchMember(idx, { type: ($event.target as HTMLInputElement).value })"
-              />
+                @change="patchMember(idx, { type: ($event.target as HTMLSelectElement).value })"
+              >
+                <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'mt-' + t" :value="t">{{ t }}</option>
+                <option v-if="mem.type && !memberTypeKnown(mem.type)" :value="mem.type">
+                  {{ mem.type }}
+                </option>
+              </select>
             </td>
             <td class="cs-td-center">
               <input
@@ -422,9 +457,6 @@ function removeClass() {
       </table>
       <button type="button" class="add-row" :title="csMsg.flClsAddMemberTitle" @click="addMember">
         {{ csMsg.flClsAddMemberLabel }}
-      </button>
-      <button type="button" class="add-row" :title="csMsg.flClsAddFieldTitle" @click="addPlainMember">
-        {{ csMsg.flClsAddFieldLabel }}
       </button>
 
       <h5 class="cs-subh">{{ csMsg.flClsFieldsHeading }}</h5>
@@ -526,7 +558,6 @@ function removeClass() {
       <button type="button" class="add-row" :title="csMsg.flClsAddFieldTitle" @click="addProperty">
         {{ csMsg.flClsAddFieldLabel }}
       </button>
-
       <h5 class="cs-subh">{{ csMsg.flClsMethodsHeading }}</h5>
       <table class="cs-table">
         <thead>
@@ -534,7 +565,8 @@ function removeClass() {
             <th>name</th>
             <th>visibility</th>
             <th>methodKind</th>
-            <th>signature</th>
+            <th>params</th>
+            <th>return</th>
             <th>virtual</th>
             <th>operator</th>
             <th></th>
@@ -558,7 +590,19 @@ function removeClass() {
               </select>
             </td>
             <td>
-              <input :value="mem.signature ?? ''" placeholder="signature" :title="csMsg.flClsMemberTypeSigTitle" @input="patchMember(idx, { signature: ($event.target as HTMLInputElement).value })" />
+              <input :value="mem.signature ?? '()'" placeholder="(arg: int)" :title="csMsg.flClsMemberTypeSigTitle" @input="patchMember(idx, { signature: ($event.target as HTMLInputElement).value })" />
+            </td>
+            <td>
+              <select
+                :value="mem.type ?? 'int'"
+                :title="csMsg.flClsMemberTypeSigTitle"
+                @change="patchMember(idx, { type: ($event.target as HTMLSelectElement).value })"
+              >
+                <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'mr-' + t" :value="t">{{ t }}</option>
+                <option v-if="mem.type && !memberTypeKnown(mem.type)" :value="mem.type">
+                  {{ mem.type }}
+                </option>
+              </select>
             </td>
             <td class="cs-td-center">
               <input type="checkbox" :checked="mem.virtual === true" :title="csMsg.flClsMemberVirtualTitle" @change="patchMember(idx, { virtual: ($event.target as HTMLInputElement).checked })" />
@@ -592,6 +636,7 @@ function removeClass() {
           <tr>
             <th>name</th>
             <th>value/type</th>
+            <th>group</th>
             <th></th>
           </tr>
         </thead>
@@ -602,6 +647,9 @@ function removeClass() {
             </td>
             <td>
               <input :value="mem.type ?? ''" :title="csMsg.flClsMemberTypeSigTitle" @input="patchMember(idx, { type: ($event.target as HTMLInputElement).value })" />
+            </td>
+            <td>
+              <input :value="mem.enumGroup ?? ''" placeholder="default" title="enum group" @input="patchMember(idx, { enumGroup: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
               <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeMember(idx)">

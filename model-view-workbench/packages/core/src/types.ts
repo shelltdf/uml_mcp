@@ -123,6 +123,8 @@ export interface MvCodespaceMember {
   methodKind?: MvCodespaceMethodKind;
   /** kind=method 且 methodKind=operator 时可选：操作符，如 + / [] / () */
   operatorSymbol?: string;
+  /** kind=enumLiteral 时可选：枚举分组名（用于同一枚举按组组织） */
+  enumGroup?: string;
   type?: string;
   signature?: string;
   notes?: string;

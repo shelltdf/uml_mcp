@@ -85,19 +85,28 @@ function memberToAttrLine(m: MvCodespaceMember): string {
   return `${lead}${st}${n}`;
 }
 
+function memberToEnumLine(m: MvCodespaceMember): string {
+  const n = (m.name ?? '').trim() || 'ENUM';
+  const ty = (m.type ?? '').trim();
+  const grp = (m.enumGroup ?? '').trim();
+  const body = ty ? `${n}: ${ty}` : n;
+  return grp ? `[${grp}] ${body}` : body;
+}
+
 function memberToMethodLine(m: MvCodespaceMember): string {
   const lead = visLead(m.visibility);
   const st = m.static ? '$' : '';
   const sig = (m.signature ?? '').trim();
+  const ret = (m.type ?? '').trim();
   const kind = (m.methodKind ?? 'normal').trim();
   const kindPrefix =
     kind && kind !== 'normal' ? `[${kind}] ` : '';
   if (sig) {
     const s = sig.startsWith(m.name ?? '') ? sig : `${m.name}${sig.startsWith('(') ? '' : ' '}${sig}`;
-    return `${lead}${st}${kindPrefix}${s}`.trim();
+    return ret ? `${lead}${st}${kindPrefix}${s}: ${ret}`.trim() : `${lead}${st}${kindPrefix}${s}`.trim();
   }
   const n = (m.name ?? '').trim() || 'method';
-  return `${lead}${st}${kindPrefix}${n}()`;
+  return ret ? `${lead}${st}${kindPrefix}${n}(): ${ret}` : `${lead}${st}${kindPrefix}${n}()`;
 }
 
 function propertyToLine(p: MvCodespaceProperty): string {
@@ -185,7 +194,7 @@ export function listCodespaceClassesForMermaidClass(
               if (m.kind === 'method') {
                 meths.push(memberToMethodLine(m));
               } else if (m.kind === 'enumLiteral') {
-                enums.push(memberToAttrLine(m));
+                enums.push(memberToEnumLine(m));
               } else {
                 attrs.push(memberToAttrLine(m));
               }

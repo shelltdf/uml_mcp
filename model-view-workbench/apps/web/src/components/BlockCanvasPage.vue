@@ -324,7 +324,15 @@ const mermaidClassModelSourceError = computed((): string => {
 
 const mermaidCodespaceClassTree = computed<CodespaceClassTreeItem[]>(() => {
   if (!viewDraft.value || viewDraft.value.kind !== 'mermaid-class') return [];
-  return listCodespaceClassesForMermaidClass(props.markdown, viewDraft.value.modelRefs ?? []);
+  return listCodespaceClassesForMermaidClass(mermaidClassSourceMarkdown.value, viewDraft.value.modelRefs ?? []);
+});
+
+const mermaidClassSourceMarkdown = computed((): string => {
+  const sideId = mermaidCodespaceSideBlockId.value;
+  const sidePayload = mermaidCodespaceSidePayload.value;
+  if (!sideId || !sidePayload) return props.markdown;
+  const next = replaceBlockInnerById(props.markdown, sideId, JSON.stringify(sidePayload, null, 2));
+  return next ?? props.markdown;
 });
 
 const filteredModelRowEntries = computed(() => {
@@ -1032,7 +1040,7 @@ function onMermaidOpenClassifier(ev: { classDiagramClassId: string; className: s
   const vd = viewDraft.value;
   if (!vd) return;
   const hit = findCodespaceClassifierForMermaidClass(
-    props.markdown,
+    mermaidClassSourceMarkdown.value,
     vd.modelRefs,
     ev.classDiagramClassId,
     ev.className,
@@ -1060,7 +1068,7 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
   if (!vd) return;
 
   if (!mermaidCodespaceSidePayload.value || !mermaidCodespaceSideBlockId.value) {
-    const first = getFirstCodespaceRefForMermaidClass(props.markdown, vd.modelRefs ?? []);
+    const first = getFirstCodespaceRefForMermaidClass(mermaidClassSourceMarkdown.value, vd.modelRefs ?? []);
     if (!first) {
       window.alert(
         locale.value === 'en'
@@ -1127,7 +1135,7 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
           :title="ui.blockCanvasSaveTitle"
           @click="save"
         >
-          {{ ui.tbSave }}
+          {{ locale === 'en' ? 'Update' : '更新' }}
         </button>
       </div>
     </header>
