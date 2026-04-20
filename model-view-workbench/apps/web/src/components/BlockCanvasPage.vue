@@ -94,6 +94,8 @@ const emit = defineEmits<{
   (e: 'close'): void;
   /** 代码空间画布选中节点摘要与属性行，供主窗口属性 Dock 展示 */
   (e: 'codespaceDockContext', ctx: CodespaceDockContextPayload): void;
+  /** 画布是否有未保存改动（供外层工具栏“保存”按钮高亮） */
+  (e: 'dirtyChange', dirty: boolean): void;
 }>();
 
 const block = computed<ParsedFenceBlock | null>(() => {
@@ -948,6 +950,12 @@ const hasCanvasUnsavedChanges = computed(() => {
   }
   return mainDirty || sideDirty;
 });
+
+watch(
+  hasCanvasUnsavedChanges,
+  (v) => emit('dirtyChange', v),
+  { immediate: true },
+);
 
 function save() {
   const inner = buildInnerJson();

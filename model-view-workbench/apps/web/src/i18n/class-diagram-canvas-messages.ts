@@ -5,6 +5,7 @@ export type ClassDiagramCanvasMessages = {
   cdeNewClass: string;
   cdeNewClassHint: string;
   cdeToolbarAria: string;
+  cdeAutoLayout: string;
   cdeFit: string;
   cdeOrigin: string;
   cdeResetZoom: string;
@@ -28,6 +29,7 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeNewClass: '新建类',
     cdeNewClassHint: '在视口中心附近添加新类框（名称自动避重）',
     cdeToolbarAria: '类图画布工具',
+    cdeAutoLayout: '自动排版',
     cdeFit: '适应',
     cdeOrigin: '原点',
     cdeResetZoom: '还原',
@@ -50,6 +52,7 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeNewClass: 'New class',
     cdeNewClassHint: 'Add a class box near the viewport center (name auto-deconflicted)',
     cdeToolbarAria: 'Class diagram toolbar',
+    cdeAutoLayout: 'Auto layout',
     cdeFit: 'Fit',
     cdeOrigin: 'Origin',
     cdeResetZoom: 'Reset zoom',

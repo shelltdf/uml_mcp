@@ -574,6 +574,39 @@ function zoomDelta(d: number): void {
   scale.value = next;
 }
 
+function autoLayoutClasses(): void {
+  const classes = state.classes;
+  if (!classes.length) return;
+  // 按“完整命名空间前缀”分列，列内自上而下排布，保证可读性优先。
+  const groups = new Map<string, ClassDef[]>();
+  for (const c of classes) {
+    const label = classDisplayLabel(c);
+    const i = label.lastIndexOf('.');
+    const key = i > 0 ? label.slice(0, i) : '(root)';
+    const arr = groups.get(key) ?? [];
+    arr.push(c);
+    groups.set(key, arr);
+  }
+  const sortedGroups = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  let x = 80;
+  const colGap = 64;
+  const rowGap = 24;
+  for (const [, list] of sortedGroups) {
+    list.sort((a, b) => classDisplayLabel(a).localeCompare(classDisplayLabel(b)));
+    let y = 80;
+    let colWidth = 248;
+    for (const c of list) {
+      const sz = estimateClassSize(c, !!folded[c.id]);
+      positions[c.id] = { x, y };
+      y += sz.h + rowGap;
+      if (sz.w > colWidth) colWidth = sz.w;
+    }
+    x += colWidth + colGap;
+  }
+  pushPayload();
+  fitAll();
+}
+
 function toggleFold(classId: string): void {
   folded[classId] = !folded[classId];
   pushPayload();
@@ -1207,6 +1240,20 @@ function deleteClass(classId: string): void {
         </div>
 
         <div class="cde-canvas-toolbar" role="toolbar" :aria-label="cd.cdeToolbarAria">
+          <button
+            type="button"
+            class="cde-canvas-toolbar__btn"
+            :aria-label="cd.cdeAutoLayout"
+            :title="`${cd.cdeAutoLayout} — 无全局快捷键`"
+            @click="autoLayoutClasses"
+          >
+            <svg class="cde-canvas-toolbar__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+              <rect x="3" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <rect x="15" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <rect x="9" y="14" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <path d="M9 7h6M12 10v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            </svg>
+          </button>
           <button
             type="button"
             class="cde-canvas-toolbar__btn"

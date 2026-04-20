@@ -117,6 +117,8 @@ interface CanvasTabSpec {
   codespaceDockSummary?: string;
   /** 画布选中节点的属性键值（与 `codespaceDockSummary` 同次更新） */
   codespaceDockLines?: CodespaceDockPropLine[];
+  /** 画布草稿尚未保存回 Markdown */
+  unsaved?: boolean;
 }
 const canvasTabs = ref<CanvasTabSpec[]>([]);
 /** `'markdown'` = 中间列仅 Markdown 编辑；否则为 `canvasTabs` 中某条 `id` */
@@ -212,6 +214,10 @@ function isDirty(path: string | null | undefined): boolean {
   if (!savedBaseline.value.has(path)) return true;
   return cur !== savedBaseline.value.get(path);
 }
+
+const currentDocDirty = computed(() => {
+  return isDirty(selectedPath.value);
+});
 
 function renameOpenDocumentKey(oldPath: string, newPath: string, text: string) {
   const fm = new Map(files.value);
@@ -1506,6 +1512,12 @@ function onCodespaceDockContext(ctx: CodespaceDockContextPayload) {
   );
 }
 
+function onActiveCanvasDirtyChange(dirty: boolean) {
+  const tab = activeCanvasSession.value;
+  if (!tab) return;
+  canvasTabs.value = canvasTabs.value.map((t) => (t.id === tab.id ? { ...t, unsaved: dirty } : t));
+}
+
 function workspaceFilesRecord(): Record<string, string> {
   return Object.fromEntries(files.value);
 }
@@ -1534,6 +1546,7 @@ function openVisualCanvas(block: ParsedFenceBlock) {
       subtypeLabel: fenceBlockSubtypeLabel(block, locale.value),
       codespaceDockSummary: '',
       codespaceDockLines: [],
+      unsaved: false,
     },
   ];
   activeEditorTab.value = id;
@@ -1555,8 +1568,12 @@ async function onEmbeddedCanvasSaved(payload: { markdown: string; relPath: strin
   if (electronApi.value?.writeWorkspaceFile) {
     await electronApi.value.writeWorkspaceFile(payload.relPath, payload.markdown);
   }
-  syncBaselineForPath(payload.relPath, payload.markdown);
+  // 块画布保存不应重置“文档保存”基线；顶栏保存状态仅反映 Markdown 编辑保存链路。
   refreshCanvasTabSubtypesForPath(payload.relPath, payload.markdown);
+  const tab = activeCanvasSession.value;
+  if (tab) {
+    canvasTabs.value = canvasTabs.value.map((t) => (t.id === tab.id ? { ...t, unsaved: false } : t));
+  }
   logLine(trLogCanvasTabSaved(locale.value, payload.relPath), 'info');
 }
 
@@ -1597,7 +1614,7 @@ function onOpenerCanvasSaved(ev: MessageEvent) {
   if (selectedPath.value === relPath) {
     sourceEditorText.value = markdown;
   }
-  syncBaselineForPath(relPath, markdown);
+  // 同上：弹窗画布回写也不重置文档保存基线。
   refreshCanvasTabSubtypesForPath(relPath, markdown);
   logLine(trLogMergedFromCanvasWindow(locale.value, relPath), 'info');
 }
@@ -1720,6 +1737,7 @@ onUnmounted(() => {
     :workspace-files="canvasWorkspaceFiles"
     @saved="onCanvasSavedInPopup"
     @close="onCanvasClosePopup"
+    @dirty-change="onActiveCanvasDirtyChange"
   />
   <div v-else ref="layoutRootRef" class="layout" :class="{ blockOnly }">
     <input
@@ -1897,7 +1915,7 @@ onUnmounted(() => {
           <span class="tb-sep" aria-hidden="true" />
           <button
             type="button"
-            class="tb-btn"
+            :class="['tb-btn', { 'tb-btn-dirty': currentDocDirty }]"
             :disabled="!selectedPath"
             :title="ui.tbSaveTitle"
             @click="saveCurrentDocument"
@@ -2228,6 +2246,7 @@ onUnmounted(() => {
                   @saved="onEmbeddedCanvasSaved"
                   @close="closeCanvasTab(activeCanvasSession.id)"
                   @codespace-dock-context="onCodespaceDockContext"
+                  @dirty-change="onActiveCanvasDirtyChange"
                 />
               </div>
             </template>
@@ -2581,6 +2600,11 @@ onUnmounted(() => {
 .tb-btn:hover:not(:disabled) {
   border-color: #7c8aad;
   background: linear-gradient(to bottom, #fff, #e4e9f5);
+}
+.tb-btn.tb-btn-dirty:not(:disabled) {
+  border-color: #c2410c;
+  background: linear-gradient(to bottom, #fb923c, #ea580c);
+  color: #fff;
 }
 .tb-btn:disabled {
   opacity: 0.45;
