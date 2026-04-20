@@ -4,7 +4,9 @@
 import {
   parseMarkdownBlocks,
   slug,
+  type MvCodespaceMember,
   type MvCodespaceNamespaceNode,
+  type MvCodespaceProperty,
   type MvModelCodespacePayload,
   type ParsedFenceBlock,
 } from '@mvwb/core';
@@ -55,12 +57,61 @@ export type CodespaceClassTreeItem = {
   namespacePath: string[];
   classId: string;
   className: string;
+  attributeLines: string[];
+  propertyLines: string[];
+  enumLiteralLines: string[];
+  methodLines: string[];
 };
 
 export type FirstCodespaceRef = {
   codespaceBlockId: string;
   payload: MvModelCodespacePayload;
 };
+
+function visLead(v?: string): string {
+  const t = (v ?? '').trim().toLowerCase();
+  if (t === 'private') return '-';
+  if (t === 'protected') return '#';
+  if (t === 'package') return '~';
+  return '+';
+}
+
+function memberToAttrLine(m: MvCodespaceMember): string {
+  const lead = visLead(m.visibility);
+  const st = m.static ? '$' : '';
+  const n = (m.name ?? '').trim() || 'member';
+  const ty = (m.type ?? '').trim();
+  if (ty) return `${lead}${st}${n}: ${ty}`;
+  return `${lead}${st}${n}`;
+}
+
+function memberToMethodLine(m: MvCodespaceMember): string {
+  const lead = visLead(m.visibility);
+  const st = m.static ? '$' : '';
+  const sig = (m.signature ?? '').trim();
+  const kind = (m.methodKind ?? 'normal').trim();
+  const kindPrefix =
+    kind && kind !== 'normal' ? `[${kind}] ` : '';
+  if (sig) {
+    const s = sig.startsWith(m.name ?? '') ? sig : `${m.name}${sig.startsWith('(') ? '' : ' '}${sig}`;
+    return `${lead}${st}${kindPrefix}${s}`.trim();
+  }
+  const n = (m.name ?? '').trim() || 'method';
+  return `${lead}${st}${kindPrefix}${n}()`;
+}
+
+function propertyToLine(p: MvCodespaceProperty): string {
+  const n = (p.name ?? '').trim() || 'property';
+  const bf = (p.backingFieldName ?? '').trim();
+  const ty = (p.type ?? '').trim();
+  const g = p.hasGetter === false ? '' : 'get';
+  const s = p.hasSetter === false ? '' : 'set';
+  const gs = [g, s].filter(Boolean).join('/');
+  const vis = (p.backingVisibility ?? 'private').trim();
+  const left = bf ? `${vis} ${bf}` : `${vis} _${n}`;
+  const right = ty ? `${n}: ${ty}` : n;
+  return gs ? `${left} -> ${right} (${gs})` : `${left} -> ${right}`;
+}
 
 /** 仅在 ``markdown``（与 mv-view 同文件）内解析 modelRefs，定位第一个 codespace 块内匹配的类 */
 export function findCodespaceClassifierForMermaidClass(
@@ -125,6 +176,23 @@ export function listCodespaceClassesForMermaidClass(
         for (const n of nodes) {
           const curPath = [...nsPath, n.name];
           for (const c of n.classes ?? []) {
+            const members = c.members ?? [];
+            const attrs: string[] = [];
+            const props: string[] = [];
+            const enums: string[] = [];
+            const meths: string[] = [];
+            for (const m of members) {
+              if (m.kind === 'method') {
+                meths.push(memberToMethodLine(m));
+              } else if (m.kind === 'enumLiteral') {
+                enums.push(memberToAttrLine(m));
+              } else {
+                attrs.push(memberToAttrLine(m));
+              }
+            }
+            for (const p of c.properties ?? []) {
+              props.push(propertyToLine(p));
+            }
             out.push({
               codespaceBlockId: payload.id,
               moduleId: modId,
@@ -132,6 +200,10 @@ export function listCodespaceClassesForMermaidClass(
               namespacePath: curPath,
               classId: c.id,
               className: (c.name ?? c.id).trim(),
+              attributeLines: attrs,
+              propertyLines: props,
+              enumLiteralLines: enums,
+              methodLines: meths,
             });
           }
           walkNs(n.namespaces, curPath);

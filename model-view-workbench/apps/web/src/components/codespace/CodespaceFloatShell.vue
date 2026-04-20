@@ -1,19 +1,33 @@
 <script setup lang="ts">
-import { inject, useId } from 'vue';
+import { computed, inject, ref, useId } from 'vue';
 import { CS_CANVAS_MSG_KEY } from '../../i18n/codespace-canvas-messages';
 
 const csMsg = inject(CS_CANVAS_MSG_KEY)!;
 
-defineProps<{
+const props = withDefaults(
+  defineProps<{
   open: boolean;
   title: string;
-}>();
+    allowMaximize?: boolean;
+  }>(),
+  {
+    allowMaximize: false,
+  },
+);
 
 defineEmits<{
   close: [];
 }>();
 
 const titleId = `cs-float-title-${useId()}`;
+const maximized = ref(false);
+const panelClass = computed(() => ({
+  'cs-float-panel--max': maximized.value,
+}));
+
+function toggleMaximize(): void {
+  maximized.value = !maximized.value;
+}
 </script>
 
 <template>
@@ -27,6 +41,7 @@ const titleId = `cs-float-title-${useId()}`;
     >
       <div
         class="cs-float-panel"
+        :class="panelClass"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="titleId"
@@ -35,7 +50,18 @@ const titleId = `cs-float-title-${useId()}`;
       >
         <header class="cs-float-head">
           <h3 :id="titleId" class="cs-float-title">{{ title }}</h3>
-          <button type="button" class="cs-float-close" :title="csMsg.floatCloseTitle" @click="$emit('close')">×</button>
+          <div class="cs-float-head-actions">
+            <button
+              v-if="props.allowMaximize"
+              type="button"
+              class="cs-float-max"
+              :title="maximized ? csMsg.floatRestoreTitle : csMsg.floatMaximizeTitle"
+              @click="toggleMaximize"
+            >
+              {{ maximized ? '↙' : '⬜' }}
+            </button>
+            <button type="button" class="cs-float-close" :title="csMsg.floatCloseTitle" @click="$emit('close')">×</button>
+          </div>
         </header>
         <div class="cff-wrap">
           <slot />
@@ -68,6 +94,10 @@ const titleId = `cs-float-title-${useId()}`;
   box-shadow: 0 16px 48px rgba(15, 23, 42, 0.22);
   outline: none;
 }
+.cs-float-panel--max {
+  width: min(96vw, 1600px);
+  max-height: 94vh;
+}
 .cs-float-head {
   display: flex;
   align-items: center;
@@ -76,6 +106,25 @@ const titleId = `cs-float-title-${useId()}`;
   padding: 10px 14px;
   border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
+}
+.cs-float-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cs-float-max {
+  border: none;
+  background: #f1f5f9;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #334155;
+}
+.cs-float-max:hover {
+  background: #e2e8f0;
 }
 .cs-float-title {
   margin: 0;
@@ -109,25 +158,29 @@ const titleId = `cs-float-title-${useId()}`;
 .cff-wrap .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
+  gap: 4px;
+  margin-bottom: 10px;
   max-width: 960px;
 }
 .cff-wrap .field span {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: #64748b;
 }
 .cff-wrap .wide {
-  padding: 8px 10px;
+  padding: 6px 8px;
   border: 1px solid #cbd5e1;
   border-radius: 4px;
   font: inherit;
+}
+.cff-wrap input[readonly] {
+  background: #f8fafc;
+  color: #475569;
 }
 .cff-wrap .payload-ta {
   width: 100%;
   max-width: 960px;
   box-sizing: border-box;
-  padding: 10px 12px;
+  padding: 8px 10px;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.8rem;
   line-height: 1.4;
@@ -144,17 +197,17 @@ const titleId = `cs-float-title-${useId()}`;
   text-decoration: underline;
 }
 .cff-wrap .add-row {
-  margin-top: 12px;
-  padding: 6px 14px;
-  font-size: 0.85rem;
+  margin-top: 8px;
+  padding: 5px 10px;
+  font-size: 0.8rem;
   cursor: pointer;
   border-radius: 4px;
   border: 1px solid #64748b;
   background: #fff;
 }
 .cff-wrap .cs-subh {
-  margin: 14px 0 6px;
-  font-size: 0.82rem;
+  margin: 10px 0 4px;
+  font-size: 0.78rem;
   color: #475569;
 }
 .cff-wrap .cs-actions {
@@ -175,6 +228,19 @@ const titleId = `cs-float-title-${useId()}`;
   margin-bottom: 6px;
   font-size: 0.78rem;
 }
+.cff-wrap .cs-inline-pair {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.cff-wrap .cs-inline-pair .field {
+  flex: 1 1 auto;
+  margin-bottom: 8px;
+}
+.cff-wrap .cs-inline-pair .cs-check {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+}
 .cff-wrap .cs-check {
   display: flex;
   align-items: center;
@@ -194,5 +260,9 @@ const titleId = `cs-float-title-${useId()}`;
 }
 .cff-wrap .cs-td-center {
   text-align: center;
+}
+.cff-wrap .cs-error {
+  color: #b91c1c;
+  font-size: 0.72rem;
 }
 </style>

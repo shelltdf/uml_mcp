@@ -13,6 +13,8 @@ export type ClassDiagramCanvasMessages = {
   cdeZoomOut: string;
   cdsInheritHandleHint: string;
   cdeSectionAttrs: string;
+  cdeSectionProps: string;
+  cdeSectionEnums: string;
   cdeSectionMethods: string;
   cdeShortcutsPanel: string;
   cdeShortcutsBody: string;
@@ -22,6 +24,7 @@ export type ClassDiagramCanvasMessages = {
   cdeOpenCodespaceClass: string;
   cdeDeleteClass: string;
   cdeDeleteClassConfirm: string;
+  cdeModelSourceInvalid: string;
 };
 
 export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMessages> = {
@@ -37,6 +40,8 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeZoomOut: '缩小',
     cdsInheritHandleHint: '拖拽到父类框以设置继承（子类顶部圆点连向父类）',
     cdeSectionAttrs: '属性',
+    cdeSectionProps: 'Property',
+    cdeSectionEnums: '枚举字面量',
     cdeSectionMethods: '操作',
     cdeShortcutsPanel: '快捷键',
     cdeShortcutsBody:
@@ -47,6 +52,7 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeOpenCodespaceClass: '在 Codespace 中编辑类',
     cdeDeleteClass: '删除此类',
     cdeDeleteClassConfirm: '确定删除该类及其全部连线？此操作不可撤销。',
+    cdeModelSourceInvalid: '未指定有效 model 来源。请先在“基本信息”中绑定可用的 modelRefs（块id#子表id）。',
   },
   en: {
     cdeNewClass: 'New class',
@@ -60,6 +66,8 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeZoomOut: 'Zoom out',
     cdsInheritHandleHint: 'Drag to a parent class to set inheritance',
     cdeSectionAttrs: 'Attributes',
+    cdeSectionProps: 'Property',
+    cdeSectionEnums: 'Enum literals',
     cdeSectionMethods: 'Methods',
     cdeShortcutsPanel: 'Shortcuts',
     cdeShortcutsBody:
@@ -70,5 +78,7 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeOpenCodespaceClass: 'Edit class in Codespace',
     cdeDeleteClass: 'Delete class',
     cdeDeleteClassConfirm: 'Delete this class and all attached lines? This cannot be undone.',
+    cdeModelSourceInvalid:
+      'No valid model source configured. Bind a usable modelRefs entry (blockId#tableId) in Basic Info first.',
   },
 };

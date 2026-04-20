@@ -89,6 +89,12 @@ export type MvCodespaceBaseRelation = 'generalization' | 'realization';
 
 /** 成员行种类（示意，非 AST） */
 export type MvCodespaceMemberKind = 'field' | 'method' | 'enumLiteral';
+/** 方法语义细分（用于构造/析构/仿函数/操作符等文档化标记） */
+export type MvCodespaceMethodKind = 'normal' | 'constructor' | 'destructor' | 'functor' | 'operator';
+/** 字段访问器策略（私有字段 + get/set 包装语义） */
+export type MvCodespaceFieldAccessor = 'none' | 'get' | 'set' | 'getset';
+/** Property 访问器可见性 */
+export type MvCodespaceAccessorVisibility = 'public' | 'protected' | 'private' | 'package';
 
 /** 类间关系种类（对应 UML Association / Shared aggregation / Composition / Dependency） */
 export type MvCodespaceAssociationKind =
@@ -111,8 +117,31 @@ export interface MvCodespaceMember {
   /** 如 public / private / protected / package */
   visibility?: string;
   virtual?: boolean;
+  /** kind=field 时可选：getter/setter 包装策略 */
+  accessor?: MvCodespaceFieldAccessor;
+  /** kind=method 时可选：方法语义类别（默认 normal） */
+  methodKind?: MvCodespaceMethodKind;
+  /** kind=method 且 methodKind=operator 时可选：操作符，如 + / [] / () */
+  operatorSymbol?: string;
   type?: string;
   signature?: string;
+  notes?: string;
+}
+
+/** Property：私有 backing 字段 + 可选公有/受保护访问器（get/set）复合语义 */
+export interface MvCodespaceProperty {
+  /** 业务语义名（例如 balance） */
+  name: string;
+  /** 私有 backing 字段名（例如 _balance） */
+  backingFieldName?: string;
+  /** backing 字段可见性；默认 private */
+  backingVisibility?: string;
+  type?: string;
+  static?: boolean;
+  hasGetter?: boolean;
+  hasSetter?: boolean;
+  getterVisibility?: MvCodespaceAccessorVisibility;
+  setterVisibility?: MvCodespaceAccessorVisibility;
   notes?: string;
 }
 
@@ -129,6 +158,9 @@ export interface MvCodespaceClassifier {
   /** 模板形参名列表（示意，如 `["T","U"]`） */
   templateParams?: string[];
   bases?: MvCodespaceClassifierBase[];
+  /** 独立属性组：私有字段 + 访问器；不与 members/methods 混用 */
+  properties?: MvCodespaceProperty[];
+  /** 兼容旧结构：普通成员（可含 field/method/enumLiteral） */
   members?: MvCodespaceMember[];
 }
 

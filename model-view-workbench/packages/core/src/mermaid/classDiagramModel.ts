@@ -276,14 +276,8 @@ export function serializeClassDiagramBody(state: ClassDiagramState): string {
   const lines: string[] = ['classDiagram'];
   for (const c of state.classes) {
     const st = c.stereotype ? ` <<${c.stereotype}>>` : '';
-    lines.push(`  class ${c.name}${st} {`);
-    for (const a of c.attributes) {
-      lines.push(`    ${a}`);
-    }
-    for (const meth of c.methods) {
-      lines.push(`    ${meth}`);
-    }
-    lines.push('  }');
+    // Mermaid 仅作为 View：成员明细不再写入 view payload。
+    lines.push(`  class ${c.name}${st}`);
   }
   for (const l of state.links) {
     const a = state.classes.find((x) => x.id === l.from)?.name ?? l.from;
@@ -482,7 +476,7 @@ export function parseViewPayloadClassDiagram(payload: string): {
   };
 }
 
-/** 将类图状态写回 ``mv-view.payload`` 字符串（正文 + 布局注释） */
+/** 将类图状态写回 ``mv-view.payload`` 字符串（仅 Mermaid 正文，不混入布局注释） */
 export function buildClassDiagramViewPayload(
   previousPayload: string,
   state: ClassDiagramState,
@@ -490,19 +484,10 @@ export function buildClassDiagramViewPayload(
   folded: Record<string, boolean> = {},
   edgeVisibility: ClassDiagramEdgeVisibility = defaultEdgeVisibility(),
 ): string {
+  void previousPayload;
+  void positions;
+  void folded;
+  void edgeVisibility;
   const body = serializeClassDiagramBody(state);
-  const layoutJson = JSON.stringify({
-    v: 1,
-    positions,
-    folded,
-    edgeVisibility,
-  });
-  const layoutLine = `${LAYOUT_PREFIX}${layoutJson}${LAYOUT_SUFFIX}`;
-  const stripped = stripLayoutComment(previousPayload);
-  const blockRe = /```\s*mermaid\s*\n[\s\S]*?```/i;
-  if (blockRe.test(stripped)) {
-    const replaced = stripped.replace(blockRe, '```mermaid\n' + body + '\n```');
-    return `${replaced.trimEnd()}\n\n${layoutLine}\n`;
-  }
-  return `${body}\n\n${layoutLine}\n`;
+  return body;
 }

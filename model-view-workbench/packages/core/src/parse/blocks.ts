@@ -295,6 +295,10 @@ function validateMvModelStruct(
 const CODESPACE_CLASSIFIER_KINDS = new Set(['class', 'interface', 'struct']);
 const CODESPACE_BASE_RELATIONS = new Set(['generalization', 'realization']);
 const CODESPACE_MEMBER_KINDS = new Set(['field', 'method', 'enumLiteral']);
+const CODESPACE_METHOD_KINDS = new Set(['normal', 'constructor', 'destructor', 'functor', 'operator']);
+const CODESPACE_FIELD_ACCESSORS = new Set(['none', 'get', 'set', 'getset']);
+const CODESPACE_ACCESSOR_VIS = new Set(['public', 'protected', 'private', 'package']);
+const CODESPACE_ENGLISH_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const CODESPACE_ASSOCIATION_KINDS = new Set([
   'association',
   'aggregation',
@@ -351,6 +355,12 @@ function validateCodespaceNamespaceNode(
   if (!idRes.ok) return idRes;
   if (typeof n.name !== 'string' || !n.name.trim()) {
     return { ok: false, message: `${path}.name must be a non-empty string` };
+  }
+  if (!CODESPACE_ENGLISH_NAME.test(n.name)) {
+    return {
+      ok: false,
+      message: `${path}.name must use English letters/digits/underscore and start with a letter or underscore`,
+    };
   }
   const os = validateCodespaceOptionalString(n, path, ['qualifiedName', 'notes']);
   if (!os.ok) return os;
@@ -450,11 +460,95 @@ function validateCodespaceNamespaceNode(
           }
           const ms = validateCodespaceOptionalString(mo, mp, ['visibility', 'type', 'signature', 'notes']);
           if (!ms.ok) return ms;
+          if ('methodKind' in mo && mo.methodKind !== undefined) {
+            if (typeof mo.methodKind !== 'string' || !CODESPACE_METHOD_KINDS.has(mo.methodKind)) {
+              return {
+                ok: false,
+                message: `${mp}.methodKind must be one of: normal, constructor, destructor, functor, operator`,
+              };
+            }
+          }
+          if ('accessor' in mo && mo.accessor !== undefined) {
+            if (typeof mo.accessor !== 'string' || !CODESPACE_FIELD_ACCESSORS.has(mo.accessor)) {
+              return {
+                ok: false,
+                message: `${mp}.accessor must be one of: none, get, set, getset`,
+              };
+            }
+          }
+          if ('operatorSymbol' in mo && mo.operatorSymbol !== undefined && typeof mo.operatorSymbol !== 'string') {
+            return { ok: false, message: `${mp}.operatorSymbol must be a string when present` };
+          }
           if ('static' in mo && mo.static !== undefined && typeof mo.static !== 'boolean') {
             return { ok: false, message: `${mp}.static must be a boolean when present` };
           }
           if ('virtual' in mo && mo.virtual !== undefined && typeof mo.virtual !== 'boolean') {
             return { ok: false, message: `${mp}.virtual must be a boolean when present` };
+          }
+          if (mo.kind === 'field' && 'methodKind' in mo && mo.methodKind !== undefined) {
+            return { ok: false, message: `${mp}.methodKind is only allowed when kind is method` };
+          }
+          if (mo.kind === 'field' && 'operatorSymbol' in mo && mo.operatorSymbol !== undefined) {
+            return { ok: false, message: `${mp}.operatorSymbol is only allowed when kind is method` };
+          }
+          if (mo.kind !== 'field' && 'accessor' in mo && mo.accessor !== undefined) {
+            return { ok: false, message: `${mp}.accessor is only allowed when kind is field` };
+          }
+          if (mo.kind === 'method' && mo.methodKind === 'operator') {
+            if (typeof mo.operatorSymbol !== 'string' || !mo.operatorSymbol.trim()) {
+              return {
+                ok: false,
+                message: `${mp}.operatorSymbol must be a non-empty string when methodKind is operator`,
+              };
+            }
+          }
+        }
+      }
+      if ('properties' in co && co.properties !== undefined) {
+        if (!Array.isArray(co.properties)) {
+          return { ok: false, message: `${cp}.properties must be an array when present` };
+        }
+        for (let pi = 0; pi < co.properties.length; pi++) {
+          const pp = `${cp}.properties[${pi}]`;
+          const prop = co.properties[pi];
+          if (!prop || typeof prop !== 'object' || Array.isArray(prop)) {
+            return { ok: false, message: `${pp} must be an object` };
+          }
+          const po = prop as Record<string, unknown>;
+          if (typeof po.name !== 'string' || !po.name.trim()) {
+            return { ok: false, message: `${pp}.name must be a non-empty string` };
+          }
+          const ps = validateCodespaceOptionalString(po, pp, [
+            'backingFieldName',
+            'backingVisibility',
+            'type',
+            'notes',
+          ]);
+          if (!ps.ok) return ps;
+          if ('static' in po && po.static !== undefined && typeof po.static !== 'boolean') {
+            return { ok: false, message: `${pp}.static must be a boolean when present` };
+          }
+          if ('hasGetter' in po && po.hasGetter !== undefined && typeof po.hasGetter !== 'boolean') {
+            return { ok: false, message: `${pp}.hasGetter must be a boolean when present` };
+          }
+          if ('hasSetter' in po && po.hasSetter !== undefined && typeof po.hasSetter !== 'boolean') {
+            return { ok: false, message: `${pp}.hasSetter must be a boolean when present` };
+          }
+          if ('getterVisibility' in po && po.getterVisibility !== undefined) {
+            if (typeof po.getterVisibility !== 'string' || !CODESPACE_ACCESSOR_VIS.has(po.getterVisibility)) {
+              return {
+                ok: false,
+                message: `${pp}.getterVisibility must be one of: public, protected, private, package`,
+              };
+            }
+          }
+          if ('setterVisibility' in po && po.setterVisibility !== undefined) {
+            if (typeof po.setterVisibility !== 'string' || !CODESPACE_ACCESSOR_VIS.has(po.setterVisibility)) {
+              return {
+                ok: false,
+                message: `${pp}.setterVisibility must be one of: public, protected, private, package`,
+              };
+            }
           }
         }
       }
@@ -579,6 +673,12 @@ function validateMvModelCodespace(
     if (!mid.ok) return mid;
     if (typeof o.name !== 'string' || !o.name.trim()) {
       return { ok: false, message: `${path}.name must be a non-empty string` };
+    }
+    if (!CODESPACE_ENGLISH_NAME.test(o.name)) {
+      return {
+        ok: false,
+        message: `${path}.name must use English letters/digits/underscore and start with a letter or underscore`,
+      };
     }
     for (const key of ['path', 'role', 'notes'] as const) {
       if (key in o && o[key] !== undefined && typeof o[key] !== 'string') {

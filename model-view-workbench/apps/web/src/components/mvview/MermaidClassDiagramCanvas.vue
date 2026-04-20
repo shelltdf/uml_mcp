@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import {
   type ClassDef,
   type ClassDiagramState,
@@ -8,7 +8,6 @@ import {
   buildClassDiagramViewPayload,
   classDiagramHeaderHeight,
   diagramBounds,
-  estimateClassSize,
   parseViewPayloadClassDiagram,
   slug,
 } from '@mvwb/core';
@@ -22,6 +21,10 @@ const props = defineProps<{
   canvasId: string;
   /** 当前 mv-view 绑定 modelRefs 解析出的 codespace 类树（同文件） */
   codespaceClasses?: CodespaceClassTreeItem[];
+  /** model 来源是否有效（由父层按 modelRefs 校验） */
+  modelSourceValid?: boolean;
+  /** 可选：父层自定义错误提示 */
+  modelSourceError?: string;
 }>();
 
 const emit = defineEmits<{
@@ -36,6 +39,11 @@ const cd = computed(() => classDiagramCanvasMessages[locale.value]);
 const mkId = computed(() => `mk-${props.canvasId.replace(/[^a-zA-Z0-9_-]/g, '')}`);
 const markerAssocUrl = computed(() => `url(#${mkId.value}-asc)`);
 const markerInheritUrl = computed(() => `url(#${mkId.value}-inh)`);
+const modelSourceErrorText = computed(() => {
+  if (props.modelSourceValid !== false) return '';
+  const custom = (props.modelSourceError ?? '').trim();
+  return custom || cd.value.cdeModelSourceInvalid;
+});
 const WORLD_HALF = 100000;
 const WORLD_SIZE = WORLD_HALF * 2;
 
@@ -116,7 +124,48 @@ function loadFromPayload(payload: string): void {
   Object.assign(folded, f);
   edgeVisibility.inherit = ev.inherit;
   edgeVisibility.association = ev.association;
+  normalizeClassIdentityFromModel(false);
   lastSynced.value = payload;
+}
+
+function normalizeClassIdentityFromModel(emitPayload: boolean): void {
+  const rows = props.codespaceClasses ?? [];
+  if (!rows.length || !state.classes.length) return;
+  const byId = new Map(rows.map((r) => [r.classId, r] as const));
+  const byName = new Map(rows.map((r) => [r.className, r] as const));
+  const bySlug = new Map(rows.map((r) => [slug(r.className), r] as const));
+  let changed = false;
+  const taken = new Set(state.classes.map((c) => c.id));
+  for (const c of state.classes) {
+    const hit = byId.get(c.id) ?? byName.get(c.name) ?? bySlug.get(slug(c.name));
+    if (!hit) continue;
+    const targetId = hit.classId;
+    const targetName = hit.className;
+    if (targetName && c.name !== targetName) {
+      c.name = targetName;
+      changed = true;
+    }
+    if (!targetId || c.id === targetId) continue;
+    if (taken.has(targetId)) continue;
+    const oldId = c.id;
+    c.id = targetId;
+    taken.delete(oldId);
+    taken.add(targetId);
+    if (positions[oldId]) {
+      positions[targetId] = positions[oldId]!;
+      delete positions[oldId];
+    }
+    if (folded[oldId] !== undefined) {
+      folded[targetId] = folded[oldId]!;
+      delete folded[oldId];
+    }
+    for (const l of state.links) {
+      if (l.from === oldId) l.from = targetId;
+      if (l.to === oldId) l.to = targetId;
+    }
+    changed = true;
+  }
+  if (changed && emitPayload) pushPayload();
 }
 
 function pushPayload(): void {
@@ -149,6 +198,14 @@ watch(
   },
 );
 
+watch(
+  () => props.codespaceClasses,
+  () => {
+    normalizeClassIdentityFromModel(true);
+  },
+  { deep: true },
+);
+
 function onMarqueePointerMove(e: PointerEvent): void {
   if (!marquee.value) return;
   const w = clientToWorld(e.clientX, e.clientY);
@@ -177,7 +234,7 @@ function onMarqueePointerUp(e: PointerEvent): void {
   for (const c of state.classes) {
     const p = positions[c.id];
     if (!p) continue;
-    const { w: cw, h: ch } = estimateClassSize(c, !!folded[c.id]);
+    const { w: cw, h: ch } = classBoxSize(c);
     const ix0 = p.x;
     const iy0 = p.y;
     const ix1 = p.x + cw;
@@ -298,6 +355,129 @@ const classDisplayNameMap = computed(() => {
   return { byId, byName };
 });
 
+function nameTail(v: string): string {
+  const t = (v ?? '').trim();
+  if (!t) return '';
+  const i = t.lastIndexOf('.');
+  return i >= 0 ? t.slice(i + 1).trim() : t;
+}
+
+const codespaceMembersByKey = computed(() => {
+  const byId = new Map<string, { attrs: string[]; props: string[]; enums: string[]; meths: string[] }>();
+  const byIdSlug = new Map<string, { attrs: string[]; props: string[]; enums: string[]; meths: string[] }>();
+  const byName = new Map<string, { attrs: string[]; props: string[]; enums: string[]; meths: string[] }>();
+  const byNameSlug = new Map<string, { attrs: string[]; props: string[]; enums: string[]; meths: string[] }>();
+  const byFullName = new Map<string, { attrs: string[]; props: string[]; enums: string[]; meths: string[] }>();
+  const byTailName = new Map<string, { attrs: string[]; props: string[]; enums: string[]; meths: string[] }>();
+  for (const r of props.codespaceClasses ?? []) {
+    const ns = r.namespacePath.join('.');
+    const full = ns ? `${ns}.${r.className}` : r.className;
+    const val = {
+      attrs: r.attributeLines ?? [],
+      props: r.propertyLines ?? [],
+      enums: r.enumLiteralLines ?? [],
+      meths: r.methodLines ?? [],
+    };
+    if (!byId.has(r.classId)) byId.set(r.classId, val);
+    if (!byIdSlug.has(slug(r.classId))) byIdSlug.set(slug(r.classId), val);
+    if (!byName.has(r.className)) byName.set(r.className, val);
+    if (!byNameSlug.has(slug(r.className))) byNameSlug.set(slug(r.className), val);
+    if (!byFullName.has(full)) byFullName.set(full, val);
+    const tail = nameTail(full);
+    if (tail && !byTailName.has(tail)) byTailName.set(tail, val);
+  }
+  return { byId, byIdSlug, byName, byNameSlug, byFullName, byTailName };
+});
+
+function resolveCodespaceMembers(c: ClassDef):
+  | { attrs: string[]; props: string[]; enums: string[]; meths: string[] }
+  | undefined {
+  const id = (c.id ?? '').trim();
+  const name = (c.name ?? '').trim();
+  const tail = nameTail(name);
+  const maps = codespaceMembersByKey.value;
+  return (
+    maps.byId.get(id) ??
+    maps.byIdSlug.get(slug(id)) ??
+    maps.byName.get(name) ??
+    maps.byFullName.get(name) ??
+    maps.byNameSlug.get(slug(name)) ??
+    (tail ? maps.byName.get(tail) : undefined) ??
+    (tail ? maps.byTailName.get(tail) : undefined)
+  );
+}
+
+function effectiveAttributes(c: ClassDef): string[] {
+  const fromModel = resolveCodespaceMembers(c)?.attrs;
+  if (fromModel && fromModel.length) return fromModel;
+  return c.attributes;
+}
+
+function effectiveProperties(c: ClassDef): string[] {
+  const fromModel = resolveCodespaceMembers(c)?.props;
+  if (fromModel && fromModel.length) return fromModel;
+  return [];
+}
+
+function effectiveMethods(c: ClassDef): string[] {
+  const fromModel = resolveCodespaceMembers(c)?.meths;
+  if (fromModel && fromModel.length) return fromModel;
+  return c.methods;
+}
+
+function effectiveEnumLiterals(c: ClassDef): string[] {
+  const fromModel = resolveCodespaceMembers(c)?.enums;
+  if (fromModel && fromModel.length) return fromModel;
+  return [];
+}
+
+const EMPTY_MEMBER_LINE = '-';
+
+function displayAttributes(c: ClassDef): string[] {
+  const lines = effectiveAttributes(c);
+  return lines.length ? lines : [EMPTY_MEMBER_LINE];
+}
+
+function displayProperties(c: ClassDef): string[] {
+  const lines = effectiveProperties(c);
+  return lines.length ? lines : [EMPTY_MEMBER_LINE];
+}
+
+function displayEnumLiterals(c: ClassDef): string[] {
+  const lines = effectiveEnumLiterals(c);
+  return lines.length ? lines : [EMPTY_MEMBER_LINE];
+}
+
+function displayMethods(c: ClassDef): string[] {
+  const lines = effectiveMethods(c);
+  return lines.length ? lines : [EMPTY_MEMBER_LINE];
+}
+
+function classBoxSize(c: ClassDef): { w: number; h: number } {
+  const w = 248;
+  const header = classDiagramHeaderHeight(c);
+  const label = 10;
+  const row = 22;
+  const pad = 6;
+  const sep = 2;
+  const attrsH = label + displayAttributes(c).length * row + pad;
+  const propH = label + displayProperties(c).length * row + pad;
+  const enumH = label + displayEnumLiterals(c).length * row + pad;
+  const methH = label + displayMethods(c).length * row + pad;
+  const h =
+    header +
+    sep +
+    attrsH +
+    sep +
+    propH +
+    sep +
+    enumH +
+    sep +
+    methH +
+    6;
+  return { w, h: Math.max(h, 220) };
+}
+
 function classDisplayLabel(c: ClassDef): string {
   return (
     classDisplayNameMap.value.byId.get(c.id) ??
@@ -388,6 +568,10 @@ function addCustomClassAndSyncModel(): void {
 
 onMounted(() => {
   loadFromPayload(props.modelValue ?? '');
+  // Default behavior: run one auto layout when the canvas is opened.
+  nextTick(() => {
+    autoLayoutClasses();
+  });
   window.addEventListener('click', onWindowClick);
   window.addEventListener('pointermove', onGlobalPointerMove);
   window.addEventListener('pointerup', onGlobalPointerUp);
@@ -580,6 +764,7 @@ function autoLayoutClasses(): void {
   const classes = state.classes;
   if (!classes.length) return;
   // 继承树布局：父类在上、子类在下；多个根按森林横向排列。
+  // 纵向间距按每一层节点“真实框高”计算，避免内容多的类框重叠。
   const byId = new Map(classes.map((c) => [c.id, c] as const));
   const children = new Map<string, string[]>();
   const hasParent = new Set<string>();
@@ -602,10 +787,11 @@ function autoLayoutClasses(): void {
 
   const hGap = 44;
   const treeGap = 72;
-  const rowPitch = 220;
+  const vGap = 64;
   const measureMemo = new Map<string, number>();
   const measuring = new Set<string>();
-  const nodeWidth = (id: string) => estimateClassSize(byId.get(id)!, !!folded[id]).w;
+  const nodeWidth = (id: string) => classBoxSize(byId.get(id)!).w;
+  const nodeHeight = (id: string) => classBoxSize(byId.get(id)!).h;
 
   const measure = (id: string): number => {
     if (measureMemo.has(id)) return measureMemo.get(id)!;
@@ -622,14 +808,32 @@ function autoLayoutClasses(): void {
     return w;
   };
 
+  const depthMaxHeight = new Map<number, number>();
+  const depthTopY = new Map<number, number>();
   const placed = new Set<string>();
+  const measureDepthHeights = (id: string, depth: number) => {
+    const h = nodeHeight(id);
+    depthMaxHeight.set(depth, Math.max(depthMaxHeight.get(depth) ?? 0, h));
+    const kids = children.get(id) ?? [];
+    for (const k of kids) measureDepthHeights(k, depth + 1);
+  };
+  for (const r of roots) measureDepthHeights(r, 0);
+  let y = 80;
+  const maxDepth = Math.max(...depthMaxHeight.keys(), 0);
+  for (let d = 0; d <= maxDepth; d++) {
+    depthTopY.set(d, y);
+    y += (depthMaxHeight.get(d) ?? 160) + vGap;
+  }
+
   const place = (id: string, left: number, depth: number) => {
     if (placed.has(id)) return;
     placed.add(id);
     const boxW = nodeWidth(id);
+    const boxH = nodeHeight(id);
     const subW = measure(id);
     const centerX = left + subW / 2;
-    positions[id] = { x: centerX - boxW / 2, y: 80 + depth * rowPitch };
+    const topY = depthTopY.get(depth) ?? 80 + depth * (boxH + vGap);
+    positions[id] = { x: centerX - boxW / 2, y: topY };
     const kids = children.get(id) ?? [];
     let cur = left;
     for (const k of kids) {
@@ -657,16 +861,11 @@ function autoLayoutClasses(): void {
   fitAll();
 }
 
-function toggleFold(classId: string): void {
-  folded[classId] = !folded[classId];
-  pushPayload();
-}
-
 function classIdAtWorldPoint(wx: number, wy: number): string | null {
   for (const c of state.classes) {
     const p = positions[c.id];
     if (!p) continue;
-    const { w, h } = estimateClassSize(c, !!folded[c.id]);
+    const { w, h } = classBoxSize(c);
     if (wx >= p.x && wx <= p.x + w && wy >= p.y && wy <= p.y + h) return c.id;
   }
   return null;
@@ -679,7 +878,7 @@ function startInheritDrag(e: PointerEvent, childId: string): void {
   if (!p) return;
   const child = state.classes.find((x) => x.id === childId);
   if (!child) return;
-  const s = estimateClassSize(child, !!folded[childId]);
+  const s = classBoxSize(child);
   const x1 = p.x + s.w / 2;
   const y1 = p.y;
   inheritDrag.value = { fromId: childId };
@@ -828,8 +1027,8 @@ const edgePaths = computed((): EdgePathItem[] => {
     const p1 = positions[l.from];
     const p2 = positions[l.to];
     if (!p1 || !p2) continue;
-    const s1 = estimateClassSize(fc, !!folded[l.from]);
-    const s2 = estimateClassSize(tc, !!folded[l.to]);
+    const s1 = classBoxSize(fc);
+    const s2 = classBoxSize(tc);
     let dpath: string;
     let x1 = 0;
     let y1 = 0;
@@ -926,11 +1125,15 @@ function memberFontStyle(line: string): string {
 const SECTION_LAB = 10;
 
 function attrBlockHeight(c: ClassDef): number {
-  return SECTION_LAB + Math.max(1, c.attributes.length) * 22 + 6;
+  return SECTION_LAB + displayAttributes(c).length * 22 + 6;
 }
 
 function methBlockHeight(c: ClassDef): number {
-  return SECTION_LAB + Math.max(1, c.methods.length) * 22 + 6;
+  return SECTION_LAB + displayMethods(c).length * 22 + 6;
+}
+
+function enumBlockHeight(c: ClassDef): number {
+  return SECTION_LAB + displayEnumLiterals(c).length * 22 + 6;
 }
 
 function attrBlockTopY(c: ClassDef): number {
@@ -938,7 +1141,7 @@ function attrBlockTopY(c: ClassDef): number {
 }
 
 function methBlockTopY(c: ClassDef): number {
-  return attrBlockTopY(c) + attrBlockHeight(c) + 2;
+  return attrBlockTopY(c) + attrBlockHeight(c) + 2 + propBlockHeight(c) + 2 + enumBlockHeight(c) + 2;
 }
 
 function attrTextY(c: ClassDef, i: number): number {
@@ -947,6 +1150,30 @@ function attrTextY(c: ClassDef, i: number): number {
 
 function methTextY(c: ClassDef, i: number): number {
   return methBlockTopY(c) + SECTION_LAB + 4 + i * 22;
+}
+
+function enumBlockTopY(c: ClassDef): number {
+  return attrBlockTopY(c) + attrBlockHeight(c) + 2 + propBlockHeight(c) + 2;
+}
+
+function enumTextY(c: ClassDef, i: number): number {
+  return enumBlockTopY(c) + SECTION_LAB + 4 + i * 22;
+}
+
+function propBlockTopY(c: ClassDef): number {
+  return attrBlockTopY(c) + attrBlockHeight(c) + 2;
+}
+
+function propBlockHeight(c: ClassDef): number {
+  return SECTION_LAB + displayProperties(c).length * 22 + 6;
+}
+
+function propTextY(c: ClassDef, i: number): number {
+  return propBlockTopY(c) + SECTION_LAB + 4 + i * 22;
+}
+
+function previewLine(lines: string[]): string {
+  return lines[0] ?? EMPTY_MEMBER_LINE;
 }
 
 function titleNameY(c: ClassDef): number {
@@ -993,6 +1220,9 @@ function deleteClass(classId: string): void {
       @pointerup="onViewportPointerUp"
       @pointercancel="onViewportPointerUp"
     >
+      <div v-if="modelSourceErrorText" class="cde-model-source-error" role="alert">
+        {{ modelSourceErrorText }}
+      </div>
       <div class="cde-world" :style="worldTransform()">
         <div class="cde-grid" aria-hidden="true" />
         <svg
@@ -1119,7 +1349,7 @@ function deleteClass(classId: string): void {
               x="0"
               y="0"
               width="248"
-              :height="estimateClassSize(c, !!folded[c.id]).h"
+              :height="classBoxSize(c).h"
               :fill="classBodyFill(c, idx)"
               :stroke="isClassSelected(c.id) ? '#2563eb' : classBodyStroke(c, idx)"
               :stroke-width="isClassSelected(c.id) ? 3 : 2"
@@ -1140,18 +1370,6 @@ function deleteClass(classId: string): void {
                 !
               </text>
             </g>
-            <rect
-              x="4"
-              y="4"
-              width="22"
-              height="22"
-              fill="rgba(255,255,255,0.35)"
-              stroke="#64748b"
-              rx="2"
-              class="cde-fold-hit"
-              @pointerdown.stop
-              @click.stop="toggleFold(c.id)"
-            />
             <text
               v-if="c.stereotype"
               x="124"
@@ -1175,7 +1393,47 @@ function deleteClass(classId: string): void {
               <title>{{ classDisplayLabel(c) }}</title>
               {{ escapeXml(classDisplayLabel(c)) }}
             </text>
-            <template v-if="!folded[c.id]">
+            <text
+              x="10"
+              y="42"
+              font-size="9"
+              font-family="ui-monospace, Consolas, monospace"
+              :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
+              style="pointer-events: none; user-select: none"
+            >
+              A: {{ escapeXml(previewLine(displayAttributes(c))) }}
+            </text>
+            <text
+              x="10"
+              y="56"
+              font-size="9"
+              font-family="ui-monospace, Consolas, monospace"
+              :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
+              style="pointer-events: none; user-select: none"
+            >
+              P: {{ escapeXml(previewLine(displayProperties(c))) }}
+            </text>
+            <text
+              x="10"
+              y="70"
+              font-size="9"
+              font-family="ui-monospace, Consolas, monospace"
+              :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
+              style="pointer-events: none; user-select: none"
+            >
+              E: {{ escapeXml(previewLine(displayEnumLiterals(c))) }}
+            </text>
+            <text
+              x="10"
+              y="84"
+              font-size="9"
+              font-family="ui-monospace, Consolas, monospace"
+              :fill="isDarkTheme() ? '#e2e8f0' : '#0f172a'"
+              style="pointer-events: none; user-select: none"
+            >
+              M: {{ escapeXml(previewLine(displayMethods(c))) }}
+            </text>
+            <template>
               <line
                 :x1="6"
                 :y1="attrBlockTopY(c) - 1"
@@ -1207,7 +1465,7 @@ function deleteClass(classId: string): void {
                 style="pointer-events: none"
               />
               <text
-                v-for="(a, ai) in c.attributes"
+                v-for="(a, ai) in displayAttributes(c)"
                 :key="'a' + ai"
                 x="10"
                 :y="attrTextY(c, ai)"
@@ -1219,6 +1477,51 @@ function deleteClass(classId: string): void {
               >
                 {{ escapeXml(a) }}
               </text>
+              <template>
+                <line
+                  :x1="6"
+                  :y1="propBlockTopY(c) - 1"
+                  :x2="242"
+                  :y2="propBlockTopY(c) - 1"
+                  :stroke="isDarkTheme() ? 'rgba(148,163,184,0.45)' : 'rgba(71,85,105,0.35)'"
+                  stroke-width="1"
+                  style="pointer-events: none"
+                />
+                <text
+                  :x="10"
+                  :y="propBlockTopY(c) + 8"
+                  font-size="8"
+                  font-weight="600"
+                  :fill="isDarkTheme() ? '#94a3b8' : '#64748b'"
+                  style="pointer-events: none; user-select: none"
+                >
+                  {{ cd.cdeSectionProps }}
+                </text>
+                <rect
+                  x="5"
+                  :y="propBlockTopY(c)"
+                  width="238"
+                  :height="propBlockHeight(c)"
+                  :fill="classAttrBg(c, idx)"
+                  :stroke="isDarkTheme() ? 'rgba(148,163,184,0.35)' : 'rgba(71,85,105,0.25)'"
+                  stroke-width="1"
+                  rx="2"
+                  style="pointer-events: none"
+                />
+                <text
+                  v-for="(pv, pi) in displayProperties(c)"
+                  :key="'p' + pi"
+                  x="10"
+                  :y="propTextY(c, pi)"
+                  font-size="10"
+                  font-family="ui-monospace, Consolas, monospace"
+                  :fill="memberAttrFill(pv)"
+                  :font-style="memberFontStyle(pv)"
+                  style="pointer-events: none; user-select: none"
+                >
+                  {{ escapeXml(pv) }}
+                </text>
+              </template>
               <line
                 :x1="6"
                 :y1="methBlockTopY(c) - 1"
@@ -1238,6 +1541,51 @@ function deleteClass(classId: string): void {
               >
                 {{ cd.cdeSectionMethods }}
               </text>
+              <template>
+                <line
+                  :x1="6"
+                  :y1="enumBlockTopY(c) - 1"
+                  :x2="242"
+                  :y2="enumBlockTopY(c) - 1"
+                  :stroke="isDarkTheme() ? 'rgba(148,163,184,0.45)' : 'rgba(71,85,105,0.35)'"
+                  stroke-width="1"
+                  style="pointer-events: none"
+                />
+                <text
+                  :x="10"
+                  :y="enumBlockTopY(c) + 8"
+                  font-size="8"
+                  font-weight="600"
+                  :fill="isDarkTheme() ? '#94a3b8' : '#64748b'"
+                  style="pointer-events: none; user-select: none"
+                >
+                  {{ cd.cdeSectionEnums }}
+                </text>
+                <rect
+                  x="5"
+                  :y="enumBlockTopY(c)"
+                  width="238"
+                  :height="enumBlockHeight(c)"
+                  :fill="classAttrBg(c, idx)"
+                  :stroke="isDarkTheme() ? 'rgba(148,163,184,0.35)' : 'rgba(71,85,105,0.25)'"
+                  stroke-width="1"
+                  rx="2"
+                  style="pointer-events: none"
+                />
+                <text
+                  v-for="(ev, ei) in displayEnumLiterals(c)"
+                  :key="'e' + ei"
+                  x="10"
+                  :y="enumTextY(c, ei)"
+                  font-size="10"
+                  font-family="ui-monospace, Consolas, monospace"
+                  :fill="memberAttrFill(ev)"
+                  :font-style="memberFontStyle(ev)"
+                  style="pointer-events: none; user-select: none"
+                >
+                  {{ escapeXml(ev) }}
+                </text>
+              </template>
               <rect
                 x="5"
                 :y="methBlockTopY(c)"
@@ -1250,7 +1598,7 @@ function deleteClass(classId: string): void {
                 style="pointer-events: none"
               />
               <text
-                v-for="(meth, mi) in c.methods"
+                v-for="(meth, mi) in displayMethods(c)"
                 :key="'m' + mi"
                 x="10"
                 :y="methTextY(c, mi)"
@@ -1476,6 +1824,26 @@ function deleteClass(classId: string): void {
   cursor: default;
   touch-action: none;
 }
+.cde-model-source-error {
+  position: absolute;
+  z-index: 10;
+  left: 12px;
+  right: 12px;
+  top: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #f59e0b;
+  background: rgba(254, 243, 199, 0.95);
+  color: #7c2d12;
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+:root[data-theme='dark'] .cde-model-source-error {
+  border-color: #fbbf24;
+  background: rgba(120, 53, 15, 0.92);
+  color: #fde68a;
+}
 .cde-viewport--panning {
   cursor: grabbing;
 }
@@ -1518,6 +1886,8 @@ function deleteClass(classId: string): void {
   position: relative;
   z-index: 1;
   display: block;
+  /* Allow class groups with negative x/y to remain visible instead of clipping at svg viewport origin. */
+  overflow: visible;
 }
 
 .cde-svg-bg {

@@ -233,6 +233,10 @@ const viewPayloadPlaceholder = computed(() => {
   return mvViewKindStrings(viewDraft.value.kind as MvViewKind, locale.value).payloadPlaceholder;
 });
 
+const classTabMetaLabel = computed(() => (locale.value === 'en' ? 'Basic Info' : '基本信息'));
+const classTabCanvasLabel = computed(() => (locale.value === 'en' ? 'Class Canvas' : '类图画布'));
+const classTabSourceLabel = computed(() => (locale.value === 'en' ? 'Source' : '源码'));
+
 const modelRefsTargetFileRel = computed(() =>
   resolvePickerTargetFileRel(props.relPath, modelRefsRelPathInput.value),
 );
@@ -299,6 +303,23 @@ const modelRefsOrphanRefs = computed((): string[] => {
   const canonSet = new Set(modelRefsCandidates.value.map((c) => canonicalModelRef(c)));
   const valSet = new Set(modelRefsCandidates.value.map((c) => c.value));
   return v.modelRefs.filter((r) => !canonSet.has(r) && !valSet.has(r));
+});
+
+const mermaidClassHasValidModelSource = computed((): boolean => {
+  const v = viewDraft.value;
+  if (!v || v.kind !== 'mermaid-class') return true;
+  if (modelRefsTargetMissing.value) return false;
+  if (!Array.isArray(v.modelRefs) || v.modelRefs.length === 0) return false;
+  const canonSet = new Set(modelRefsCandidates.value.map((c) => canonicalModelRef(c)));
+  const valSet = new Set(modelRefsCandidates.value.map((c) => c.value));
+  return v.modelRefs.some((r) => canonSet.has(r) || valSet.has(r));
+});
+
+const mermaidClassModelSourceError = computed((): string => {
+  if (mermaidClassHasValidModelSource.value) return '';
+  return locale.value === 'en'
+    ? 'No valid model source. Bind a usable modelRefs entry in Basic Info first.'
+    : '未指定有效 model 来源，请先在“基本信息”里绑定可用的 modelRefs。';
 });
 
 const mermaidCodespaceClassTree = computed<CodespaceClassTreeItem[]>(() => {
@@ -1539,7 +1560,7 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
                 aria-controls="mv-class-panel-meta"
                 @click="mermaidPayloadMode = 'meta'"
               >
-                基本信息
+                {{ classTabMetaLabel }}
               </button>
               <button
                 type="button"
@@ -1552,7 +1573,7 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
                 aria-controls="mv-class-panel-canvas"
                 @click="mermaidPayloadMode = 'canvas'"
               >
-                类图画布
+                {{ classTabCanvasLabel }}
               </button>
               <button
                 type="button"
@@ -1565,7 +1586,7 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
                 aria-controls="mv-class-panel-source"
                 @click="mermaidPayloadMode = 'source'"
               >
-                源码
+                {{ classTabSourceLabel }}
               </button>
             </div>
             <div
@@ -1627,6 +1648,8 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
                 :model-value="viewDraft.payload ?? ''"
                 :canvas-id="blockId"
                 :codespace-classes="mermaidCodespaceClassTree"
+                :model-source-valid="mermaidClassHasValidModelSource"
+                :model-source-error="mermaidClassModelSourceError"
                 @update:model-value="(v: string) => viewDraft && (viewDraft.payload = v)"
                 @open-classifier="onMermaidOpenClassifier"
                 @create-missing-classifier="onMermaidCreateMissingClassifier"

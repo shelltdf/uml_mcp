@@ -7,6 +7,7 @@ import {
   getNamespaceAtPath,
   insertNamespaceChild,
   newCodespaceUniqueId,
+  rebuildPathIdsForModule,
   removeNamespaceAtPath,
 } from '../../utils/codespace-canvas';
 import {
@@ -189,6 +190,7 @@ function addTopLevelNs(mi: number) {
       name: csCanvasMsg.value.newNsName,
       namespaces: [],
     });
+    rebuildPathIdsForModule(d, mi);
   });
 }
 
@@ -199,6 +201,7 @@ function addChildNs(mi: number, parentPath: number[]) {
       name: csCanvasMsg.value.newChildNsName,
       namespaces: [],
     });
+    rebuildPathIdsForModule(d, mi);
   });
 }
 
@@ -212,6 +215,7 @@ function addClass(mi: number, path: number[]) {
       name: csCanvasMsg.value.newClassName,
       kind: 'class',
     });
+    rebuildPathIdsForModule(d, mi);
   });
 }
 

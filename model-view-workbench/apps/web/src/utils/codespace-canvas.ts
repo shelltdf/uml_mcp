@@ -53,6 +53,102 @@ export function newCodespaceUniqueId(prefix: string, p: MvModelCodespacePayload)
   return `${prefix}_${Math.random().toString(36).slice(2, 14)}`;
 }
 
+function normalizePathIdPart(raw: string): string {
+  const t = raw.trim();
+  if (!t) return 'Unnamed';
+  const safe = t.replace(/[^A-Za-z0-9_]/g, '_');
+  return safe || 'Unnamed';
+}
+
+function makeUniquePathId(base: string, used: Set<string>): string {
+  let out = base;
+  let i = 2;
+  while (used.has(out)) {
+    out = `${base}_${i}`;
+    i += 1;
+  }
+  used.add(out);
+  return out;
+}
+
+type NsWalker = (n: MvCodespaceNamespaceNode, path: number[]) => void;
+function walkNamespacesWithPath(nodes: MvCodespaceNamespaceNode[] | undefined, basePath: number[], visit: NsWalker) {
+  if (!nodes) return;
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i]!;
+    const p = [...basePath, i];
+    visit(n, p);
+    walkNamespacesWithPath(n.namespaces, p, visit);
+  }
+}
+
+/**
+ * 依据命名空间层级重建 namespace/class 的路径型 id：
+ * - namespace.id: `Core` / `Core.Sub`
+ * - class.id: `Core.Service`
+ * 同时维护 bases/associations 指向的新 class id。
+ */
+export function rebuildPathIdsForModule(draft: MvModelCodespacePayload, mi: number): void {
+  const mod = draft.modules[mi];
+  if (!mod?.namespaces?.length) return;
+
+  const oldNsIds = new Set<string>();
+  const oldClassIds = new Set<string>();
+  walkNamespacesWithPath(mod.namespaces, [], (n) => {
+    if (typeof n.id === 'string' && n.id.trim()) oldNsIds.add(n.id.trim());
+    for (const c of n.classes ?? []) {
+      if (typeof c.id === 'string' && c.id.trim()) oldClassIds.add(c.id.trim());
+    }
+  });
+
+  const used = collectAllCodespaceIds(draft);
+  for (const id of oldNsIds) used.delete(id);
+  for (const id of oldClassIds) used.delete(id);
+
+  const classIdMap = new Map<string, string>();
+
+  const assign = (nodes: MvCodespaceNamespaceNode[] | undefined, prefix: string[]) => {
+    if (!nodes) return;
+    for (const n of nodes) {
+      const nsPart = normalizePathIdPart(n.name ?? '');
+      const nsBase = [...prefix, nsPart].join('.');
+      const oldNs = n.id;
+      n.id = makeUniquePathId(nsBase, used);
+      if (oldNs && oldNs !== n.id) {
+        // 仅保留 class 映射用于后续关系修正；ns 引用当前无外部字段依赖。
+      }
+
+      const cls = n.classes ?? [];
+      for (const c of cls) {
+        const clsPart = normalizePathIdPart(c.name ?? '');
+        const clsBase = `${n.id}.${clsPart}`;
+        const oldId = c.id;
+        const nextId = makeUniquePathId(clsBase, used);
+        c.id = nextId;
+        if (oldId && oldId !== nextId) classIdMap.set(oldId, nextId);
+      }
+      assign(n.namespaces, [...prefix, nsPart]);
+    }
+  };
+  assign(mod.namespaces, []);
+
+  // 修正 class id 被重建后，bases / associations 的引用。
+  walkNamespacesWithPath(mod.namespaces, [], (n) => {
+    for (const c of n.classes ?? []) {
+      for (const b of c.bases ?? []) {
+        const mapped = classIdMap.get(b.targetId);
+        if (mapped) b.targetId = mapped;
+      }
+    }
+    for (const a of n.associations ?? []) {
+      const fm = classIdMap.get(a.fromClassifierId);
+      if (fm) a.fromClassifierId = fm;
+      const tm = classIdMap.get(a.toClassifierId);
+      if (tm) a.toClassifierId = tm;
+    }
+  });
+}
+
 export function ensureModuleNamespaces(m: MvModelCodespaceModule): MvCodespaceNamespaceNode[] {
   if (!m.namespaces) m.namespaces = [];
   return m.namespaces;

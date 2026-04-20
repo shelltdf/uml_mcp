@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject } from 'vue';
+import { computed, inject, ref } from 'vue';
 import type { MvModelCodespaceModule, MvModelCodespacePayload } from '@mvwb/core';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
@@ -20,6 +20,8 @@ const emit = defineEmits<{
 }>();
 
 const mod = computed((): MvModelCodespaceModule | null => props.modelValue.modules[props.mi] ?? null);
+const ENGLISH_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const nameError = ref('');
 
 function patchModuleField(key: keyof MvModelCodespaceModule, value: string) {
   props.runPatch((d) => {
@@ -32,6 +34,15 @@ function patchModuleField(key: keyof MvModelCodespaceModule, value: string) {
     const v = value.trim();
     (m as unknown as Record<string, unknown>)[key] = v ? value : undefined;
   });
+}
+
+function onModuleNameInput(value: string) {
+  if (!ENGLISH_NAME_RE.test(value)) {
+    nameError.value = cs.value.flModNameEnglishOnly;
+    return;
+  }
+  nameError.value = '';
+  patchModuleField('name', value);
 }
 </script>
 
@@ -59,8 +70,9 @@ function patchModuleField(key: keyof MvModelCodespaceModule, value: string) {
           class="wide"
           :value="mod.name"
           :title="cs.flModNameTitle"
-          @input="patchModuleField('name', ($event.target as HTMLInputElement).value)"
+          @input="onModuleNameInput(($event.target as HTMLInputElement).value)"
         />
+        <small v-if="nameError" class="cs-error">{{ nameError }}</small>
       </label>
       <label class="field">
         <span>path</span>

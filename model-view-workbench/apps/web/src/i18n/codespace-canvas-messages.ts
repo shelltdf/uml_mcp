@@ -81,6 +81,8 @@ export interface CodespaceCanvasMessages {
   svgResetLabel: string;
   svgCtxAddModuleTitle: string;
   svgCtxAddModuleLabel: string;
+  floatMaximizeTitle: string;
+  floatRestoreTitle: string;
   floatCloseTitle: string;
   edMetaBarTitle: string;
   edMetaAria: string;
@@ -132,6 +134,7 @@ export interface CodespaceCanvasMessages {
   flModAddRootNsLabel: string;
   flModDeleteTitle: string;
   flModDeleteLabel: string;
+  flModNameEnglishOnly: string;
   flNsNameTitle: string;
   flNsQNameTitle: string;
   flNsNotesTitle: string;
@@ -147,6 +150,7 @@ export interface CodespaceCanvasMessages {
   flNsAddMacroLabel: string;
   flNsDeleteTitle: string;
   flNsDeleteLabel: string;
+  flNsNameEnglishOnly: string;
   flVarDeleteTitle: string;
   flVarDeleteLabel: string;
   flFnDeleteTitle: string;
@@ -158,9 +162,12 @@ export interface CodespaceCanvasMessages {
   flClsKindTitle: string;
   flClsAbstractTitle: string;
   flClsStereotypeTitle: string;
+  flClsStereotypePlaceholder: string;
   flClsTemplateParamsLabel: string;
   flClsTemplateParamsTitle: string;
+  flClsTemplateParamsPlaceholder: string;
   flClsNotesTitle: string;
+  flClsNotesPlaceholder: string;
   flClsBasesHeading: string;
   flClsTargetIdTitle: string;
   flClsRelationTitle: string;
@@ -173,11 +180,24 @@ export interface CodespaceCanvasMessages {
   flClsMemberKindTitle: string;
   flClsMemberVisTitle: string;
   flClsMemberVirtualTitle: string;
+  flClsMemberStaticTitle: string;
   flClsMemberTypeSigTitle: string;
+  flClsMemberAccessorTitle: string;
+  flClsMemberMethodKindTitle: string;
+  flClsMemberOperatorTitle: string;
   flClsRemoveMemberTitle: string;
   flClsRemoveMemberLabel: string;
   flClsAddMemberTitle: string;
   flClsAddMemberLabel: string;
+  flClsFieldsHeading: string;
+  flClsMethodsHeading: string;
+  flClsEnumLiteralsHeading: string;
+  flClsAddFieldTitle: string;
+  flClsAddFieldLabel: string;
+  flClsAddMethodTitle: string;
+  flClsAddMethodLabel: string;
+  flClsAddEnumLiteralTitle: string;
+  flClsAddEnumLiteralLabel: string;
   flClsRemoveClassTitle: string;
   flClsRemoveClassLabel: string;
   flTechIdTitle: string;
@@ -262,6 +282,8 @@ Right-click: canvas menu (add module, etc.)`,
   svgResetLabel: 'Reset',
   svgCtxAddModuleTitle: 'Add module — no global shortcut',
   svgCtxAddModuleLabel: '＋ Add module',
+  floatMaximizeTitle: 'Maximize window — no global shortcut',
+  floatRestoreTitle: 'Restore window size — no global shortcut',
   floatCloseTitle: 'Close — no global shortcut',
   edMetaBarTitle: 'Fence id is read-only (bound to block); title / workspaceRoot editable — no global shortcut',
   edMetaAria: 'id, title, workspaceRoot',
@@ -312,6 +334,7 @@ Right-click: canvas menu (add module, etc.)`,
   flModAddRootNsLabel: '＋ Top-level namespace',
   flModDeleteTitle: 'Delete module — no global shortcut',
   flModDeleteLabel: 'Delete module…',
+  flModNameEnglishOnly: 'Module name must be English letters, digits, or underscore, and start with a letter/underscore.',
   flNsNameTitle: 'Namespace name — no global shortcut',
   flNsQNameTitle: 'Qualified name (optional) — no global shortcut',
   flNsNotesTitle: 'Notes — no global shortcut',
@@ -327,6 +350,7 @@ Right-click: canvas menu (add module, etc.)`,
   flNsAddMacroLabel: '＋ Macro',
   flNsDeleteTitle: 'Delete namespace subtree — no global shortcut',
   flNsDeleteLabel: 'Delete namespace…',
+  flNsNameEnglishOnly: 'Namespace name must be English letters, digits, or underscore, and start with a letter/underscore.',
   flVarDeleteTitle: 'Delete variable — no global shortcut',
   flVarDeleteLabel: 'Delete variable',
   flFnDeleteTitle: 'Delete function — no global shortcut',
@@ -338,9 +362,12 @@ Right-click: canvas menu (add module, etc.)`,
   flClsKindTitle: 'Kind — no global shortcut',
   flClsAbstractTitle: 'abstract — no global shortcut',
   flClsStereotypeTitle: 'Stereotype — no global shortcut',
+  flClsStereotypePlaceholder: 'e.g. <<Entity>>',
   flClsTemplateParamsLabel: 'templateParams (comma or newline separated)',
   flClsTemplateParamsTitle: 'Template parameters — no global shortcut',
+  flClsTemplateParamsPlaceholder: 'e.g. T, U',
   flClsNotesTitle: 'Notes — no global shortcut',
+  flClsNotesPlaceholder: 'Describe design intent, constraints, and decisions...',
   flClsBasesHeading: 'bases (generalization / realization)',
   flClsTargetIdTitle: 'targetId — no global shortcut',
   flClsRelationTitle: 'relation — no global shortcut',
@@ -348,16 +375,29 @@ Right-click: canvas menu (add module, etc.)`,
   flClsDelShortLabel: 'Del',
   flClsAddBaseTitle: 'Add base — no global shortcut',
   flClsAddBaseLabel: '＋ base',
-  flClsMembersHeading: 'members',
+  flClsMembersHeading: 'members (plain member variables)',
   flClsMemberNameTitle: 'Member name — no global shortcut',
   flClsMemberKindTitle: 'Member kind — no global shortcut',
   flClsMemberVisTitle: 'Visibility — no global shortcut',
   flClsMemberVirtualTitle: 'virtual — no global shortcut',
+  flClsMemberStaticTitle: 'static — no global shortcut',
   flClsMemberTypeSigTitle: 'type or signature — no global shortcut',
+  flClsMemberAccessorTitle: 'Property accessor setting — no global shortcut',
+  flClsMemberMethodKindTitle: 'method category — no global shortcut',
+  flClsMemberOperatorTitle: 'operator symbol — no global shortcut',
   flClsRemoveMemberTitle: 'Remove member — no global shortcut',
   flClsRemoveMemberLabel: 'Del',
-  flClsAddMemberTitle: 'Add member — no global shortcut',
+  flClsAddMemberTitle: 'Add plain member variable to members[] — no global shortcut',
   flClsAddMemberLabel: '＋ member',
+  flClsFieldsHeading: 'Property (private backing field + accessors)',
+  flClsMethodsHeading: 'methods',
+  flClsEnumLiteralsHeading: 'enum literals',
+  flClsAddFieldTitle: 'Add Property — no global shortcut',
+  flClsAddFieldLabel: '＋ Property',
+  flClsAddMethodTitle: 'Add method — no global shortcut',
+  flClsAddMethodLabel: '＋ method',
+  flClsAddEnumLiteralTitle: 'Add enum literal — no global shortcut',
+  flClsAddEnumLiteralLabel: '＋ enum literal',
   flClsRemoveClassTitle: 'Delete this class — no global shortcut',
   flClsRemoveClassLabel: 'Delete class',
   flTechIdTitle: 'id — no global shortcut',
@@ -409,6 +449,8 @@ const codespaceCanvasZhOverrides: Partial<CodespaceCanvasMessages> = {
   svgResetLabel: '还原',
   svgCtxAddModuleTitle: '添加模块 — 无全局快捷键',
   svgCtxAddModuleLabel: '＋ Add module',
+  floatMaximizeTitle: '窗口最大化 — 无全局快捷键',
+  floatRestoreTitle: '还原窗口大小 — 无全局快捷键',
   floatCloseTitle: '关闭 — 无全局快捷键',
   edMetaBarTitle: '围栏内 id 与文档块绑定，只读；title / workspaceRoot 可编辑 — 无全局快捷键',
   edMetaAria: 'id、title、workspaceRoot',
@@ -432,8 +474,10 @@ const codespaceCanvasZhOverrides: Partial<CodespaceCanvasMessages> = {
   edConfirmDeleteBtnTitle: '确定删除 — 无全局快捷键',
   flModDeleteTitle: '删除模块 — 无全局快捷键',
   flModDeleteLabel: '删除模块…',
+  flModNameEnglishOnly: '模块名仅允许英文、数字、下划线，且必须以英文或下划线开头。',
   flNsDeleteTitle: '删除命名空间子树 — 无全局快捷键',
   flNsDeleteLabel: '删除命名空间…',
+  flNsNameEnglishOnly: '命名空间名仅允许英文、数字、下划线，且必须以英文或下划线开头。',
   flVarDeleteTitle: '删除变量 — 无全局快捷键',
   flVarDeleteLabel: '删除变量',
   flFnDeleteTitle: '删除函数 — 无全局快捷键',
@@ -444,7 +488,24 @@ const codespaceCanvasZhOverrides: Partial<CodespaceCanvasMessages> = {
   flClsDelShortLabel: '删',
   flClsRemoveMemberTitle: '删除成员 — 无全局快捷键',
   flClsRemoveMemberLabel: '删',
-  flClsAddMemberTitle: '添加成员 — 无全局快捷键',
+  flClsAddMemberTitle: '添加普通成员变量到 members[] — 无全局快捷键',
+  flClsMembersHeading: 'members（普通成员变量）',
+  flClsStereotypePlaceholder: '例如 <<Entity>>',
+  flClsTemplateParamsPlaceholder: '例如 T, U',
+  flClsNotesPlaceholder: '可记录设计意图、约束与详细说明……',
+  flClsMemberStaticTitle: 'static — 无全局快捷键',
+  flClsMemberAccessorTitle: 'Property 访问器设置 — 无全局快捷键',
+  flClsMemberMethodKindTitle: '方法类别 — 无全局快捷键',
+  flClsMemberOperatorTitle: '操作符符号 — 无全局快捷键',
+  flClsFieldsHeading: 'Property（私有 backing 字段 + 访问器）',
+  flClsMethodsHeading: '方法',
+  flClsEnumLiteralsHeading: '枚举字面量',
+  flClsAddFieldTitle: '添加 Property — 无全局快捷键',
+  flClsAddFieldLabel: '＋ Property',
+  flClsAddMethodTitle: '添加方法 — 无全局快捷键',
+  flClsAddMethodLabel: '＋ 方法',
+  flClsAddEnumLiteralTitle: '添加枚举字面量 — 无全局快捷键',
+  flClsAddEnumLiteralLabel: '＋ 枚举字面量',
   flClsRemoveClassTitle: '删除该类 — 无全局快捷键',
   flClsRemoveClassLabel: '删除类',
 };

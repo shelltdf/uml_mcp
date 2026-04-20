@@ -17,6 +17,8 @@ export type {
   MvCodespaceBaseRelation,
   MvCodespaceMember,
   MvCodespaceMemberKind,
+  MvCodespaceProperty,
+  MvCodespaceAccessorVisibility,
   MvCodespaceVariable,
   MvCodespaceFunction,
   MvCodespaceMacro,

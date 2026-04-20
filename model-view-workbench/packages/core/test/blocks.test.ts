@@ -366,6 +366,191 @@ describe('parseMarkdownBlocks', () => {
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
+  it('parses mv-model-codespace members with methodKind/accessor/operatorSymbol', () => {
+    const payload = {
+      id: 'cs-member-kinds',
+      modules: [
+        {
+          id: 'mod_a',
+          name: 'ModA',
+          namespaces: [
+            {
+              id: 'ns_a',
+              name: 'NsA',
+              classes: [
+                {
+                  id: 'cls_a',
+                  name: 'ClassA',
+                  members: [
+                    { name: 'state', kind: 'field', visibility: 'private', accessor: 'getset', type: 'int' },
+                    { name: 'ctor', kind: 'method', methodKind: 'constructor', signature: 'ClassA()' },
+                    {
+                      name: 'index',
+                      kind: 'method',
+                      methodKind: 'operator',
+                      operatorSymbol: '[]',
+                      signature: 'operator[](int i)',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0].payload).toMatchObject(payload);
+  });
+
+  it('parses mv-model-codespace class properties[]', () => {
+    const payload = {
+      id: 'cs-properties',
+      modules: [
+        {
+          id: 'mod_a',
+          name: 'ModA',
+          namespaces: [
+            {
+              id: 'ns_a',
+              name: 'NsA',
+              classes: [
+                {
+                  id: 'cls_a',
+                  name: 'ClassA',
+                  properties: [
+                    {
+                      name: 'balance',
+                      backingFieldName: '_balance',
+                      backingVisibility: 'private',
+                      type: 'number',
+                      hasGetter: true,
+                      hasSetter: false,
+                      getterVisibility: 'public',
+                      setterVisibility: 'public',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0].payload).toMatchObject(payload);
+  });
+
+  it('rejects mv-model-codespace property with invalid getterVisibility', () => {
+    const md =
+      '\`\`\`mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'x',
+        modules: [
+          {
+            id: 'm1',
+            name: 'ModuleA',
+            namespaces: [
+              {
+                id: 'n1',
+                name: 'NsA',
+                classes: [
+                  {
+                    id: 'c1',
+                    name: 'C1',
+                    properties: [{ name: 'p', getterVisibility: 'external' }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('getterVisibility must be one of'))).toBe(true);
+  });
+
+  it('mv-view removal does not affect mv-model-codespace parsing', () => {
+    const modelBlock =
+      '```mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'cs_only_truth',
+        modules: [{ id: 'm1', name: 'ModuleA', namespaces: [{ id: 'n1', name: 'NsA', classes: [{ id: 'c1', name: 'User' }] }] }],
+      }) +
+      '\n```\n';
+    const viewBlock =
+      '```mv-view\n' +
+      JSON.stringify({
+        id: 'v1',
+        kind: 'mermaid-class',
+        modelRefs: ['cs_only_truth'],
+        payload: 'classDiagram\n  class User',
+      }) +
+      '\n```\n';
+    const mdWithView = `${modelBlock}\n${viewBlock}`;
+    const withView = parseMarkdownBlocks(mdWithView);
+    expect(withView.errors).toEqual([]);
+    expect(withView.blocks.some((b) => b.kind === 'mv-model-codespace' && b.payload.id === 'cs_only_truth')).toBe(true);
+
+    const mdWithoutView = modelBlock;
+    const withoutView = parseMarkdownBlocks(mdWithoutView);
+    expect(withoutView.errors).toEqual([]);
+    const model = withoutView.blocks.find((b) => b.kind === 'mv-model-codespace');
+    expect(model?.payload.id).toBe('cs_only_truth');
+  });
+
+  it('rejects mv-model-codespace module/namespace names with non-english characters', () => {
+    const md =
+      '\`\`\`mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'x',
+        modules: [
+          {
+            id: 'm1',
+            name: '模块A',
+            namespaces: [{ id: 'n1', name: '命名空间' }],
+          },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('must use English letters'))).toBe(true);
+  });
+
+  it('rejects mv-model-codespace member accessor on non-field kind', () => {
+    const md =
+      '\`\`\`mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'x',
+        modules: [
+          {
+            id: 'm1',
+            name: 'ModuleA',
+            namespaces: [
+              {
+                id: 'n1',
+                name: 'NsA',
+                classes: [{ id: 'c1', name: 'C1', members: [{ name: 'f', kind: 'method', accessor: 'get' }] }],
+              },
+            ],
+          },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('accessor is only allowed'))).toBe(true);
+  });
+
   it('rejects mv-model-codespace duplicate id between module and namespace', () => {
     const md =
       '\`\`\`mv-model-codespace\n' +

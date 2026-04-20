@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, inject } from 'vue';
+import { computed, inject, ref } from 'vue';
 import type { MvCodespaceNamespaceNode, MvModelCodespacePayload } from '@mvwb/core';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
-import { getNamespaceAtPath } from '../../../utils/codespace-canvas';
+import { getNamespaceAtPath, rebuildPathIdsForModule } from '../../../utils/codespace-canvas';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
 
 const cs = inject(CS_CANVAS_MSG_KEY)!;
@@ -28,17 +28,31 @@ const emit = defineEmits<{
 const ns = computed((): MvCodespaceNamespaceNode | null =>
   getNamespaceAtPath(props.modelValue, props.mi, props.path),
 );
+const ENGLISH_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const nameError = ref('');
 
 function patchNsField(key: 'name' | 'qualifiedName' | 'notes', value: string) {
   props.runPatch((d) => {
     const n = getNamespaceAtPath(d, props.mi, props.path);
     if (!n) return;
-    if (key === 'name') n.name = value;
+    if (key === 'name') {
+      n.name = value;
+      rebuildPathIdsForModule(d, props.mi);
+    }
     else {
       const v = value.trim();
       n[key] = v ? value : undefined;
     }
   });
+}
+
+function onNsNameInput(value: string) {
+  if (!ENGLISH_NAME_RE.test(value)) {
+    nameError.value = cs.value.flNsNameEnglishOnly;
+    return;
+  }
+  nameError.value = '';
+  patchNsField('name', value);
 }
 </script>
 
@@ -56,8 +70,9 @@ function patchNsField(key: 'name' | 'qualifiedName' | 'notes', value: string) {
           class="wide"
           :value="ns.name"
           :title="cs.flNsNameTitle"
-          @input="patchNsField('name', ($event.target as HTMLInputElement).value)"
+          @input="onNsNameInput(($event.target as HTMLInputElement).value)"
         />
+        <small v-if="nameError" class="cs-error">{{ nameError }}</small>
       </label>
       <label class="field">
         <span>qualifiedName</span>
