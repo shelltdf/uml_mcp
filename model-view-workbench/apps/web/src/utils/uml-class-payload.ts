@@ -1,0 +1,134 @@
+export type ClassLinkKind = 'inherit' | 'association' | 'dependency';
+
+export interface ClassDef {
+  id: string;
+  name: string;
+  attrs?: string[];
+  meth?: string[];
+  properties?: string[];
+  enumLiterals?: string[];
+  abstract?: boolean;
+  kind?: 'class' | 'interface' | 'struct';
+}
+
+export interface ClassLink {
+  id: string;
+  from: string;
+  to: string;
+  kind: ClassLinkKind;
+  fromMult?: string;
+  toMult?: string;
+}
+
+export interface ClassDiagramState {
+  classes: ClassDef[];
+  links: ClassLink[];
+}
+
+export type ClassPositions = Record<string, { x: number; y: number }>;
+
+export interface ClassDiagramEdgeVisibility {
+  inherit: boolean;
+  association: boolean;
+}
+
+interface UmlClassPayloadV1 {
+  schema?: string;
+  diagramType?: string;
+  classes?: ClassDef[];
+  relations?: ClassLink[];
+  layout?: { positions?: ClassPositions; folded?: Record<string, boolean> };
+  edgeVisibility?: Partial<ClassDiagramEdgeVisibility>;
+}
+
+export function slug(raw: string): string {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'class';
+}
+
+export function classDiagramHeaderHeight(c: ClassDef): number {
+  const kindLine = c.abstract === true || c.kind === 'interface' || c.kind === 'struct' ? 18 : 0;
+  return 26 + kindLine;
+}
+
+export function diagramBounds(
+  state: ClassDiagramState,
+  positions: ClassPositions,
+  _folded: Record<string, boolean>,
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  if (!state.classes.length) return { minX: -240, minY: -160, maxX: 240, maxY: 160 };
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const c of state.classes) {
+    const p = positions[c.id] ?? { x: 0, y: 0 };
+    const lineCount =
+      (c.attrs?.length ?? 0) + (c.properties?.length ?? 0) + (c.enumLiterals?.length ?? 0) + (c.meth?.length ?? 0);
+    const h = classDiagramHeaderHeight(c) + Math.max(28, lineCount * 18 + 20);
+    const w = 260;
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + w);
+    maxY = Math.max(maxY, p.y + h);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+export function parseViewPayloadClassDiagram(payload: string): {
+  state: ClassDiagramState;
+  positions: ClassPositions;
+  folded: Record<string, boolean>;
+  edgeVisibility: ClassDiagramEdgeVisibility;
+} {
+  const empty = {
+    state: { classes: [], links: [] } as ClassDiagramState,
+    positions: {} as ClassPositions,
+    folded: {} as Record<string, boolean>,
+    edgeVisibility: { inherit: true, association: true } as ClassDiagramEdgeVisibility,
+  };
+  const s = (payload ?? '').trim();
+  if (!s) return empty;
+  try {
+    const o = JSON.parse(s) as UmlClassPayloadV1;
+    if (o?.schema !== 'mvwb-uml/v1' || o.diagramType !== 'class') return empty;
+    return {
+      state: {
+        classes: Array.isArray(o.classes) ? o.classes : [],
+        links: Array.isArray(o.relations) ? o.relations : [],
+      },
+      positions: o.layout?.positions ?? {},
+      folded: o.layout?.folded ?? {},
+      edgeVisibility: {
+        inherit: o.edgeVisibility?.inherit !== false,
+        association: o.edgeVisibility?.association !== false,
+      },
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export function buildClassDiagramViewPayload(
+  _prev: string,
+  state: ClassDiagramState,
+  positions: ClassPositions,
+  folded: Record<string, boolean>,
+  edgeVisibility: ClassDiagramEdgeVisibility,
+): string {
+  const next: UmlClassPayloadV1 = {
+    schema: 'mvwb-uml/v1',
+    diagramType: 'class',
+    classes: state.classes,
+    relations: state.links,
+    layout: { positions, folded },
+    edgeVisibility: {
+      inherit: edgeVisibility.inherit,
+      association: edgeVisibility.association,
+    },
+  };
+  return JSON.stringify(next, null, 2);
+}

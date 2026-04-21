@@ -10,7 +10,7 @@ import {
   diagramBounds,
   parseViewPayloadClassDiagram,
   slug,
-} from '@mvwb/core';
+} from '../../utils/uml-class-payload';
 import { useAppLocale } from '../../composables/useAppLocale';
 import { classDiagramCanvasMessages } from '../../i18n/class-diagram-canvas-messages';
 import type { CodespaceClassTreeItem } from '../../utils/class-canvas-codespace-bridge';
@@ -1379,7 +1379,7 @@ function escapeXml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Mermaid 行首可见性：+ - # ~（与文档一致；私有成员以 - 开头） */
+/** 类图成员可见性前缀：+ - # ~（与文档一致；私有成员以 - 开头） */
 function memberVisibilityLead(line: string): string | null {
   const t = line.trimStart();
   const c = t.charAt(0);

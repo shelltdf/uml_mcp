@@ -1,5 +1,5 @@
 import type { MvModelSqlPayload, MvViewKind, MvViewPayload } from '@mvwb/core';
-import { isMermaidViewKind, parseMarkdownBlocks, resolveRefPath } from '@mvwb/core';
+import { MV_UML_KIND_DIAGRAM_TYPE, isMermaidViewKind, parseMarkdownBlocks, resolveRefPath } from '@mvwb/core';
 import type { AppLocale } from '../i18n/app-locale';
 import { mvViewKindDefaultBlockTitle, mvViewKindStrings } from '../i18n/mv-view-kind-locale';
 
@@ -23,6 +23,20 @@ export interface InsertFenceContext {
 
 function newBlockId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildUmlDefaultPayload(kind: MvViewKind): Record<string, unknown> | null {
+  const diagramType = MV_UML_KIND_DIAGRAM_TYPE[kind];
+  if (!diagramType) return null;
+  const base: Record<string, unknown> = {
+    schema: 'mvwb-uml/v1',
+    diagramType,
+  };
+  if (kind === 'uml-class') {
+    base.classes = [{ id: 'ClassA', name: 'ClassA' }];
+    base.relations = [];
+  }
+  return base;
 }
 
 /** 为新建 mv-view 推断默认 modelRefs：优先同文件首个 mv-model-sql 的首张表（块id#表id）；否则 ref: 模板 */
@@ -164,8 +178,13 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     if (!skipPayload && ph && !ph.startsWith('（')) {
       mermaidMirrorBody = ph;
     }
-  } else if (!skipPayload && ph && !ph.startsWith('（')) {
-    obj.payload = ph;
+  } else {
+    const umlPayload = buildUmlDefaultPayload(kind);
+    if (umlPayload) {
+      obj.payload = umlPayload;
+    } else if (!skipPayload && ph && !ph.startsWith('（')) {
+      obj.payload = ph;
+    }
   }
   const inner = JSON.stringify(obj, null, 2);
   const mvFence = `\n\n\`\`\`mv-view\n${inner}\n\`\`\`\n\n`;

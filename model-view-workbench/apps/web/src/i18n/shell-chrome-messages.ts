@@ -155,6 +155,8 @@ export type ShellChromeMessages = {
   canvasHintCodespace: string;
   canvasHintInterface: string;
   canvasHintMap: string;
+  /** mv-view 中 uml-* payload 输入框下方提示：默认结构来自 core 映射 */
+  viewUmlPayloadMappingHint: string;
   dockSqlHeading: string;
   dockSqlNoTables: string;
   dockKvHeading: string;
@@ -365,6 +367,7 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
       'mv-model-codespace：工作区根与 modules[]（可选递归 namespaces、Classifier、bases、associations、变量/函数/宏）；在块画布的代码空间模型画布视图中编辑 JSON。',
     canvasHintInterface: 'mv-model-interface：endpoints[]（接口/端点示意）；在接口图模型画布中编辑 JSON。',
     canvasHintMap: 'Map 以 mv-map 围栏代码块存储：在映射规则代码块画布中编辑 JSON。',
+    viewUmlPayloadMappingHint: '此类型默认 payload 由 core 的 UML 映射自动生成（`mvwb-uml/v1` + 对应 `diagramType`）。',
     dockSqlHeading: '当前块 · SQL Model 组',
     dockSqlNoTables: '（无子表）',
     dockKvHeading: '当前块 · KV 文档集',
@@ -380,8 +383,8 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockMermaidNoClass: '（未匹配到 class 关键字）',
     dockPayloadEmpty: '（payload 为空）',
     dockMindmapHeading: '当前块 · 脑图节点',
-    dockUmlClassHeading: '当前块 · Class (PlantUML)',
-    dockUmlGenericHeading: '当前块 · UML (通用)',
+    dockUmlClassHeading: '当前块 · Class (UML)',
+    dockUmlGenericHeading: '当前块 · UML (独立格式)',
     dockUmlNoEntities: '（未匹配 entity/class/interface/enum）',
     dockSeqHeading: '当前块 · 序列图',
     dockSeqNoParticipants: '（未匹配 participant/actor）',
@@ -566,6 +569,8 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
       '**mv-model-codespace**: workspace root and **modules[]** (optional namespaces, classifiers, vars/functions/macros); edit in the codespace canvas.',
     canvasHintInterface: '**mv-model-interface**: **endpoints[]** for API sketch; edit in the interface canvas.',
     canvasHintMap: '**mv-map**: mapping rules; edit JSON in the map canvas.',
+    viewUmlPayloadMappingHint:
+      'Default payload for this kind is generated from core UML mapping (`mvwb-uml/v1` + mapped `diagramType`).',
     dockSqlHeading: 'Block · SQL model group',
     dockSqlNoTables: '(No tables)',
     dockKvHeading: 'Block · KV documents',
@@ -581,8 +586,8 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockMermaidNoClass: '(No `class` keyword matches)',
     dockPayloadEmpty: '(Empty payload)',
     dockMindmapHeading: 'Block · Mindmap nodes',
-    dockUmlClassHeading: 'Block · Class (PlantUML)',
-    dockUmlGenericHeading: 'Block · UML (generic)',
+    dockUmlClassHeading: 'Block · Class (UML)',
+    dockUmlGenericHeading: 'Block · UML (independent format)',
     dockUmlNoEntities: '(No entity/class/interface/enum matches)',
     dockSeqHeading: 'Block · Sequence',
     dockSeqNoParticipants: '(No participant/actor matches)',

@@ -16,6 +16,7 @@ import {
   type CsDockSelection,
 } from '../../utils/codespace-dock-context';
 import type { CodespaceSvgPick } from '../../utils/codespace-svg-layout';
+import FormatHint from '../common/FormatHint.vue';
 import CodespaceModuleSvgCanvas from './CodespaceModuleSvgCanvas.vue';
 import CodespaceClassifierFloat from './floating/CodespaceClassifierFloat.vue';
 import CodespaceFunctionFloat from './floating/CodespaceFunctionFloat.vue';
@@ -372,7 +373,7 @@ function patchMetaRoot(root: string) {
 
     <details class="cs-advanced" @toggle="onAdvancedToggle">
       <summary>{{ csCanvasMsg.edAdvancedSummary }}</summary>
-      <p class="canvas-hint canvas-hint--compact">{{ csCanvasMsg.edAdvancedHint }}</p>
+      <FormatHint>{{ csCanvasMsg.edAdvancedHint }}</FormatHint>
       <textarea v-model="advancedJsonText" class="payload-ta" spellcheck="false" rows="12" aria-label="codespace raw json" />
       <button type="button" class="add-row" :title="csCanvasMsg.edAdvancedApplyTitle" @click="applyAdvancedJson">
         {{ csCanvasMsg.edAdvancedApplyLabel }}
@@ -578,15 +579,6 @@ function patchMetaRoot(root: string) {
   flex-shrink: 0;
   margin-top: 4px;
   font-size: 0.8rem;
-}
-.canvas-hint {
-  margin: 0 0 12px;
-  font-size: 0.85rem;
-  color: #475569;
-}
-.canvas-hint--compact {
-  font-size: 0.76rem;
-  margin-bottom: 6px;
 }
 .payload-ta {
   width: 100%;

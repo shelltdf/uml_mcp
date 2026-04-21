@@ -937,9 +937,20 @@ function extractMindmapNodeLabels(payload: string, loc: 'zh' | 'en'): string[] {
 }
 
 function extractPlantumlNames(src: string): string[] {
+  const s = src || '';
+  try {
+    const obj = JSON.parse(s) as { elements?: Array<{ id?: string; name?: string }>; nodes?: Array<{ id?: string; name?: string }> };
+    const arr = Array.isArray(obj.elements) ? obj.elements : Array.isArray(obj.nodes) ? obj.nodes : [];
+    const fromJson = arr
+      .map((e) => (e.name ?? e.id ?? '').toString().trim())
+      .filter(Boolean);
+    if (fromJson.length) return [...new Set(fromJson)].sort();
+  } catch {
+    // backward compatible: allow legacy textual payload
+  }
   const names = new Set<string>();
   for (const pat of [/\bentity\s+(\w+)/gi, /\bclass\s+(\w+)/gi, /\binterface\s+(\w+)/gi, /\benum\s+(\w+)/gi]) {
-    for (const m of src.matchAll(pat)) names.add(m[1]!);
+    for (const m of s.matchAll(pat)) names.add(m[1]!);
   }
   return [...names].sort();
 }
@@ -956,6 +967,99 @@ function extractSequenceParticipants(src: string): string[] {
     if (n) names.add(n);
   }
   return [...names].sort();
+}
+
+function extractUseCaseItems(src: string): string[] {
+  const s = src || '';
+  try {
+    const obj = JSON.parse(s) as { actors?: Array<{ id?: string; name?: string }>; useCases?: Array<{ id?: string; name?: string }> };
+    const out: string[] = [];
+    for (const a of obj.actors ?? []) {
+      const n = (a.name ?? a.id ?? '').toString().trim();
+      if (n) out.push(`actor: ${n}`);
+    }
+    for (const u of obj.useCases ?? []) {
+      const n = (u.name ?? u.id ?? '').toString().trim();
+      if (n) out.push(`usecase: ${n}`);
+    }
+    if (out.length) return [...new Set(out)].sort();
+  } catch {
+    // backward compatible: allow legacy textual payload
+  }
+  const out = new Set<string>();
+  for (const m of s.matchAll(/\bactor\s+"([^"]+)"|\bactor\s+(\w+)/gi)) {
+    const n = (m[1] || m[2])?.trim();
+    if (n) out.add(`actor: ${n}`);
+  }
+  for (const m of s.matchAll(/\busecase\s+"([^"]+)"(?:\s+as\s+\w+)?|\busecase\s+(\w+)/gi)) {
+    const n = (m[1] || m[2])?.trim();
+    if (n) out.add(`usecase: ${n}`);
+  }
+  return [...out].sort();
+}
+
+function extractComponentNodes(src: string): string[] {
+  const s = src || '';
+  try {
+    const obj = JSON.parse(s) as { components?: Array<{ id?: string; name?: string }>; nodes?: Array<{ id?: string; name?: string }>; databases?: Array<{ id?: string; name?: string }> };
+    const out: string[] = [];
+    for (const arr of [obj.components ?? [], obj.nodes ?? [], obj.databases ?? []]) {
+      for (const it of arr) {
+        const n = (it.name ?? it.id ?? '').toString().trim();
+        if (n) out.push(n);
+      }
+    }
+    if (out.length) return [...new Set(out)].sort();
+  } catch {
+    // backward compatible: allow legacy textual payload
+  }
+  const out = new Set<string>();
+  for (const m of s.matchAll(/\bcomponent\s+"([^"]+)"|\bcomponent\s+(\w+)/gi)) {
+    const n = (m[1] || m[2])?.trim();
+    if (n) out.add(n);
+  }
+  for (const m of s.matchAll(/\bnode\s+"([^"]+)"|\bnode\s+(\w+)/gi)) {
+    const n = (m[1] || m[2])?.trim();
+    if (n) out.add(n);
+  }
+  for (const m of s.matchAll(/\bdatabase\s+"([^"]+)"|\bdatabase\s+(\w+)/gi)) {
+    const n = (m[1] || m[2])?.trim();
+    if (n) out.add(n);
+  }
+  return [...out].sort();
+}
+
+function extractUmlGenericOutline(src: string, loc: 'zh' | 'en'): string[] {
+  const L = shellChromeMessages[loc];
+  try {
+    const obj = JSON.parse(src || '') as { relations?: Array<{ from?: string; to?: string; type?: string }>; transitions?: Array<{ from?: string; to?: string; event?: string }> };
+    const rels = Array.isArray(obj.relations) ? obj.relations : Array.isArray(obj.transitions) ? obj.transitions : [];
+    const lines = rels
+      .map((r) => {
+        const a = (r.from ?? '').toString().trim();
+        const b = (r.to ?? '').toString().trim();
+        const t = (r.type ?? r.event ?? '').toString().trim();
+        if (!a && !b && !t) return '';
+        return `${a || '?'} -> ${b || '?'}${t ? ` (${t})` : ''}`;
+      })
+      .filter(Boolean)
+      .slice(0, 12);
+    if (lines.length) return lines;
+  } catch {
+    // fallback textual
+  }
+  const entities = extractPlantumlNames(src);
+  if (entities.length) return entities;
+  const parts = extractSequenceParticipants(src);
+  if (parts.length) return parts;
+  const lines = (src || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((l) => !/^(@startuml|@enduml|skinparam|title|legend)/i.test(l))
+    .slice(0, 12)
+    .map((l) => (l.length > 72 ? `${l.slice(0, 69)}…` : l));
+  return lines.length ? lines : [L.dockPayloadEmpty];
 }
 
 function extractActivityOutline(src: string, loc: 'zh' | 'en'): string[] {
@@ -1064,15 +1168,21 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
   }
   if (b.kind === 'mv-view') {
     const p = b.payload as MvViewPayload;
+    const payloadText =
+      typeof p.payload === 'string'
+        ? p.payload
+        : p.payload && typeof p.payload === 'object'
+          ? JSON.stringify(p.payload, null, 2)
+          : '';
     if (isMermaidViewKind(p.kind)) {
       if (p.kind === 'mermaid-class') {
-        const cls = extractMermaidClassNames(p.payload ?? '');
+        const cls = extractMermaidClassNames(payloadText);
         return {
           heading: L.dockMermaidClassHeading,
           lines: cls.length ? cls : [L.dockMermaidNoClass],
         };
       }
-      const excerpt = (p.payload ?? '')
+      const excerpt = payloadText
         .split('\n')
         .map((l) => l.trim())
         .filter(Boolean)
@@ -1084,28 +1194,59 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
       };
     }
     if (p.kind === 'mindmap-ui') {
-      const nodes = extractMindmapNodeLabels(p.payload ?? '', loc);
+      const nodes = extractMindmapNodeLabels(payloadText, loc);
       return { heading: L.dockMindmapHeading, lines: nodes };
     }
     if (p.kind === 'uml-diagram' || p.kind === 'uml-class') {
-      const els = extractPlantumlNames(p.payload ?? '');
+      const els = extractPlantumlNames(payloadText);
       return {
         heading: p.kind === 'uml-class' ? L.dockUmlClassHeading : L.dockUmlGenericHeading,
         lines: els.length ? els : [L.dockUmlNoEntities],
       };
     }
+    if (p.kind === 'uml-object' || p.kind === 'uml-package' || p.kind === 'uml-composite-structure' || p.kind === 'uml-profile') {
+      const els = extractPlantumlNames(payloadText);
+      const shortTitle = mvViewKindStrings(p.kind, loc).canvasTitle.replace(/画布$| canvas$/i, '').trim();
+      return {
+        heading: `${L.dockSqlHeading.split(' · ')[0] ?? 'Block'} · ${shortTitle}`,
+        lines: els.length ? els : [L.dockUmlNoEntities],
+      };
+    }
+    if (p.kind === 'uml-component' || p.kind === 'uml-deployment') {
+      const nodes = extractComponentNodes(payloadText);
+      const shortTitle = mvViewKindStrings(p.kind, loc).canvasTitle.replace(/画布$| canvas$/i, '').trim();
+      return {
+        heading: `${L.dockSqlHeading.split(' · ')[0] ?? 'Block'} · ${shortTitle}`,
+        lines: nodes.length ? nodes : [L.dockPayloadEmpty],
+      };
+    }
+    if (p.kind === 'uml-usecase') {
+      const items = extractUseCaseItems(payloadText);
+      const shortTitle = mvViewKindStrings(p.kind, loc).canvasTitle.replace(/画布$| canvas$/i, '').trim();
+      return {
+        heading: `${L.dockSqlHeading.split(' · ')[0] ?? 'Block'} · ${shortTitle}`,
+        lines: items.length ? items : [L.dockPayloadEmpty],
+      };
+    }
     if (p.kind === 'uml-sequence') {
-      const parts = extractSequenceParticipants(p.payload ?? '');
+      const parts = extractSequenceParticipants(payloadText);
       return {
         heading: L.dockSeqHeading,
         lines: parts.length ? parts : [L.dockSeqNoParticipants],
       };
     }
+    if (p.kind === 'uml-communication' || p.kind === 'uml-timing' || p.kind === 'uml-interaction-overview' || p.kind === 'uml-state-machine') {
+      const shortTitle = mvViewKindStrings(p.kind, loc).canvasTitle.replace(/画布$| canvas$/i, '').trim();
+      return {
+        heading: `${L.dockSqlHeading.split(' · ')[0] ?? 'Block'} · ${shortTitle}`,
+        lines: extractUmlGenericOutline(payloadText, loc),
+      };
+    }
     if (p.kind === 'uml-activity') {
-      return { heading: L.dockActHeading, lines: extractActivityOutline(p.payload ?? '', loc) };
+      return { heading: L.dockActHeading, lines: extractActivityOutline(payloadText, loc) };
     }
     if (p.kind === 'ui-design') {
-      return { heading: L.dockUiHeading, lines: uiDesignOutlineLines(p.payload ?? '', loc) };
+      return { heading: L.dockUiHeading, lines: uiDesignOutlineLines(payloadText, loc) };
     }
     return {
       heading: `${L.dockSqlHeading.split(' · ')[0] ?? 'Block'} · ${p.kind}`,

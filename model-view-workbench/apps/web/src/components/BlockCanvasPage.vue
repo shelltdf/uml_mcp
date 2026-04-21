@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, provide, ref, watch } from 'vue';
 import CodespaceCanvasEditor from './codespace/CodespaceCanvasEditor.vue';
+import FormatHint from './common/FormatHint.vue';
 import CodespaceClassifierFloat from './codespace/floating/CodespaceClassifierFloat.vue';
 import MermaidClassDiagramCanvas from './mvview/MermaidClassDiagramCanvas.vue';
+import UmlClassDiagramCanvas from './mvview/UmlClassDiagramCanvas.vue';
 import {
   MV_MAP_CANVAS_TITLE,
   MV_MODEL_INTERFACE_CANVAS_TITLE,
@@ -11,7 +13,7 @@ import {
   MV_MODEL_STRUCT_CANVAS_TITLE,
   parseViewPayloadClassDiagram,
   isMermaidViewKind,
-  isPlantUmlViewKind,
+  isUmlViewKind,
   normalizeRelPath,
   parseMarkdownBlocks,
   replaceBlockInnerById,
@@ -31,11 +33,11 @@ import { CS_CANVAS_MSG_KEY, codespaceCanvasMessages } from '../i18n/codespace-ca
 import { mvViewKindStrings } from '../i18n/mv-view-kind-locale';
 import type { CodespaceDockContextPayload } from '../utils/codespace-dock-context';
 import {
-  findCodespaceClassifierForMermaidClass,
-  getFirstCodespaceRefForMermaidClass,
-  listCodespaceClassesForMermaidClass,
+  findCodespaceClassifierForClassCanvas,
+  getFirstCodespaceRefForClassCanvas,
+  listCodespaceClassesForClassCanvas,
   type CodespaceClassTreeItem,
-} from '../utils/mermaid-codespace-bridge';
+} from '../utils/class-canvas-codespace-bridge';
 import {
   buildModelRefString,
   inferPickerPathFromModelRefs,
@@ -133,12 +135,12 @@ const viewDraft = ref<MvViewPayload | null>(null);
 const modelRefsRelPathInput = ref('');
 const mapJsonText = ref('');
 /** mermaid-class：payload 编辑模式 */
-const mermaidPayloadMode = ref<'meta' | 'canvas' | 'source'>('canvas');
+const classCanvasPayloadMode = ref<'meta' | 'canvas' | 'source'>('canvas');
 /** 类图双击 / 浮窗编辑的 codespace 侧车副本（与 modelRefs 指向块同步保存） */
-const mermaidCodespaceFloatOpen = ref(false);
-const mermaidCodespaceFloat = ref<{ mi: number; path: number[]; ci: number } | null>(null);
-const mermaidCodespaceSideBlockId = ref<string | null>(null);
-const mermaidCodespaceSidePayload = ref<MvModelCodespacePayload | null>(null);
+const classCanvasCodespaceFloatOpen = ref(false);
+const classCanvasCodespaceFloat = ref<{ mi: number; path: number[]; ci: number } | null>(null);
+const classCanvasCodespaceSideBlockId = ref<string | null>(null);
+const classCanvasCodespaceSidePayload = ref<MvModelCodespacePayload | null>(null);
 /** 子表标签「×」删除：页内确认（部分壳层对 window.confirm 不可靠） */
 const subtableDeleteOpen = ref(false);
 const subtableDeleteIndex = ref<number | null>(null);
@@ -159,11 +161,11 @@ watch(
     viewDraft.value = null;
     modelRefsRelPathInput.value = '';
     mapJsonText.value = '';
-    mermaidPayloadMode.value = 'canvas';
-    mermaidCodespaceFloatOpen.value = false;
-    mermaidCodespaceFloat.value = null;
-    mermaidCodespaceSideBlockId.value = null;
-    mermaidCodespaceSidePayload.value = null;
+    classCanvasPayloadMode.value = 'canvas';
+    classCanvasCodespaceFloatOpen.value = false;
+    classCanvasCodespaceFloat.value = null;
+    classCanvasCodespaceSideBlockId.value = null;
+    classCanvasCodespaceSidePayload.value = null;
     if (!b) return;
     if (b.kind === 'mv-model-sql') {
       modelRowFilter.value = '';
@@ -234,10 +236,46 @@ const viewPayloadPlaceholder = computed(() => {
   if (!b || b.kind !== 'mv-view' || !viewDraft.value) return '';
   return mvViewKindStrings(viewDraft.value.kind as MvViewKind, locale.value).payloadPlaceholder;
 });
+const viewUsesCoreUmlPayloadMapping = computed(() => {
+  const v = viewDraft.value;
+  return !!v && typeof v.kind === 'string' && v.kind.startsWith('uml-');
+});
+
+function viewPayloadPrefersObject(kind: MvViewKind): boolean {
+  return isUmlViewKind(kind) || kind === 'mindmap-ui' || kind === 'ui-design';
+}
+
+function toViewPayloadText(payload: MvViewPayload['payload']): string {
+  if (typeof payload === 'string') return payload;
+  if (payload && typeof payload === 'object') return JSON.stringify(payload, null, 2);
+  return '';
+}
+
+function fromViewPayloadText(kind: MvViewKind, text: string): MvViewPayload['payload'] {
+  if (!viewPayloadPrefersObject(kind)) return text;
+  const s = text.trim();
+  if (!s) return '';
+  try {
+    const parsed = JSON.parse(s);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // keep raw text while editing incomplete JSON
+  }
+  return text;
+}
+
+function setViewPayloadText(text: string): void {
+  const v = viewDraft.value;
+  if (!v) return;
+  v.payload = fromViewPayloadText(v.kind, text);
+}
 
 const classTabMetaLabel = computed(() => (locale.value === 'en' ? 'Basic Info' : '基本信息'));
 const classTabCanvasLabel = computed(() => (locale.value === 'en' ? 'Class Canvas' : '类图画布'));
 const classTabSourceLabel = computed(() => (locale.value === 'en' ? 'Source' : '源码'));
+const isClassCanvasKind = computed(() => viewDraft.value?.kind === 'mermaid-class' || viewDraft.value?.kind === 'uml-class');
 
 const modelRefsTargetFileRel = computed(() =>
   resolvePickerTargetFileRel(props.relPath, modelRefsRelPathInput.value),
@@ -307,9 +345,9 @@ const modelRefsOrphanRefs = computed((): string[] => {
   return v.modelRefs.filter((r) => !canonSet.has(r) && !valSet.has(r));
 });
 
-const mermaidClassHasValidModelSource = computed((): boolean => {
+const classCanvasHasValidModelSource = computed((): boolean => {
   const v = viewDraft.value;
-  if (!v || v.kind !== 'mermaid-class') return true;
+  if (!v || (v.kind !== 'mermaid-class' && v.kind !== 'uml-class')) return true;
   if (modelRefsTargetMissing.value) return false;
   if (!Array.isArray(v.modelRefs) || v.modelRefs.length === 0) return false;
   const canonSet = new Set(modelRefsCandidates.value.map((c) => canonicalModelRef(c)));
@@ -317,31 +355,31 @@ const mermaidClassHasValidModelSource = computed((): boolean => {
   return v.modelRefs.some((r) => canonSet.has(r) || valSet.has(r));
 });
 
-const mermaidClassModelSourceError = computed((): string => {
-  if (mermaidClassHasValidModelSource.value) return '';
+const classCanvasModelSourceError = computed((): string => {
+  if (classCanvasHasValidModelSource.value) return '';
   return locale.value === 'en'
     ? 'No valid model source. Bind a usable modelRefs entry in Basic Info first.'
     : '未指定有效 model 来源，请先在“基本信息”里绑定可用的 modelRefs。';
 });
 
-const mermaidCodespaceClassTree = computed<CodespaceClassTreeItem[]>(() => {
-  if (!viewDraft.value || viewDraft.value.kind !== 'mermaid-class') return [];
-  return listCodespaceClassesForMermaidClass(mermaidClassSourceMarkdown.value, viewDraft.value.modelRefs ?? []);
+const classCanvasCodespaceClassTree = computed<CodespaceClassTreeItem[]>(() => {
+  if (!viewDraft.value || (viewDraft.value.kind !== 'mermaid-class' && viewDraft.value.kind !== 'uml-class')) return [];
+  return listCodespaceClassesForClassCanvas(classCanvasSourceMarkdown.value, viewDraft.value.modelRefs ?? []);
 });
 
-const mermaidClassSourceMarkdown = computed((): string => {
-  const sideId = mermaidCodespaceSideBlockId.value;
-  const sidePayload = mermaidCodespaceSidePayload.value;
+const classCanvasSourceMarkdown = computed((): string => {
+  const sideId = classCanvasCodespaceSideBlockId.value;
+  const sidePayload = classCanvasCodespaceSidePayload.value;
   if (!sideId || !sidePayload) return props.markdown;
   const next = replaceBlockInnerById(props.markdown, sideId, JSON.stringify(sidePayload, null, 2));
   return next ?? props.markdown;
 });
 
-const mermaidAssocTargetsByClassId = computed<Record<string, string[]>>(() => {
+const classCanvasAssocTargetsByClassId = computed<Record<string, string[]>>(() => {
   const out: Record<string, string[]> = {};
   const v = viewDraft.value;
   if (!v || v.kind !== 'mermaid-class') return out;
-  const parsed = parseViewPayloadClassDiagram(v.payload ?? '');
+  const parsed = parseViewPayloadClassDiagram(toViewPayloadText(v.payload));
   for (const l of parsed.state.links) {
     if (l.kind !== 'association') continue;
     if (!out[l.from]) out[l.from] = [];
@@ -354,9 +392,9 @@ const mermaidAssocTargetsByClassId = computed<Record<string, string[]>>(() => {
 
 function syncAssocTypeFromDiagramToCodespace(): void {
   const v = viewDraft.value;
-  const side = mermaidCodespaceSidePayload.value;
+  const side = classCanvasCodespaceSidePayload.value;
   if (!v || v.kind !== 'mermaid-class' || !side) return;
-  const targets = mermaidAssocTargetsByClassId.value;
+  const targets = classCanvasAssocTargetsByClassId.value;
   const nameById = new Map<string, string>();
   for (const mod of side.modules ?? []) {
     const walk = (nodes: typeof mod.namespaces) => {
@@ -1074,9 +1112,9 @@ const hasCanvasUnsavedChanges = computed(() => {
 
   // mv-view 里还可能带同文件 codespace 侧车改动：也应触发“保存”变色。
   let sideDirty = false;
-  if (b.kind === 'mv-view' && mermaidCodespaceSideBlockId.value && mermaidCodespaceSidePayload.value) {
-    const sideBlockId = mermaidCodespaceSideBlockId.value;
-    const sideInnerNow = JSON.stringify(mermaidCodespaceSidePayload.value, null, 2).trim();
+  if (b.kind === 'mv-view' && classCanvasCodespaceSideBlockId.value && classCanvasCodespaceSidePayload.value) {
+    const sideBlockId = classCanvasCodespaceSideBlockId.value;
+    const sideInnerNow = JSON.stringify(classCanvasCodespaceSidePayload.value, null, 2).trim();
     const { blocks } = parseMarkdownBlocks(props.markdown);
     const sideBlock = blocks.find((x) => x.payload.id === sideBlockId);
     const sideInnerOrig = sideBlock ? JSON.stringify(sideBlock.payload, null, 2).trim() : '';
@@ -1092,7 +1130,7 @@ watch(
 );
 
 watch(
-  [() => viewDraft.value?.payload, () => mermaidCodespaceSidePayload.value],
+  [() => viewDraft.value?.payload, () => classCanvasCodespaceSidePayload.value],
   () => {
     syncAssocTypeFromDiagramToCodespace();
   },
@@ -1119,22 +1157,22 @@ function save() {
   let base = props.markdown;
   if (
     block.value?.kind === 'mv-view' &&
-    mermaidCodespaceSideBlockId.value &&
-    mermaidCodespaceSidePayload.value &&
-    mermaidCodespaceSideBlockId.value !== props.blockId
+    classCanvasCodespaceSideBlockId.value &&
+    classCanvasCodespaceSidePayload.value &&
+    classCanvasCodespaceSideBlockId.value !== props.blockId
   ) {
-    const csInner = JSON.stringify(mermaidCodespaceSidePayload.value, null, 2);
-    const r0 = replaceBlockInnerById(base, mermaidCodespaceSideBlockId.value, csInner);
+    const csInner = JSON.stringify(classCanvasCodespaceSidePayload.value, null, 2);
+    const r0 = replaceBlockInnerById(base, classCanvasCodespaceSideBlockId.value, csInner);
     if (r0) base = r0;
   }
   let next = replaceBlockInnerById(base, props.blockId, inner);
   if (!next) return;
   if (block.value?.kind === 'mv-view' && viewDraft.value && isMermaidViewKind(viewDraft.value.kind)) {
-    next = upsertTrailingMermaidMirror(next, props.blockId, viewDraft.value.payload ?? '');
+    next = upsertTrailingMermaidMirror(next, props.blockId, toViewPayloadText(viewDraft.value.payload));
   }
-  mermaidCodespaceSideBlockId.value = null;
-  mermaidCodespaceSidePayload.value = null;
-  mermaidCodespaceFloatOpen.value = false;
+  classCanvasCodespaceSideBlockId.value = null;
+  classCanvasCodespaceSidePayload.value = null;
+  classCanvasCodespaceFloatOpen.value = false;
   emit('saved', { markdown: next, relPath: props.relPath });
 }
 
@@ -1146,17 +1184,17 @@ function setCodespaceDraft(v: MvModelCodespacePayload) {
   codespaceDraft.value = v;
 }
 
-function patchMermaidCodespaceSide(fn: (d: MvModelCodespacePayload) => void) {
-  const p = mermaidCodespaceSidePayload.value;
+function patchClassCanvasCodespaceSide(fn: (d: MvModelCodespacePayload) => void) {
+  const p = classCanvasCodespaceSidePayload.value;
   if (!p) return;
   fn(p);
 }
 
-function onMermaidOpenClassifier(ev: { classDiagramClassId: string; className: string }) {
+function onClassCanvasOpenClassifier(ev: { classDiagramClassId: string; className: string }) {
   const vd = viewDraft.value;
   if (!vd) return;
-  const hit = findCodespaceClassifierForMermaidClass(
-    mermaidClassSourceMarkdown.value,
+  const hit = findCodespaceClassifierForClassCanvas(
+    classCanvasSourceMarkdown.value,
     vd.modelRefs,
     ev.classDiagramClassId,
     ev.className,
@@ -1169,22 +1207,22 @@ function onMermaidOpenClassifier(ev: { classDiagramClassId: string; className: s
     );
     return;
   }
-  mermaidCodespaceSideBlockId.value = hit.codespaceBlockId;
-  mermaidCodespaceSidePayload.value = hit.payload;
-  mermaidCodespaceFloat.value = { mi: hit.mi, path: hit.path, ci: hit.ci };
-  mermaidCodespaceFloatOpen.value = true;
+  classCanvasCodespaceSideBlockId.value = hit.codespaceBlockId;
+  classCanvasCodespaceSidePayload.value = hit.payload;
+  classCanvasCodespaceFloat.value = { mi: hit.mi, path: hit.path, ci: hit.ci };
+  classCanvasCodespaceFloatOpen.value = true;
 }
 
-function closeMermaidCodespaceFloat() {
-  mermaidCodespaceFloatOpen.value = false;
+function closeClassCanvasCodespaceFloat() {
+  classCanvasCodespaceFloatOpen.value = false;
 }
 
-function onMermaidCreateMissingClassifier(ev: { classId: string; className: string }) {
+function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: string }) {
   const vd = viewDraft.value;
   if (!vd) return;
 
-  if (!mermaidCodespaceSidePayload.value || !mermaidCodespaceSideBlockId.value) {
-    const first = getFirstCodespaceRefForMermaidClass(mermaidClassSourceMarkdown.value, vd.modelRefs ?? []);
+  if (!classCanvasCodespaceSidePayload.value || !classCanvasCodespaceSideBlockId.value) {
+    const first = getFirstCodespaceRefForClassCanvas(classCanvasSourceMarkdown.value, vd.modelRefs ?? []);
     if (!first) {
       window.alert(
         locale.value === 'en'
@@ -1193,11 +1231,11 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
       );
       return;
     }
-    mermaidCodespaceSideBlockId.value = first.codespaceBlockId;
-    mermaidCodespaceSidePayload.value = first.payload;
+    classCanvasCodespaceSideBlockId.value = first.codespaceBlockId;
+    classCanvasCodespaceSidePayload.value = first.payload;
   }
 
-  const payload = mermaidCodespaceSidePayload.value;
+  const payload = classCanvasCodespaceSidePayload.value;
   if (!payload) return;
 
   if (!payload.modules || payload.modules.length === 0) {
@@ -1261,10 +1299,10 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
       <div class="canvas-surface" :aria-label="ui.blockCanvasBodyAria">
         <template v-if="block.kind === 'mv-model-sql' && modelSqlDraft">
           <div class="model-sql-surface">
-          <p class="canvas-hint canvas-hint--compact">
+          <FormatHint>
             本围栏为 <strong>Model</strong>（<code>mv-model-sql</code>）：一个代码块内可含<strong>多张</strong>子表；<code>mv-view</code> 为
             <strong>View</strong>，通过 <code>modelRefs</code> 绑定 <code>块id#子表id</code>（见下方属性区说明）。子表用标签切换；可对子表做增删。
-          </p>
+          </FormatHint>
           <h3 class="model-section-title">Model 组 · 元数据</h3>
           <div class="model-meta-grid model-meta-grid--sql">
             <label class="field field--inline">
@@ -1348,12 +1386,12 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
               role="region"
               aria-labelledby="sql-ddl-fold-trigger"
             >
-          <p class="canvas-hint canvas-hint--compact">
+          <FormatHint>
             以 <strong>SQL 表设计</strong> 语义呈现：<code>COLUMN</code> / 逻辑类型映射为示意 <code>TYPE</code>、<code>NULL</code> /
             <code>NOT NULL</code>、<code>PRIMARY KEY</code>（多列即联合）、<code>UNIQUE</code>、<code>DEFAULT</code>、列级
             <code>-- comment</code>。下方 <code>CREATE TABLE</code> 为<strong>只读示意</strong>（对应当前子表）；落盘为 <code>mv-model-sql</code> JSON。默认值输入仍按
             JSON 字面量解析。子表 <code>id</code> 可编辑（失焦校验唯一）。
-          </p>
+          </FormatHint>
           <div class="model-meta-grid model-meta-grid--sql">
             <label class="field field--inline">
               <span class="sql-meta-label">TABLE id</span>
@@ -1496,10 +1534,10 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
               role="region"
               aria-labelledby="sql-dml-fold-trigger"
             >
-          <p class="canvas-hint canvas-hint--compact">
+          <FormatHint>
             类比 <code>UPDATE</code> 单格编辑；<code>INSERT</code>/<code>DELETE</code> 用添加行、删行、复制行；筛选为全列子串匹配（视图层
             <code>LIKE '%…%'</code> 语义，不写回 JSON）。
-          </p>
+          </FormatHint>
           <div class="model-data-toolbar">
             <label class="field field--grow">
               <span class="sql-meta-label">WHERE 子串</span>
@@ -1579,11 +1617,11 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
             aria-label="当前子表只读平铺预览"
           >
             <h3 class="model-section-title model-section-title--readonly">SELECT * 风格 · 只读（当前子表）</h3>
-            <p class="canvas-hint canvas-hint--compact">
+            <FormatHint>
               与上方 DML 为同一子表 <code>{{ modelDraft.id }}</code>；行集与 <strong>WHERE 子串</strong> 筛选一致（仅展示
               {{ filteredModelRowEntries.length }} / {{ modelDraft.rows.length }} 行）。只读单元格，与只读表预览一致；未保存修改即时反映；落盘为
               <code>mv-model-sql</code> JSON。
-            </p>
+            </FormatHint>
             <div class="model-readonly-one-table">
               <div class="canvas-table-wrap canvas-table-wrap--readonly">
                 <table class="canvas-table canvas-table--sql-rows">
@@ -1606,10 +1644,10 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
 
         <template v-else-if="block.kind === 'mv-model-kv' && kvDraft">
           <h3 class="model-section-title">KV 数据表画布 · 文档集</h3>
-          <p class="canvas-hint canvas-hint--compact">
+          <FormatHint>
             类比 <strong>MongoDB collection</strong>：<code>documents[]</code> 中每条为<strong>独立 JSON 对象</strong>，键集合可不固定。保存时用解析器校验。块
             <code>id</code> 只读。
-          </p>
+          </FormatHint>
           <div class="model-meta-grid">
             <label class="field field--inline">
               <span>块 id（只读）</span>
@@ -1620,7 +1658,7 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
               <input v-model="kvDraft.title" class="wide" type="text" placeholder="可选" />
             </label>
           </div>
-          <p class="canvas-hint canvas-hint--compact">每条下方为 JSON 对象；失焦时解析并格式化。可增删文档条数。</p>
+          <FormatHint>每条下方为 JSON 对象；失焦时解析并格式化。可增删文档条数。</FormatHint>
           <div v-for="(_d, di) in kvDraft.documents" :key="di" class="kv-doc-block">
             <div class="kv-doc-head">
               <span>文档 {{ di + 1 }}</span>
@@ -1641,10 +1679,10 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
 
         <template v-else-if="block.kind === 'mv-model-struct'">
           <h3 class="model-section-title">结构化层次画布 · HDF5 风格</h3>
-          <p class="canvas-hint canvas-hint--compact">
+          <FormatHint>
             类比 <strong>HDF5</strong>：顶层 <code>root</code> 为组（<code>name</code>、可选 <code>attributes</code>、子 <code>groups[]</code>、
             <code>datasets[]</code>）。数据集含 <code>name</code>、可选 <code>dtype</code>、<code>data</code>。保存前将整段 JSON 送解析器校验。
-          </p>
+          </FormatHint>
           <textarea v-model="structJsonText" class="payload-ta" spellcheck="false" rows="22" aria-label="mv-model-struct JSON" />
         </template>
 
@@ -1659,63 +1697,63 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
 
         <template v-else-if="block.kind === 'mv-model-interface'">
           <h3 class="model-section-title">接口图模型画布 · 端点列表示意</h3>
-          <p class="canvas-hint canvas-hint--compact">
+          <FormatHint>
             <strong>接口图（文档化）</strong>：非空 <code>endpoints[]</code>；每条须含非空 <code>id</code>、<code>name</code>，可选
             <code>method</code> / <code>path</code> / <code>notes</code>（均为字符串）。端点 <code>id</code> 在块内须唯一。不等同于 OpenAPI
             等正式契约，仅供示意与对齐讨论。
-          </p>
+          </FormatHint>
           <textarea v-model="interfaceJsonText" class="payload-ta" spellcheck="false" rows="22" aria-label="mv-model-interface JSON" />
         </template>
 
         <template v-else-if="block.kind === 'mv-view' && viewDraft">
           <div
             class="mv-view-shell"
-            :class="{ 'mv-view-shell--class-canvas': viewDraft.kind === 'mermaid-class' && mermaidPayloadMode === 'canvas' }"
+            :class="{ 'mv-view-shell--class-canvas': isClassCanvasKind && classCanvasPayloadMode === 'canvas' }"
           >
-          <template v-if="viewDraft.kind === 'mermaid-class'">
+          <template v-if="isClassCanvasKind">
             <div class="mv-class-payload-head" role="tablist">
               <button
                 type="button"
                 class="mv-class-tab"
-                :class="{ 'mv-class-tab--active': mermaidPayloadMode === 'meta' }"
+                :class="{ 'mv-class-tab--active': classCanvasPayloadMode === 'meta' }"
                 role="tab"
                 id="mv-class-tab-meta"
-                :aria-selected="mermaidPayloadMode === 'meta'"
-                :tabindex="mermaidPayloadMode === 'meta' ? 0 : -1"
+                :aria-selected="classCanvasPayloadMode === 'meta'"
+                :tabindex="classCanvasPayloadMode === 'meta' ? 0 : -1"
                 aria-controls="mv-class-panel-meta"
-                @click="mermaidPayloadMode = 'meta'"
+                @click="classCanvasPayloadMode = 'meta'"
               >
                 {{ classTabMetaLabel }}
               </button>
               <button
                 type="button"
                 class="mv-class-tab"
-                :class="{ 'mv-class-tab--active': mermaidPayloadMode === 'canvas' }"
+                :class="{ 'mv-class-tab--active': classCanvasPayloadMode === 'canvas' }"
                 role="tab"
                 id="mv-class-tab-canvas"
-                :aria-selected="mermaidPayloadMode === 'canvas'"
-                :tabindex="mermaidPayloadMode === 'canvas' ? 0 : -1"
+                :aria-selected="classCanvasPayloadMode === 'canvas'"
+                :tabindex="classCanvasPayloadMode === 'canvas' ? 0 : -1"
                 aria-controls="mv-class-panel-canvas"
-                @click="mermaidPayloadMode = 'canvas'"
+                @click="classCanvasPayloadMode = 'canvas'"
               >
                 {{ classTabCanvasLabel }}
               </button>
               <button
                 type="button"
                 class="mv-class-tab"
-                :class="{ 'mv-class-tab--active': mermaidPayloadMode === 'source' }"
+                :class="{ 'mv-class-tab--active': classCanvasPayloadMode === 'source' }"
                 role="tab"
                 id="mv-class-tab-source"
-                :aria-selected="mermaidPayloadMode === 'source'"
-                :tabindex="mermaidPayloadMode === 'source' ? 0 : -1"
+                :aria-selected="classCanvasPayloadMode === 'source'"
+                :tabindex="classCanvasPayloadMode === 'source' ? 0 : -1"
                 aria-controls="mv-class-panel-source"
-                @click="mermaidPayloadMode = 'source'"
+                @click="classCanvasPayloadMode = 'source'"
               >
                 {{ classTabSourceLabel }}
               </button>
             </div>
             <div
-              v-show="mermaidPayloadMode === 'meta'"
+              v-show="classCanvasPayloadMode === 'meta'"
               id="mv-class-panel-meta"
               class="mv-class-panel-meta"
               role="tabpanel"
@@ -1740,10 +1778,10 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
                     <button type="button" class="tb mv-mini-btn" @click="clearModelRefsPathInput">清空</button>
                   </div>
                 </label>
-                <p v-if="modelRefsTargetMissing" class="canvas-hint canvas-hint--warn">
+                <FormatHint v-if="modelRefsTargetMissing" variant="warn">
                   {{ ui.modelRefsPickerFileMissing }}
-                </p>
-                <p v-else class="canvas-hint canvas-hint--compact">勾选要绑定的模型（单选）；未列出的引用见下方高级区。</p>
+                </FormatHint>
+                <FormatHint v-else>勾选要绑定的模型（单选）；未列出的引用见下方高级区。</FormatHint>
                 <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
                   <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
                     <input
@@ -1755,45 +1793,58 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
                     <span>{{ c.label }}</span>
                   </label>
                 </div>
-                <p v-else-if="!modelRefsTargetMissing" class="canvas-hint canvas-hint--compact">（{{ ui.dockViewModelRefsNone }}）</p>
-                <p v-if="modelRefsOrphanRefs.length" class="canvas-hint canvas-hint--compact">
+                <FormatHint v-else-if="!modelRefsTargetMissing">（{{ ui.dockViewModelRefsNone }}）</FormatHint>
+                <FormatHint v-if="modelRefsOrphanRefs.length">
                   其它已保存引用（未出现在上表）：
                   <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph-' + i" class="mv-model-refs-orph">{{ o }}</code>
-                </p>
+                </FormatHint>
               </div>
             </div>
             <div
-              v-show="mermaidPayloadMode === 'canvas'"
+              v-show="classCanvasPayloadMode === 'canvas'"
               id="mv-class-panel-canvas"
               class="mv-class-canvas-wrap"
               role="tabpanel"
               aria-labelledby="mv-class-tab-canvas"
             >
               <MermaidClassDiagramCanvas
-                :model-value="viewDraft.payload ?? ''"
+                v-if="viewDraft.kind === 'mermaid-class'"
+                :model-value="toViewPayloadText(viewDraft.payload)"
                 :canvas-id="blockId"
-                :codespace-classes="mermaidCodespaceClassTree"
-                :model-source-valid="mermaidClassHasValidModelSource"
-                :model-source-error="mermaidClassModelSourceError"
-                @update:model-value="(v: string) => viewDraft && (viewDraft.payload = v)"
-                @open-classifier="onMermaidOpenClassifier"
-                @create-missing-classifier="onMermaidCreateMissingClassifier"
+                :codespace-classes="classCanvasCodespaceClassTree"
+                :model-source-valid="classCanvasHasValidModelSource"
+                :model-source-error="classCanvasModelSourceError"
+                @update:model-value="(v: string) => setViewPayloadText(v)"
+                @open-classifier="onClassCanvasOpenClassifier"
+                @create-missing-classifier="onClassCanvasCreateMissingClassifier"
+              />
+              <UmlClassDiagramCanvas
+                v-else-if="viewDraft.kind === 'uml-class'"
+                :model-value="toViewPayloadText(viewDraft.payload)"
+                :canvas-id="`${blockId}-uml`"
+                :codespace-classes="classCanvasCodespaceClassTree"
+                :model-source-valid="classCanvasHasValidModelSource"
+                :model-source-error="classCanvasModelSourceError"
+                @update:model-value="(v: string) => setViewPayloadText(v)"
+                @open-classifier="onClassCanvasOpenClassifier"
+                @create-missing-classifier="onClassCanvasCreateMissingClassifier"
               />
             </div>
             <label
-              v-show="mermaidPayloadMode === 'source'"
+              v-show="classCanvasPayloadMode === 'source'"
               id="mv-class-panel-source"
               class="field"
               role="tabpanel"
               aria-labelledby="mv-class-tab-source"
             >
-              <span>payload（Mermaid classDiagram）</span>
+              <span>payload（{{ viewDraft.kind === 'uml-class' ? 'UML classDiagram' : 'Mermaid classDiagram' }}）</span>
               <textarea
-                v-model="viewDraft.payload"
+                :value="toViewPayloadText(viewDraft.payload)"
                 class="payload-ta"
                 spellcheck="false"
                 rows="16"
                 :placeholder="viewPayloadPlaceholder"
+                @input="setViewPayloadText(($event.target as HTMLTextAreaElement).value)"
               />
             </label>
           </template>
@@ -1817,10 +1868,10 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
                   <button type="button" class="tb mv-mini-btn" @click="clearModelRefsPathInput">清空</button>
                 </div>
               </label>
-              <p v-if="modelRefsTargetMissing" class="canvas-hint canvas-hint--warn">
+              <FormatHint v-if="modelRefsTargetMissing" variant="warn">
                 {{ ui.modelRefsPickerFileMissing }}
-              </p>
-              <p v-else class="canvas-hint canvas-hint--compact">勾选要绑定的模型（单选）；未列出的引用见下方高级区。</p>
+              </FormatHint>
+              <FormatHint v-else>勾选要绑定的模型（单选）；未列出的引用见下方高级区。</FormatHint>
               <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
                 <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
                   <input
@@ -1832,48 +1883,52 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
                   <span>{{ c.label }}</span>
                 </label>
               </div>
-              <p v-else-if="!modelRefsTargetMissing" class="canvas-hint canvas-hint--compact">（{{ ui.dockViewModelRefsNone }}）</p>
-              <p v-if="modelRefsOrphanRefs.length" class="canvas-hint canvas-hint--compact">
+              <FormatHint v-else-if="!modelRefsTargetMissing">（{{ ui.dockViewModelRefsNone }}）</FormatHint>
+              <FormatHint v-if="modelRefsOrphanRefs.length">
                 其它已保存引用（未出现在上表）：
                 <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph-' + i" class="mv-model-refs-orph">{{ o }}</code>
-              </p>
+              </FormatHint>
             </div>
           </template>
-          <label v-if="viewDraft.kind !== 'mermaid-class'" class="field">
+          <label v-if="!isClassCanvasKind" class="field">
             <span
               >payload（{{
-                isPlantUmlViewKind(viewDraft.kind)
-                  ? 'PlantUML / 图源'
+                isUmlViewKind(viewDraft.kind)
+                  ? 'UML 记录（独立格式）'
                   : isMermaidViewKind(viewDraft.kind)
                     ? 'Mermaid 图源'
                     : '子类型载荷'
               }}）</span
             >
             <textarea
-              v-model="viewDraft.payload"
+              :value="toViewPayloadText(viewDraft.payload)"
               class="payload-ta"
               spellcheck="false"
               rows="16"
               :placeholder="viewPayloadPlaceholder"
+              @input="setViewPayloadText(($event.target as HTMLTextAreaElement).value)"
             />
+            <FormatHint v-if="viewUsesCoreUmlPayloadMapping">
+              {{ ui.viewUmlPayloadMappingHint }}
+            </FormatHint>
           </label>
           <CodespaceClassifierFloat
-            v-if="mermaidCodespaceSidePayload && mermaidCodespaceFloat"
-            :open="mermaidCodespaceFloatOpen"
-            :model-value="mermaidCodespaceSidePayload"
-            :mi="mermaidCodespaceFloat.mi"
-            :path="mermaidCodespaceFloat.path"
-            :ci="mermaidCodespaceFloat.ci"
-            :diagram-assoc-targets-by-class-id="mermaidAssocTargetsByClassId"
-            :run-patch="patchMermaidCodespaceSide"
-            @close="closeMermaidCodespaceFloat"
+            v-if="classCanvasCodespaceSidePayload && classCanvasCodespaceFloat"
+            :open="classCanvasCodespaceFloatOpen"
+            :model-value="classCanvasCodespaceSidePayload"
+            :mi="classCanvasCodespaceFloat.mi"
+            :path="classCanvasCodespaceFloat.path"
+            :ci="classCanvasCodespaceFloat.ci"
+            :diagram-assoc-targets-by-class-id="classCanvasAssocTargetsByClassId"
+            :run-patch="patchClassCanvasCodespaceSide"
+            @close="closeClassCanvasCodespaceFloat"
           />
           </div>
         </template>
 
         <template v-else-if="block.kind === 'mv-map'">
-          <p class="canvas-hint title">{{ MV_MAP_CANVAS_TITLE }}</p>
-          <p class="canvas-hint">编辑 <code>mv-map</code> 围栏代码块内的映射规则 JSON；保存后写回 Markdown。</p>
+          <FormatHint variant="title">{{ MV_MAP_CANVAS_TITLE }}</FormatHint>
+          <FormatHint>编辑 <code>mv-map</code> 围栏代码块内的映射规则 JSON；保存后写回 Markdown。</FormatHint>
           <textarea v-model="mapJsonText" class="payload-ta" spellcheck="false" rows="20" />
         </template>
       </div>
@@ -2060,22 +2115,6 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
 .canvas-root--embedded .tb {
   padding: 4px 10px;
   font-size: 0.8rem;
-}
-.canvas-hint {
-  margin: 0 0 12px;
-  font-size: 0.85rem;
-  color: #475569;
-}
-.canvas-hint.title {
-  font-weight: 700;
-  color: #0f172a;
-}
-.canvas-hint--warn {
-  color: #b45309;
-}
-.canvas-hint--compact {
-  font-size: 0.76rem;
-  margin-bottom: 6px;
 }
 .mv-model-refs-picker {
   margin-bottom: 10px;
@@ -2421,7 +2460,7 @@ function onMermaidCreateMissingClassifier(ev: { classId: string; className: stri
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   font-size: 0.8125rem;
 }
-.model-sql-surface .canvas-hint {
+.model-sql-surface :deep(.canvas-hint) {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 0.8125rem;
 }

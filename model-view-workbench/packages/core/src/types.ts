@@ -319,11 +319,33 @@ export const MV_VIEW_KINDS = [
   'mermaid-zenuml',
   'mindmap-ui',
   'uml-diagram',
-  /** PlantUML：类图专用画布（payload 为 @startuml … class … @enduml 等） */
+  /** UML：类图专用画布（独立 JSON 记录格式） */
   'uml-class',
-  /** PlantUML：序列图专用画布 */
+  /** UML：对象图（独立 JSON 记录格式） */
+  'uml-object',
+  /** UML：包图（独立 JSON 记录格式） */
+  'uml-package',
+  /** UML：组合结构图（独立 JSON 记录格式） */
+  'uml-composite-structure',
+  /** UML：组件图（独立 JSON 记录格式） */
+  'uml-component',
+  /** UML：部署图（独立 JSON 记录格式） */
+  'uml-deployment',
+  /** UML：Profile 图（独立 JSON 记录格式） */
+  'uml-profile',
+  /** UML：用例图（独立 JSON 记录格式） */
+  'uml-usecase',
+  /** UML：序列图专用画布（独立 JSON 记录格式） */
   'uml-sequence',
-  /** PlantUML：活动图专用画布 */
+  /** UML：状态机图（独立 JSON 记录格式） */
+  'uml-state-machine',
+  /** UML：通信图（独立 JSON 记录格式） */
+  'uml-communication',
+  /** UML：时序图（Timing，独立 JSON 记录格式） */
+  'uml-timing',
+  /** UML：交互概览图（独立 JSON 记录格式） */
+  'uml-interaction-overview',
+  /** UML：活动图专用画布（独立 JSON 记录格式） */
   'uml-activity',
   /** UI / 线框 / 组件规格（payload 由专用编辑器解释，可为 JSON 或 DSL 文本） */
   'ui-design',
@@ -488,24 +510,79 @@ export const MV_VIEW_KIND_METADATA: Record<
     payloadPlaceholder: '{ "nodes": [], "edges": [] }',
   },
   'uml-diagram': {
-    canvasTitle: '通用 UML / PlantUML 画布',
-    description: '任意 PlantUML 片段写入 payload；若已区分专用图类型，建议改用 uml-class / uml-sequence / uml-activity。',
-    payloadPlaceholder: '@startuml\nAlice -> Bob: hello\n@enduml',
+    canvasTitle: '通用 UML 图画布',
+    description: '通用 UML 独立记录（JSON）编辑面；核心不依赖 Mermaid / @startuml 扩展。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
   },
   'uml-class': {
     canvasTitle: 'UML Class 图画布',
-    description: '专用类图编辑面；payload 为 PlantUML 类图相关源码。',
-    payloadPlaceholder: '@startuml\nclass Order\nclass Customer\nOrder --> Customer\n@enduml',
+    description: '专用类图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-object': {
+    canvasTitle: 'UML Object 图画布',
+    description: '专用对象图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-package': {
+    canvasTitle: 'UML Package 图画布',
+    description: '专用包图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-composite-structure': {
+    canvasTitle: 'UML Composite Structure 图画布',
+    description: '专用组合结构图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-component': {
+    canvasTitle: 'UML Component 图画布',
+    description: '专用组件图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-deployment': {
+    canvasTitle: 'UML Deployment 图画布',
+    description: '专用部署图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-profile': {
+    canvasTitle: 'UML Profile 图画布',
+    description: '专用 Profile 图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-usecase': {
+    canvasTitle: 'UML Use Case 图画布',
+    description: '专用用例图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
   },
   'uml-sequence': {
     canvasTitle: 'UML 序列图画布',
-    description: '专用序列图编辑面；payload 为 PlantUML sequence 相关源码。',
-    payloadPlaceholder: '@startuml\nparticipant User\nparticipant API\nUser -> API: request\n@enduml',
+    description: '专用序列图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-state-machine': {
+    canvasTitle: 'UML State Machine 图画布',
+    description: '专用状态机图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-communication': {
+    canvasTitle: 'UML Communication 图画布',
+    description: '专用通信图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-timing': {
+    canvasTitle: 'UML Timing 图画布',
+    description: '专用时序（Timing）图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
+  },
+  'uml-interaction-overview': {
+    canvasTitle: 'UML Interaction Overview 图画布',
+    description: '专用交互概览图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
   },
   'uml-activity': {
     canvasTitle: 'UML 活动图画布',
-    description: '专用活动图编辑面；payload 为 PlantUML activity 相关源码。',
-    payloadPlaceholder: '@startuml\nstart\n:步骤 A;\n:步骤 B;\nstop\n@enduml',
+    description: '专用活动图编辑面；payload 使用 UML 独立 JSON 记录格式。',
+    payloadPlaceholder: '（由插入代码块对话框按 core 的 UML 映射自动生成）',
   },
   'ui-design': {
     canvasTitle: 'UI 设计画布',
@@ -543,21 +620,65 @@ export const MV_MAP_CANVAS_TITLE = '映射规则画布';
 export const MV_MODEL_REFS_SCHEME_DOC =
   'modelRefs 每项指向 **Model** 围栏（``mv-model-sql`` / ``mv-model-kv`` / ``mv-model-struct`` / ``mv-model-codespace`` / ``mv-model-interface``）：同文件写 `块id`；``mv-model-sql`` 多表时写 `块id#表id`，仅一张表时可只写 `块id`。跨文件写 `ref:相对路径.md#块id`，sql 多表时再加 `#表id`。路径相对于当前 mv-view 所在 .md 的目录，用 /。';
 
-/** PlantUML 系视图（细分 kind 与通用 uml-diagram） */
-export const MV_PLANTUML_VIEW_KINDS: ReadonlySet<MvViewKind> = new Set([
+/** UML 系视图（细分 kind 与通用 uml-diagram；独立记录格式） */
+export const MV_UML_VIEW_KINDS: ReadonlySet<MvViewKind> = new Set([
   'uml-diagram',
   'uml-class',
+  'uml-object',
+  'uml-package',
+  'uml-composite-structure',
+  'uml-component',
+  'uml-deployment',
+  'uml-profile',
+  'uml-usecase',
   'uml-sequence',
+  'uml-state-machine',
+  'uml-communication',
+  'uml-timing',
+  'uml-interaction-overview',
   'uml-activity',
 ]);
 
-export function isPlantUmlViewKind(kind: MvViewKind): boolean {
-  return MV_PLANTUML_VIEW_KINDS.has(kind);
+/** `uml-*` kind 对应独立 JSON 记录中的 `diagramType`。 */
+export const MV_UML_KIND_DIAGRAM_TYPE: Readonly<Record<string, string>> = {
+  'uml-diagram': 'generic',
+  'uml-class': 'class',
+  'uml-object': 'object',
+  'uml-package': 'package',
+  'uml-composite-structure': 'composite-structure',
+  'uml-component': 'component',
+  'uml-deployment': 'deployment',
+  'uml-profile': 'profile',
+  'uml-usecase': 'usecase',
+  'uml-sequence': 'sequence',
+  'uml-state-machine': 'state-machine',
+  'uml-communication': 'communication',
+  'uml-timing': 'timing',
+  'uml-interaction-overview': 'interaction-overview',
+  'uml-activity': 'activity',
+};
+
+export function isUmlViewKind(kind: MvViewKind): boolean {
+  return MV_UML_VIEW_KINDS.has(kind);
 }
 
 /**
+ * @deprecated 请改用 `MV_UML_VIEW_KINDS`。
+ * 仅为兼容旧调用保留该别名，避免核心语义继续绑定具体扩展实现。
+ * TODO(v2): 移除该兼容别名。
+ */
+export const MV_PLANTUML_VIEW_KINDS = MV_UML_VIEW_KINDS;
+
+/**
+ * @deprecated 请改用 `isUmlViewKind`。
+ * 仅为兼容旧调用保留该别名，避免核心语义继续绑定具体扩展实现。
+ * TODO(v2): 移除该兼容别名。
+ */
+export const isPlantUmlViewKind = isUmlViewKind;
+
+/**
  * **mv-view**：JSON 中的「视图基类」——公共字段为 `id`、`kind`、`modelRefs`（及可选 `title`）；
- * 具体语义由 `kind` 决定（表只读、Mermaid 各图、脑图 UI、PlantUML 各图、UI 设计等）。
+ * 具体语义由 `kind` 决定（表只读、Mermaid 各图、脑图 UI、UML 各图、UI 设计等）。
  */
 export interface MvViewPayload {
   id: string;
@@ -570,7 +691,7 @@ export interface MvViewPayload {
    * 子类型载荷：如各 `mermaid-*` / `uml-diagram` 的图源、`mindmap-ui` 的序列化快照等（由对应 `kind` 的渲染器解释）。
    * 对 **`mermaid-*`**：可与紧随 `` ```mv-view `` 后的标准 `` ```mermaid`` 围栏**镜像同文**（见 `ParsedMermaidMirrorFence`），便于 GitHub 等普通 Markdown 渲染图；工作台保存时会同步两段正文。
    */
-  payload?: string;
+  payload?: string | Record<string, unknown>;
 }
 
 export interface MvMapRule {
@@ -596,7 +717,7 @@ export type MvBlockPayload =
 
 /**
  * 紧随 `` ```mv-view ``（且 `kind` 为 `mermaid-*`）的标准 `` ```mermaid `` 围栏，与 JSON 内 `payload` 同源，供普通 Markdown 预览 Mermaid。
- * **契约**：`mermaid-*` 的 `mv-view` 在源码中必须带该镜像段，否则解析器丢弃该块；解析时若 JSON 中 `payload` 为空而镜像非空，则用镜像正文填充 `payload`。
+ * 该段为可选扩展：存在时，解析器可在 JSON `payload` 为空时用镜像正文填充。
  */
 export interface ParsedMermaidMirrorFence {
   /** `` ```mermaid`` 行首第一个 `` ` `` 的偏移 */
@@ -628,7 +749,7 @@ export interface ParsedFenceBlock {
   /** Raw inner text between fences (trimmed for JSON parse) */
   rawInner: string;
   payload: MvBlockPayload;
-  /** `mv-view` 且 `kind` 为 `mermaid-*` 且解析成功时**必有**（紧随的标准 `` ```mermaid`` 段） */
+  /** `mv-view` 且 `kind` 为 `mermaid-*` 时可选（紧随的标准 `` ```mermaid`` 段） */
   mermaidMirror?: ParsedMermaidMirrorFence;
 }
 

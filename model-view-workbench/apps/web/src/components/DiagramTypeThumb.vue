@@ -108,6 +108,106 @@ const markerId = ref(`dtt-arr-${Math.random().toString(36).slice(2, 11)}`);
       <rect x="6" y="6" width="76" height="40" rx="3" fill="#faf5ff" stroke="#7c3aed" stroke-width="1" />
       <text x="44" y="32" text-anchor="middle" font-size="11" fill="#6b21a8" font-family="system-ui,sans-serif">UML</text>
     </g>
+    <!-- uml-object：对象实例框 -->
+    <g v-else-if="variant === 'uml-object'">
+      <rect x="10" y="10" width="28" height="20" rx="1" fill="#fff" stroke="#334155" />
+      <line x1="10" y1="16" x2="38" y2="16" stroke="#334155" />
+      <rect x="50" y="20" width="28" height="20" rx="1" fill="#fff" stroke="#334155" />
+      <line x1="50" y1="26" x2="78" y2="26" stroke="#334155" />
+      <line x1="38" y1="20" x2="50" y2="30" stroke="#334155" />
+    </g>
+    <!-- uml-package：包文件夹 -->
+    <g v-else-if="variant === 'uml-package'">
+      <rect x="10" y="14" width="30" height="22" rx="2" fill="#f5f3ff" stroke="#6d28d9" />
+      <rect x="12" y="10" width="14" height="6" rx="1" fill="#ede9fe" stroke="#7c3aed" />
+      <rect x="48" y="14" width="30" height="22" rx="2" fill="#f5f3ff" stroke="#6d28d9" />
+      <rect x="50" y="10" width="14" height="6" rx="1" fill="#ede9fe" stroke="#7c3aed" />
+      <line x1="40" y1="25" x2="48" y2="25" stroke="#7c3aed" stroke-dasharray="2 1" />
+    </g>
+    <!-- uml-composite-structure：整体-部件 -->
+    <g v-else-if="variant === 'uml-composite-structure'">
+      <rect x="16" y="8" width="56" height="34" rx="2" fill="#fff" stroke="#0f766e" />
+      <rect x="24" y="16" width="16" height="12" rx="1" fill="#ccfbf1" stroke="#0f766e" />
+      <rect x="48" y="16" width="16" height="12" rx="1" fill="#ccfbf1" stroke="#0f766e" />
+      <line x1="40" y1="22" x2="48" y2="22" stroke="#0f766e" />
+      <circle cx="44" cy="22" r="1.8" fill="#0f766e" />
+    </g>
+    <!-- uml-component：组件块+接口棒棒糖 -->
+    <g v-else-if="variant === 'uml-component'">
+      <rect x="14" y="12" width="28" height="24" rx="2" fill="#eef2ff" stroke="#3730a3" />
+      <rect x="18" y="16" width="6" height="4" fill="#c7d2fe" stroke="#3730a3" />
+      <rect x="18" y="22" width="6" height="4" fill="#c7d2fe" stroke="#3730a3" />
+      <rect x="52" y="14" width="22" height="20" rx="2" fill="#eef2ff" stroke="#3730a3" />
+      <circle cx="49" cy="24" r="3" fill="#fff" stroke="#3730a3" />
+      <line x1="42" y1="24" x2="46" y2="24" stroke="#3730a3" />
+    </g>
+    <!-- uml-deployment：节点+数据库 -->
+    <g v-else-if="variant === 'uml-deployment'">
+      <rect x="10" y="10" width="24" height="18" rx="1" fill="#ecfeff" stroke="#0e7490" />
+      <rect x="16" y="6" width="24" height="18" rx="1" fill="#cffafe" stroke="#0e7490" />
+      <rect x="48" y="8" width="26" height="20" rx="1" fill="#ecfeff" stroke="#0e7490" />
+      <ellipse cx="61" cy="36" rx="12" ry="4" fill="#cffafe" stroke="#0e7490" />
+      <rect x="49" y="36" width="24" height="8" fill="#cffafe" stroke="#0e7490" />
+      <ellipse cx="61" cy="44" rx="12" ry="4" fill="#cffafe" stroke="#0e7490" />
+      <line x1="40" y1="20" x2="48" y2="18" stroke="#0e7490" />
+    </g>
+    <!-- uml-profile：构造型标签 -->
+    <g v-else-if="variant === 'uml-profile'">
+      <rect x="14" y="10" width="28" height="20" rx="1" fill="#fff7ed" stroke="#c2410c" />
+      <text x="28" y="22" text-anchor="middle" font-size="6" fill="#9a3412" font-family="system-ui,sans-serif">&lt;&lt;S&gt;&gt;</text>
+      <rect x="48" y="22" width="26" height="20" rx="1" fill="#fff7ed" stroke="#c2410c" />
+      <text x="61" y="34" text-anchor="middle" font-size="6" fill="#9a3412" font-family="system-ui,sans-serif">&lt;&lt;T&gt;&gt;</text>
+      <line x1="42" y1="20" x2="48" y2="28" stroke="#c2410c" />
+    </g>
+    <!-- uml-usecase：参与者+椭圆 -->
+    <g v-else-if="variant === 'uml-usecase'">
+      <circle cx="18" cy="12" r="3" fill="#334155" />
+      <line x1="18" y1="15" x2="18" y2="25" stroke="#334155" />
+      <line x1="13" y1="20" x2="23" y2="20" stroke="#334155" />
+      <line x1="18" y1="25" x2="14" y2="31" stroke="#334155" />
+      <line x1="18" y1="25" x2="22" y2="31" stroke="#334155" />
+      <ellipse cx="56" cy="24" rx="20" ry="10" fill="#f5f3ff" stroke="#7c3aed" />
+      <line x1="22" y1="20" x2="36" y2="24" stroke="#334155" />
+    </g>
+    <!-- uml-state-machine：状态节点 -->
+    <g v-else-if="variant === 'uml-state-machine'">
+      <circle cx="12" cy="26" r="3" fill="#111827" />
+      <rect x="24" y="16" width="18" height="12" rx="6" fill="#dcfce7" stroke="#166534" />
+      <rect x="54" y="16" width="22" height="12" rx="6" fill="#dcfce7" stroke="#166534" />
+      <circle cx="78" cy="26" r="4" fill="#fff" stroke="#111827" />
+      <circle cx="78" cy="26" r="2.3" fill="#111827" />
+      <line x1="15" y1="26" x2="24" y2="22" stroke="#166534" />
+      <line x1="42" y1="22" x2="54" y2="22" stroke="#166534" />
+      <line x1="76" y1="22" x2="74" y2="22" stroke="#166534" />
+    </g>
+    <!-- uml-communication：对象连线+编号 -->
+    <g v-else-if="variant === 'uml-communication'">
+      <rect x="10" y="10" width="20" height="12" rx="1" fill="#fff" stroke="#1e293b" />
+      <rect x="58" y="10" width="20" height="12" rx="1" fill="#fff" stroke="#1e293b" />
+      <rect x="34" y="30" width="20" height="12" rx="1" fill="#fff" stroke="#1e293b" />
+      <line x1="30" y1="16" x2="58" y2="16" stroke="#1e293b" />
+      <line x1="20" y1="22" x2="38" y2="30" stroke="#1e293b" />
+      <line x1="68" y1="22" x2="50" y2="30" stroke="#1e293b" />
+      <text x="44" y="14" text-anchor="middle" font-size="6" fill="#334155" font-family="system-ui,sans-serif">1</text>
+    </g>
+    <!-- uml-timing：时间轴与状态线 -->
+    <g v-else-if="variant === 'uml-timing'">
+      <line x1="10" y1="38" x2="78" y2="38" stroke="#0f172a" />
+      <line x1="18" y1="10" x2="18" y2="42" stroke="#64748b" stroke-dasharray="2 2" />
+      <line x1="52" y1="10" x2="52" y2="42" stroke="#64748b" stroke-dasharray="2 2" />
+      <path d="M18 28 H36 V20 H52 V30 H70" fill="none" stroke="#2563eb" stroke-width="1.4" />
+    </g>
+    <!-- uml-interaction-overview：活动+交互引用 -->
+    <g v-else-if="variant === 'uml-interaction-overview'">
+      <circle cx="12" cy="26" r="3" fill="#22c55e" />
+      <rect x="22" y="18" width="18" height="12" rx="1" fill="#ecfeff" stroke="#0891b2" />
+      <rect x="48" y="18" width="22" height="12" rx="1" fill="#ede9fe" stroke="#7c3aed" />
+      <text x="59" y="26" text-anchor="middle" font-size="6" fill="#6b21a8" font-family="system-ui,sans-serif">ref</text>
+      <circle cx="78" cy="26" r="3" fill="#ef4444" />
+      <line x1="15" y1="26" x2="22" y2="24" stroke="#334155" />
+      <line x1="40" y1="24" x2="48" y2="24" stroke="#334155" />
+      <line x1="70" y1="24" x2="75" y2="24" stroke="#334155" />
+    </g>
     <!-- ui-design：线框矩形 -->
     <g v-else-if="variant === 'ui-design'">
       <rect x="8" y="8" width="72" height="36" rx="2" fill="#fff" stroke="#0ea5e9" stroke-width="1.2" />

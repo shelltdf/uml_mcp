@@ -150,17 +150,64 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | string | 文件内唯一 |
-| kind | string | **已注册子类型**（见 `@mvwb/core` 导出 `MV_VIEW_KINDS` 与 `MV_VIEW_KIND_METADATA`）：含 **全部 `mermaid-*`**（各 Mermaid 图类独立 kind，payload 为对应语法）、`mindmap-ui`、`uml-diagram`（通用 PlantUML）、`uml-class` / `uml-sequence` / `uml-activity`（各专用画布）、`ui-design`（UI 规格画布）等。扩展时追加 `kind`、元数据与画布实现。 |
+| kind | string | **已注册子类型**（见 `@mvwb/core` 导出 `MV_VIEW_KINDS` 与 `MV_VIEW_KIND_METADATA`）：含 **全部 `mermaid-*`**（各 Mermaid 图类独立 kind，payload 为对应语法）、`mindmap-ui`、`uml-diagram`（通用 UML 独立记录）、`uml-class` / `uml-sequence` / `uml-activity`（各专用画布）、`ui-design`（UI 规格画布）等。扩展时追加 `kind`、元数据与画布实现。 |
 | modelRefs | string[] | **每个 view 应绑定至少一个 Model 子表地址**（可为多项）：同文件 **`Model块id#子表id`**（单子表块可仅写块 id）；跨文件 **`ref:相对路径.md#块id#子表id`** 或 **`ref:相对路径.md#块id`**（见 `parseRefUri` / `resolveRefPath` / `findMvModelSqlTable`）。 |
 | title | string? | 可选视图标题 |
-| payload | string? | **子类型相关**载荷（如 Mermaid / PlantUML 文本、脑图 JSON 快照等，由对应 `kind` 解释） |
+| payload | string? | **子类型相关**载荷（如 Mermaid 文本、UML 独立 JSON 记录、脑图 JSON 快照等，由对应 `kind` 解释） |
 
-### `mermaid-*` 与标准 `` ```mermaid`` 镜像（**必须**两段围栏）
+### `mermaid-*` 与标准 `` ```mermaid`` 镜像（可选扩展）
 
-当 `kind` 为 **`mermaid-*`** 时，**必须**在 **`` ```mv-view `` 围栏结束之后**（仅中间可隔空白）紧随一个 **标准** `` ```mermaid`` … `` ``` `` 围栏；两段为**独立**代码块。镜像**正文**与 JSON 内 `payload` 表示**同一段 Mermaid 源码**（便于 GitHub、Typora 等仅识别 `` ```mermaid`` 的环境出图）。缺省镜像围栏的 `mv-view`（`mermaid-*`）**解析失败**，该块不进入 `blocks` 列表。
+当 `kind` 为 **`mermaid-*`** 时，可在 **`` ```mv-view `` 围栏结束之后**（仅中间可隔空白）附带一个 **标准** `` ```mermaid`` … `` ``` `` 围栏；两段为**独立**代码块。镜像**正文**与 JSON 内 `payload` 表示**同一段 Mermaid 源码**（便于 GitHub、Typora 等仅识别 `` ```mermaid`` 的环境出图）。
 
-- **解析**：仍只产生 **一条** `ParsedFenceBlock`（`kind: mv-view`）；设置 `mermaidMirror`（起止偏移）且扫描指针跳过镜像段，避免将 `` ```mermaid`` 当作未知围栏阻塞后续解析。若 JSON 内 `payload` 为空（或缺省）而镜像非空，则用镜像正文**填入**内存中的 `payload`；若二者均非空且不一致，**以 JSON 内 `payload` 为准**（镜像视为可由下次保存覆盖）。
-- **回写**：`replaceBlockInnerById` 在替换 `` ```mv-view`` 内 JSON 后，若仍存在 `mermaidMirror` 且新 JSON 为 `mermaid-*` 且含 `payload` 字符串，则**同步替换**镜像围栏内正文，使两段保持一致。
+- **解析**：核心仍只产生 **一条** `ParsedFenceBlock`（`kind: mv-view`）；若存在镜像围栏则设置 `mermaidMirror`（起止偏移）并跳过镜像段，避免将 `` ```mermaid`` 当作未知围栏阻塞后续解析。若 JSON 内 `payload` 为空（或缺省）而镜像非空，则用镜像正文**填入**内存中的 `payload`；若二者均非空且不一致，**以 JSON 内 `payload` 为准**（镜像视为可由下次保存覆盖）。
+- **回写**：`replaceBlockInnerById` 在替换 `` ```mv-view`` 内 JSON 后，若存在 `mermaidMirror` 且新 JSON 为 `mermaid-*` 且含 `payload` 字符串，则**同步替换**镜像围栏内正文，使两段保持一致。
+
+> 分层约束：`mermaid` 镜像围栏属于**扩展/插件层能力**，核心解析与核心数据契约不应依赖其存在。
+
+### `uml-*` 独立记录格式（`mvwb-uml/v1`）
+
+`kind` 为任一 `uml-*` 时，`payload`（若非空）必须是 JSON 字符串，反序列化后满足：
+
+- `schema` 固定为 `"mvwb-uml/v1"`
+- `diagramType` 必须与 `kind` 对应（见下表）
+- **`uml-class`** 额外要求：
+  - `classes`（若出现）为数组，元素对象至少含非空 `id`、`name`
+  - `relations`（若出现）为数组，元素对象至少含非空 `id`、`from`、`to`
+  - `relations[].kind`（若出现）取值仅 `inherit` / `association` / `dependency`
+
+| `mv-view.kind` | `payload.diagramType` |
+|---|---|
+| `uml-diagram` | `generic` |
+| `uml-class` | `class` |
+| `uml-object` | `object` |
+| `uml-package` | `package` |
+| `uml-composite-structure` | `composite-structure` |
+| `uml-component` | `component` |
+| `uml-deployment` | `deployment` |
+| `uml-profile` | `profile` |
+| `uml-usecase` | `usecase` |
+| `uml-sequence` | `sequence` |
+| `uml-state-machine` | `state-machine` |
+| `uml-communication` | `communication` |
+| `uml-timing` | `timing` |
+| `uml-interaction-overview` | `interaction-overview` |
+| `uml-activity` | `activity` |
+
+示例（`uml-class`）：
+
+```json
+{
+  "schema": "mvwb-uml/v1",
+  "diagramType": "class",
+  "classes": [
+    { "id": "Order", "name": "Order" },
+    { "id": "Customer", "name": "Customer" }
+  ],
+  "relations": [
+    { "id": "r1", "from": "Order", "to": "Customer", "kind": "association" }
+  ]
+}
+```
 
 ## mv-map
 

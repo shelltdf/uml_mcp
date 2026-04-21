@@ -109,6 +109,12 @@ export function insertCardDesc(kind: InsertCodeBlockKind, locale: AppLocale): st
       ? 'Insert ```mv-model-interface```: **endpoints[]** for API sketch; edit in the interface canvas.'
       : '插入 ```mv-model-interface``` 围栏：**endpoints[]** 描述接口/端点（方法、路径、说明，文档示意）；在接口图模型画布中编辑 JSON。';
   }
+  if (typeof kind === 'string' && kind.startsWith('uml-')) {
+    const umlBase = mvViewKindStrings(kind as MvViewKind, locale).description;
+    return en
+      ? `${umlBase} This is an independent UML view kind with its own record format; Mermaid/@startuml are optional plugin capabilities.`
+      : `${umlBase} 该类型属于独立 UML 视图，使用独立记录格式；Mermaid/@startuml 仅作为可选插件能力。`;
+  }
   const base = mvViewKindStrings(kind as MvViewKind, locale).description;
   if (typeof kind === 'string' && kind.startsWith('mermaid-')) {
     return en
@@ -132,11 +138,27 @@ export function getInsertGroups(
     },
     { title: en ? 'Interface (Model)' : '接口模型（Model）', kinds: ['mv-model-interface'] },
     { title: en ? 'Software (Model)' : '软件模型（Model）', kinds: ['mv-model-codespace'] },
+    {
+      title: en ? 'Structure Diagrams (UML)' : '结构图（UML）',
+      kinds: [
+        'uml-class',
+        'uml-object',
+        'uml-package',
+        'uml-composite-structure',
+        'uml-component',
+        'uml-deployment',
+        'uml-profile',
+      ],
+    },
+    {
+      title: en ? 'Behavioral Diagrams (UML)' : '行为图（UML）',
+      kinds: ['uml-usecase', 'uml-activity', 'uml-state-machine'],
+    },
+    {
+      title: en ? 'Interaction Diagrams (UML)' : '交互图（UML）',
+      kinds: ['uml-sequence', 'uml-communication', 'uml-timing', 'uml-interaction-overview', 'uml-diagram'],
+    },
     { title: en ? 'Mermaid UML' : 'Mermaid UML', kinds: mermaidUmlKinds },
     { title: en ? 'Mermaid (other)' : 'Mermaid 其他', kinds: mermaidOtherKinds },
-    {
-      title: en ? 'PlantUML' : 'PlantUML相关',
-      kinds: ['uml-class', 'uml-sequence', 'uml-activity', 'uml-diagram'],
-    },
   ];
 }

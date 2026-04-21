@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { parseMarkdownBlocks, replaceBlockInnerById, findMvModelSqlTable } from '../src/parse/blocks.js';
 import {
   MV_MERMAID_UML_INSERT_KINDS,
+  MV_PLANTUML_VIEW_KINDS,
+  MV_UML_VIEW_KINDS,
   getMermaidNonUmlViewKinds,
   getMermaidViewKinds,
+  isPlantUmlViewKind,
+  isUmlViewKind,
 } from '../src/types.js';
 
 const minimalSqlPayload = {
@@ -18,6 +22,12 @@ const minimalSqlPayload = {
 };
 
 describe('parseMarkdownBlocks', () => {
+  it('keeps UML compatibility aliases equivalent to core APIs', () => {
+    expect(MV_PLANTUML_VIEW_KINDS).toBe(MV_UML_VIEW_KINDS);
+    expect(isPlantUmlViewKind('uml-class')).toBe(isUmlViewKind('uml-class'));
+    expect(isPlantUmlViewKind('mermaid-class')).toBe(isUmlViewKind('mermaid-class'));
+  });
+
   it('parses mv-model-sql', () => {
     const md = `# Hi\n\n\`\`\`mv-model-sql\n${JSON.stringify(minimalSqlPayload)}\n\`\`\`\n`;
     const r = parseMarkdownBlocks(md);
@@ -97,7 +107,12 @@ describe('parseMarkdownBlocks', () => {
         id: 'u1',
         kind: 'uml-diagram',
         modelRefs: [],
-        payload: '@startuml\nA --> B\n@enduml',
+        payload: JSON.stringify({
+          schema: 'mvwb-uml/v1',
+          diagramType: 'generic',
+          elements: [{ id: 'A', kind: 'actor', name: 'A' }, { id: 'B', kind: 'component', name: 'B' }],
+          relations: [{ from: 'A', to: 'B', type: 'uses' }],
+        }),
       }) +
       '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
@@ -110,16 +125,80 @@ describe('parseMarkdownBlocks', () => {
   it('parses mv-view ui-design and uml-class kinds', () => {
     const md =
       '\`\`\`mv-view\n' +
-      JSON.stringify({ id: 'ui1', kind: 'ui-design', modelRefs: [], payload: '{}' }) +
+      JSON.stringify({ id: 'ui1', kind: 'ui-design', modelRefs: [], payload: { screens: [] } }) +
       '\n\`\`\`\n' +
       '\`\`\`mv-view\n' +
-      JSON.stringify({ id: 'uc1', kind: 'uml-class', modelRefs: [], payload: '@startuml\n@enduml' }) +
+      JSON.stringify({
+        id: 'uc1',
+        kind: 'uml-class',
+        modelRefs: [],
+        payload: {
+          schema: 'mvwb-uml/v1',
+          diagramType: 'class',
+          classes: [{ id: 'A', name: 'A' }],
+          relations: [],
+        },
+      }) +
       '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks.length).toBe(2);
     expect((r.blocks[0].payload as { kind: string }).kind).toBe('ui-design');
     expect((r.blocks[1].payload as { kind: string }).kind).toBe('uml-class');
+  });
+
+  it('rejects mv-view uml-class payload that is not mvwb-uml/v1 class json', () => {
+    const md =
+      '\`\`\`mv-view\n' +
+      JSON.stringify({
+        id: 'uc_bad',
+        kind: 'uml-class',
+        modelRefs: [],
+        payload: '@startuml\nclass A\n@enduml',
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('uml-class payload must be valid JSON'))).toBe(true);
+  });
+
+  it('parses mv-view uml-sequence with mvwb-uml/v1 payload', () => {
+    const md =
+      '\`\`\`mv-view\n' +
+      JSON.stringify({
+        id: 'us1',
+        kind: 'uml-sequence',
+        modelRefs: [],
+        payload: JSON.stringify({
+          schema: 'mvwb-uml/v1',
+          diagramType: 'sequence',
+          participants: [{ id: 'u', name: 'User' }, { id: 'a', name: 'API' }],
+          messages: [{ from: 'u', to: 'a', name: 'request' }],
+        }),
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks).toHaveLength(1);
+    expect((r.blocks[0].payload as { kind: string }).kind).toBe('uml-sequence');
+  });
+
+  it('rejects mv-view uml-component when diagramType mismatches kind', () => {
+    const md =
+      '\`\`\`mv-view\n' +
+      JSON.stringify({
+        id: 'ucp_bad',
+        kind: 'uml-component',
+        modelRefs: [],
+        payload: JSON.stringify({
+          schema: 'mvwb-uml/v1',
+          diagramType: 'deployment',
+        }),
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('uml-component payload.diagramType'))).toBe(true);
   });
 
   it('rejects mv-view with unknown kind', () => {
@@ -737,7 +816,7 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('duplicate endpoint id'))).toBe(true);
   });
 
-  it('rejects mv-view mermaid-* without trailing mermaid mirror', () => {
+  it('parses mv-view mermaid-* without trailing mermaid mirror', () => {
     const md =
       '\`\`\`mv-view\n' +
       JSON.stringify({
@@ -748,8 +827,10 @@ describe('parseMarkdownBlocks', () => {
       }) +
       '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
-    expect(r.blocks).toHaveLength(0);
-    expect(r.errors.some((e) => e.message.includes('trailing') && e.message.includes('mermaid'))).toBe(true);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks).toHaveLength(1);
+    expect((r.blocks[0].payload as { kind?: string }).kind).toBe('mermaid-flowchart');
+    expect(r.blocks[0].mermaidMirror).toBeUndefined();
   });
 
   it('parses mv-view mermaid-flowchart with trailing mermaid mirror and fills empty payload', () => {
