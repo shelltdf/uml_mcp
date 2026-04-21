@@ -1,3 +1,5 @@
+import { getGraphicsElementByDomId } from './uisvgDocument'
+
 export interface SnapBBox {
   x: number
   y: number
@@ -15,13 +17,23 @@ export function snapThresholdUser(scale: number, screenPx = 7): number {
   return Math.max(0.5, screenPx / Math.max(scale, 0.01))
 }
 
-/** 画布边界与中心 + 其他图元的左/中/右、上/中/下 */
+/**
+ * 画布边界与中心 + 其他图元的左/中/右、上/中/下。
+ * @param excludeIdOrIds 正在拖拽的对象根 id（或多选时全部根 id）；其子树内带 id 的节点不参与目标，
+ * 避免把「自己内部的 text-1-ui 等」的边当作吸附线，造成自参照、与鼠标脱节。
+ */
 export function buildSnapTargets(
   rootSvg: SVGSVGElement,
-  excludeId: string,
+  excludeIdOrIds: string | readonly string[],
   canvasW: number,
   canvasH: number,
 ): { vx: number[]; hy: number[] } {
+  const excludeIds = typeof excludeIdOrIds === 'string' ? [excludeIdOrIds] : [...excludeIdOrIds]
+  const excludeSet = new Set(excludeIds.filter(Boolean))
+  const excludedRoots = excludeIds
+    .map((id) => getGraphicsElementByDomId(rootSvg, id))
+    .filter((n): n is Element => !!n)
+
   const vx = new Set<number>([0, canvasW / 2, canvasW])
   const hy = new Set<number>([0, canvasH / 2, canvasH])
 
@@ -29,7 +41,8 @@ export function buildSnapTargets(
   for (let i = 0; i < all.length; i++) {
     const n = all[i] as SVGGraphicsElement
     const id = n.getAttribute('id')
-    if (!id || id === excludeId) continue
+    if (!id || excludeSet.has(id)) continue
+    if (excludedRoots.some((ex) => ex !== n && ex.contains(n))) continue
     if (typeof n.getBBox !== 'function') continue
     try {
       const b = n.getBBox()

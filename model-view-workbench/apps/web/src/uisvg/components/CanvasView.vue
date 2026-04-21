@@ -23,7 +23,12 @@ import {
   snapThresholdUser,
   type SnapBBox,
 } from '../lib/canvasSnap'
-import { applyTranslateToSVGElement, canMoveSvgElement } from '../lib/svgElementMove'
+import {
+  applyTranslateToSVGElement,
+  canMoveSvgElement,
+  filterRootMostMovableDomIds,
+  isDomIdCoveredByDragRoots,
+} from '../lib/svgElementMove'
 import {
   applyResizeDelta,
   canResizeSvgElement,
@@ -102,6 +107,74 @@ const scale = ref(1)
 /** 像素位移 → SVG 用户单位；与滚轮缩放下限 0.1 对齐，避免 scale 异常时拖拽位移爆炸 */
 function svgUserDeltaFromClient(pxDelta: number): number {
   return pxDelta / Math.max(scale.value, 0.1)
+}
+
+/** 图元 getBBox 异常或吸附算出离谱修正时，跳过吸附，避免「跟鼠标方向对不上」 */
+function isFiniteSnapBBox(b: { x: number; y: number; width: number; height: number }): boolean {
+  if (![b.x, b.y, b.width, b.height].every(Number.isFinite)) return false
+  if (b.width < 0 || b.height < 0) return false
+  return true
+}
+
+function clampSnapCorrectionToCanvas(cx: number, cy: number, cw: number, ch: number): { cx: number; cy: number } {
+  const cap = Math.max(cw, ch, 1) * 3
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return { cx: 0, cy: 0 }
+  if (Math.abs(cx) > cap || Math.abs(cy) > cap) return { cx: 0, cy: 0 }
+  return { cx, cy }
+}
+
+/** 抑制「横向拖却被纵向大吸附」等与最后一帧位移意图垂直的过猛矫正 */
+function gateSnapVersusDragIntent(
+  rawCx: number,
+  rawCy: number,
+  dxUser: number,
+  dyUser: number,
+  th: number,
+): { cx: number; cy: number } {
+  let cx = rawCx
+  let cy = rawCy
+  const cap = Math.max(th * 10, Math.hypot(dxUser, dyUser) * 24 + th * 2)
+  if (Math.abs(cx) > cap) cx = 0
+  if (Math.abs(cy) > cap) cy = 0
+  const gate = th * 5
+  const ax = Math.abs(dxUser)
+  const ay = Math.abs(dyUser)
+  if (ax >= ay * 2 && ay < th * 0.5 && Math.abs(rawCy) > gate) cy = 0
+  if (ay >= ax * 2 && ax < th * 0.5 && Math.abs(rawCx) > gate) cx = 0
+  return { cx, cy }
+}
+
+/** 松手后做一次吸附（拖拽中不再每帧吸附，避免与蓝色选区虚线同时出现时「抢」鼠标） */
+function applySnapAfterObjectDrag(svg: SVGSVGElement, finishedIds: string[]): void {
+  if (!finishedIds.length) return
+  const root = svg
+  const cw = meta.value.width
+  const ch = meta.value.height
+  const primary = finishedIds[0]
+  const { vx, hy } = buildSnapTargets(root, finishedIds, cw, ch)
+  const el = svgElById(root, primary) as SVGElement | null
+  if (!el) return
+  let b: SVGRect
+  try {
+    b = (el as SVGGraphicsElement).getBBox()
+  } catch {
+    return
+  }
+  const box: SnapBBox = { x: b.x, y: b.y, width: b.width, height: b.height }
+  if (!isFiniteSnapBBox(box)) return
+  const th = snapThresholdUser(scale.value)
+  const snapped = snapBoxToTargets(box, vx, hy, th)
+  const rawCx = snapped.x - b.x
+  const rawCy = snapped.y - b.y
+  let { cx, cy } = gateSnapVersusDragIntent(rawCx, rawCy, lastObjectDragDeltaUser.dx, lastObjectDragDeltaUser.dy, th)
+  const clamped = clampSnapCorrectionToCanvas(cx, cy, cw, ch)
+  cx = clamped.cx
+  cy = clamped.cy
+  if (!cx && !cy) return
+  for (const id of finishedIds) {
+    const node = svgElById(root, id) as SVGElement | null
+    if (node) applyTranslateToSVGElement(node, cx, cy)
+  }
 }
 
 const displaySvg = computed(() =>
@@ -276,8 +349,8 @@ let lastClientY = 0
 const resizeDragging = ref(false)
 let resizeHandle: ResizeHandle | null = null
 let resizeDomId: string | null = null
-let snapVx: number[] = []
-let snapHy: number[] = []
+/** 最近一次对象拖拽的 SVG 用户位移，用于松手时单次吸附的门控（避免与鼠标意图脱节） */
+let lastObjectDragDeltaUser = { dx: 0, dy: 0 }
 
 /** 按下时尚未判定为拖拽，超过阈值后才进入 objectDragging */
 let pendingDrag: { domIds: string[]; startX: number; startY: number } | null = null
@@ -858,9 +931,17 @@ watch(
   { immediate: true, flush: 'post', deep: true },
 )
 
+function endObjectDragIfHidden() {
+  if (document.visibilityState !== 'hidden') return
+  /** 切走时松手事件可能丢失，结束拖拽且不做松手吸附，避免归位时乱跳 */
+  if (objectDragging) endObjectDrag(true)
+  else if (pendingDrag) clearPendingDrag()
+}
+
 /** 首次 immediate 可能在挂载前 viewport 尚未就绪；挂载后再量一次 */
 onMounted(() => {
   scheduleRefreshSelection()
+  document.addEventListener('visibilitychange', endObjectDragIfHidden)
   window.addEventListener('scroll', onScrollResizeRefresh, true)
   window.addEventListener('resize', onScrollResizeRefresh)
   nextTick(() => {
@@ -1007,11 +1088,7 @@ function onPendingDragMove(e: MouseEvent) {
   objectDragIds = movable
   lastClientX = startX
   lastClientY = startY
-  const cw = meta.value.width
-  const ch = meta.value.height
-  const t = buildSnapTargets(root, movable[0], cw, ch)
-  snapVx = t.vx
-  snapHy = t.hy
+  lastObjectDragDeltaUser = { dx: 0, dy: 0 }
   guideLines.value = {}
 
   window.addEventListener('mousemove', onObjectMove)
@@ -1023,7 +1100,7 @@ function onPendingDragUp() {
   clearPendingDrag()
 }
 
-function endObjectDrag() {
+function endObjectDrag(skipEndSnap = false) {
   if (!objectDragging) return
   const finishedIds = objectDragIds.slice()
   objectDragging = false
@@ -1033,6 +1110,9 @@ function endObjectDrag() {
   window.removeEventListener('mouseup', onObjectUp)
 
   const svg = rootSvgEl()
+  if (svg && finishedIds.length && !skipEndSnap) {
+    applySnapAfterObjectDrag(svg, finishedIds)
+  }
   if (svg && finishedIds.length === 1) {
     reparentCanvasObjectAfterDrag(svg, finishedIds[0], lastClientX, lastClientY)
   }
@@ -1053,48 +1133,24 @@ function onObjectMove(e: MouseEvent) {
 
   if (!dxUser && !dyUser) return
 
+  lastObjectDragDeltaUser = { dx: dxUser, dy: dyUser }
+
   for (const id of objectDragIds) {
     const el = svgElById(root, id) as SVGElement | null
     if (!el) continue
     applyTranslateToSVGElement(el, dxUser, dyUser)
   }
 
-  const primary = objectDragIds[0]
-  const el = primary ? (svgElById(root, primary) as SVGElement | null) : null
-  if (!el) {
-    guideLines.value = {}
-    return
-  }
-
-  let b: DOMRect
-  try {
-    b = el.getBBox()
-  } catch {
-    guideLines.value = {}
-    return
-  }
-
-  const box: SnapBBox = { x: b.x, y: b.y, width: b.width, height: b.height }
-  const th = snapThresholdUser(scale.value)
-  const snapped = snapBoxToTargets(box, snapVx, snapHy, th)
-  const cx = snapped.x - b.x
-  const cy = snapped.y - b.y
-  if (cx || cy) {
-    for (const id of objectDragIds) {
-      const node = svgElById(root, id) as SVGElement | null
-      if (node) applyTranslateToSVGElement(node, cx, cy)
-    }
-  }
-
-  guideLines.value = snapped.guides.vx !== undefined || snapped.guides.hy !== undefined ? snapped.guides : {}
-
+  /** 吸附改为松手时一次完成；拖拽中不再画参考线，避免与蓝色选区虚线叠在一起时误判 */
+  guideLines.value = {}
   scheduleRefreshSelection()
 }
 
 function onObjectUp(e: MouseEvent) {
   lastClientX = e.clientX
   lastClientY = e.clientY
-  endObjectDrag()
+  /** 松手时按住 Alt：不做对齐吸附（与常见设计软件一致） */
+  endObjectDrag(e.altKey)
 }
 
 function tryBeginObjectDrag(e: MouseEvent, pickedDomId: string | null, logicalIds: string[]): boolean {
@@ -1108,9 +1164,10 @@ function tryBeginObjectDrag(e: MouseEvent, pickedDomId: string | null, logicalId
     const node = svgElById(root, rid) as SVGElement | null
     if (node && canMoveSvgElement(node)) dragIds.push(rid)
   }
-  if (!dragIds.includes(pickedDomId) || !dragIds.length) return false
+  const dragRoots = filterRootMostMovableDomIds(root, dragIds)
+  if (!dragRoots.length || !isDomIdCoveredByDragRoots(root, pickedDomId, dragRoots)) return false
 
-  pendingDrag = { domIds: dragIds, startX: e.clientX, startY: e.clientY }
+  pendingDrag = { domIds: dragRoots, startX: e.clientX, startY: e.clientY }
   window.addEventListener('mousemove', onPendingDragMove)
   window.addEventListener('mouseup', onPendingDragUp)
   return true
@@ -1451,6 +1508,7 @@ function frameOutlineIdInView(outlineOrDomId: string) {
 }
 
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', endObjectDragIfHidden)
   clearPendingDrag()
   window.removeEventListener('mousemove', onWindowMarqueeMove)
   window.removeEventListener('mousemove', onObjectMove)
@@ -2062,11 +2120,12 @@ defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect })
 }
 
 .canvas-interaction-overlay .guide-line {
-  stroke: #e81123;
+  /* 与选中框同系蓝色，避免误当成「报错红」；仍为虚线便于与内容区分 */
+  stroke: #0078d4;
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
   stroke-dasharray: 4 4;
-  opacity: 0.95;
+  opacity: 0.85;
   pointer-events: none;
 }
 </style>
