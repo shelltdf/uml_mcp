@@ -56,6 +56,31 @@ export function applyTranslateToSVGElement(el: SVGElement, dx: number, dy: numbe
 
 function mergeTranslateOnGroup(el: SVGElement, dx: number, dy: number): void {
   const t = (el.getAttribute('transform') || '').trim()
+
+  /**
+   * 仅含一个或多个 translate（常见对象根 g）：合并为单个 translate，
+   * 避免链式 `translate(a b) translate(c d)` 只更新第一段导致数值与几何不一致、拖拽「狂飙」。
+   */
+  const translateOnly = /^(\s*translate\s*\([^)]*\)\s*)+$/i.test(t)
+  if (translateOnly) {
+    const translateRe = /translate\s*\(\s*([^)]+)\s*\)/gi
+    let sx = 0
+    let sy = 0
+    let m: RegExpExecArray | null
+    while ((m = translateRe.exec(t))) {
+      const parts = m[1]
+        .trim()
+        .split(/[\s,]+/)
+        .filter(Boolean)
+      sx += parseFloat(parts[0] || '0') || 0
+      sy += parseFloat(parts[1] || '0') || 0
+    }
+    sx += dx
+    sy += dy
+    el.setAttribute('transform', `translate(${sx} ${sy})`)
+    return
+  }
+
   const re = /translate\s*\(\s*([-\d.]+)\s*[, ]\s*([-\d.]+)\s*\)/
   const m = t.match(re)
   if (m) {

@@ -99,6 +99,11 @@ const panX = ref(0)
 const panY = ref(0)
 const scale = ref(1)
 
+/** 像素位移 → SVG 用户单位；与滚轮缩放下限 0.1 对齐，避免 scale 异常时拖拽位移爆炸 */
+function svgUserDeltaFromClient(pxDelta: number): number {
+  return pxDelta / Math.max(scale.value, 0.1)
+}
+
 const displaySvg = computed(() =>
   uisvgMarkupSafeForHtmlEmbedding(props.svgMarkup.replace(/<\?xml[^?]*\?>\s*/gi, '').trim()),
 )
@@ -920,8 +925,8 @@ function onResizeMove(e: MouseEvent) {
     endResizeDrag()
     return
   }
-  const dxUser = (e.clientX - lastClientX) / scale.value
-  const dyUser = (e.clientY - lastClientY) / scale.value
+  const dxUser = svgUserDeltaFromClient(e.clientX - lastClientX)
+  const dyUser = svgUserDeltaFromClient(e.clientY - lastClientY)
   lastClientX = e.clientX
   lastClientY = e.clientY
   if (!dxUser && !dyUser) return
@@ -1041,8 +1046,8 @@ function onObjectMove(e: MouseEvent) {
   const root = rootSvgEl()
   if (!root) return
 
-  const dxUser = (e.clientX - lastClientX) / scale.value
-  const dyUser = (e.clientY - lastClientY) / scale.value
+  const dxUser = svgUserDeltaFromClient(e.clientX - lastClientX)
+  const dyUser = svgUserDeltaFromClient(e.clientY - lastClientY)
   lastClientX = e.clientX
   lastClientY = e.clientY
 

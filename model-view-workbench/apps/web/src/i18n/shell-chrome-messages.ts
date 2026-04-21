@@ -467,10 +467,10 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     modelRefsPickerOpenFileButton: '打开文件',
     modelRefsPickerClearPathButton: '清空',
     modelRefsPickerBindListHintSingle: '勾选要绑定的模型（单选）；未出现在上表的引用列于下方。',
-    modelRefsPickerTabBind: '绑定模型',
+    modelRefsPickerTabBind: '通用设置',
     modelRefsPickerBindNoSvgCanvas:
       '在此绑定模型引用；编辑 SVG 请切换到「画布」标签。',
-    modelRefsPickerCanvasTab: '画布',
+    modelRefsPickerCanvasTab: '设计区',
     modelRefsPickerTabOrphans: '未上表引用',
     modelRefsPickerOrphansHint: '其它已保存引用（未出现在上表）：',
     modelRefsPickerTablistAria: '模型引用分区',
@@ -696,10 +696,10 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     modelRefsPickerClearPathButton: 'Clear',
     modelRefsPickerBindListHintSingle:
       'Pick one model to bind (single selection). Off-table refs are listed below.',
-    modelRefsPickerTabBind: 'Bind models',
+    modelRefsPickerTabBind: 'General settings',
     modelRefsPickerBindNoSvgCanvas:
       'Bind model refs here. Switch to the Canvas tab to edit SVG.',
-    modelRefsPickerCanvasTab: 'Canvas',
+    modelRefsPickerCanvasTab: 'Design area',
     modelRefsPickerTabOrphans: 'Not in table',
     modelRefsPickerOrphansHint: 'Other saved refs (not listed above):',
     modelRefsPickerTablistAria: 'Model references sections',
