@@ -10,6 +10,7 @@ import type {
   MvViewPayload,
 } from '@mvwb/core';
 import type { AppLocale } from './app-locale';
+import { isZhDefaultModelBlockTitle } from './model-block-insert-defaults';
 
 function countCodespaceNamespaceNodes(nodes: MvCodespaceNamespaceNode[] | undefined): number {
   if (!nodes?.length) return 0;
@@ -35,19 +36,28 @@ export function fenceBlockSubtypeLabel(b: ParsedFenceBlock, locale: AppLocale): 
   const en = locale === 'en';
   if (b.kind === 'mv-model-sql') {
     const p = b.payload as MvModelSqlPayload;
-    const t = p.title?.trim();
+    const t = p.title?.trim() ?? '';
     const ids = p.tables.map((x) => x.id).join(', ');
-    return t || (en ? `SQL · ${p.tables.length} table(s) (${ids})` : `SQL · ${p.tables.length} 表 (${ids})`);
+    const fallback = en ? `SQL · ${p.tables.length} table(s) (${ids})` : `SQL · ${p.tables.length} 表 (${ids})`;
+    if (!t) return fallback;
+    if (en && isZhDefaultModelBlockTitle(b.kind, t)) return fallback;
+    return t;
   }
   if (b.kind === 'mv-model-kv') {
     const p = b.payload as MvModelKvPayload;
-    const t = p.title?.trim();
-    return t || (en ? `KV · ${p.documents.length} doc(s)` : `KV · ${p.documents.length} 条`);
+    const t = p.title?.trim() ?? '';
+    const fallback = en ? `KV · ${p.documents.length} doc(s)` : `KV · ${p.documents.length} 条`;
+    if (!t) return fallback;
+    if (en && isZhDefaultModelBlockTitle(b.kind, t)) return fallback;
+    return t;
   }
   if (b.kind === 'mv-model-struct') {
     const p = b.payload as MvModelStructPayload;
-    const t = p.title?.trim();
-    return t || `Struct · ${p.root.name}`;
+    const t = p.title?.trim() ?? '';
+    const fallback = `Struct · ${p.root.name}`;
+    if (!t) return fallback;
+    if (en && isZhDefaultModelBlockTitle(b.kind, t)) return fallback;
+    return t;
   }
   if (b.kind === 'mv-model-codespace') {
     const p = b.payload as MvModelCodespacePayload;
@@ -71,9 +81,12 @@ export function fenceBlockSubtypeLabel(b: ParsedFenceBlock, locale: AppLocale): 
   }
   if (b.kind === 'mv-model-interface') {
     const p = b.payload as MvModelInterfacePayload;
-    const t = p.title?.trim();
+    const t = p.title?.trim() ?? '';
     const n = p.endpoints?.length ?? 0;
-    return t || (en ? `API · ${n} endpoint(s)` : `接口 · ${n} 端点`);
+    const fallback = en ? `API · ${n} endpoint(s)` : `接口 · ${n} 端点`;
+    if (!t) return fallback;
+    if (en && isZhDefaultModelBlockTitle(b.kind, t)) return fallback;
+    return t;
   }
   if (b.kind === 'mv-view') {
     return (b.payload as MvViewPayload).kind;

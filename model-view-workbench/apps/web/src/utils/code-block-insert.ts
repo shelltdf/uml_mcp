@@ -1,6 +1,13 @@
 import type { MvModelSqlPayload, MvViewKind, MvViewPayload } from '@mvwb/core';
 import { MV_UML_KIND_DIAGRAM_TYPE, isMermaidViewKind, parseMarkdownBlocks, resolveRefPath } from '@mvwb/core';
 import type { AppLocale } from '../i18n/app-locale';
+import {
+  defaultInterfaceModelGroupTitle,
+  defaultKvModelGroupTitle,
+  defaultSqlModelGroupTitle,
+  defaultSqlPrimaryTableTitle,
+  defaultStructModelGroupTitle,
+} from '../i18n/model-block-insert-defaults';
 import { mvViewKindDefaultBlockTitle, mvViewKindStrings } from '../i18n/mv-view-kind-locale';
 
 /** 可通过「插入代码块」对话框插入的围栏类型（各 mv-model* 或各 mv-view kind） */
@@ -56,15 +63,16 @@ export function inferDefaultModelRefs(ctx: InsertFenceContext): string[] {
 
 /** 在光标处插入的围栏 Markdown（前后各留空行，便于解析） */
 export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: InsertFenceContext): string {
+  const loc = ctx.locale ?? 'zh';
   if (kind === 'mv-model-sql') {
     const id = newBlockId('sql');
     const body = {
       id,
-      title: '新 SQL Model 组',
+      title: defaultSqlModelGroupTitle(loc),
       tables: [
         {
           id: 'main',
-          title: '主表',
+          title: defaultSqlPrimaryTableTitle(loc),
           columns: [{ name: 'id', type: 'string', primaryKey: true, nullable: false }],
           rows: [{ id: '1' }],
         },
@@ -76,7 +84,7 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     const id = newBlockId('kv');
     const body = {
       id,
-      title: '新 KV 文档集',
+      title: defaultKvModelGroupTitle(loc),
       documents: [{ _id: '1', note: '示例文档，键可自由增删' }],
     };
     return `\n\n\`\`\`mv-model-kv\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
@@ -85,7 +93,7 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     const id = newBlockId('st');
     const body = {
       id,
-      title: '新层次结构',
+      title: defaultStructModelGroupTitle(loc),
       root: {
         name: '/',
         attributes: { format: 'mv-model-struct v1' },
@@ -138,7 +146,7 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     const id = newBlockId('if');
     const body = {
       id,
-      title: '新接口模型',
+      title: defaultInterfaceModelGroupTitle(loc),
       endpoints: [
         {
           id: 'health',
@@ -159,7 +167,6 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     return `\n\n\`\`\`mv-model-interface\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
   }
   const id = newBlockId('v');
-  const loc = ctx.locale ?? 'zh';
   const meta = mvViewKindStrings(kind, loc);
   const ph = meta.payloadPlaceholder;
   const skipPayload = ph.startsWith('（');

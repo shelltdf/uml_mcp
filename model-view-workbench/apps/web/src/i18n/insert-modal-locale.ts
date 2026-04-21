@@ -1,4 +1,5 @@
 import {
+  MV_MAP_CANVAS_TITLE,
   MV_MODEL_INTERFACE_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
   MV_MODEL_SQL_CANVAS_TITLE,
@@ -122,6 +123,22 @@ export function insertCardDesc(kind: InsertCodeBlockKind, locale: AppLocale): st
       : `${base} 插入后在 mv-view 围栏之后附带标准 mermaid 围栏镜像段，正文与 JSON 内 payload 一致，便于 GitHub 等仅识别 Mermaid 的编辑器出图。`;
   }
   return base;
+}
+
+/**
+ * 代码块画布顶栏 `<strong>` 文案：随 `locale` 切换；围栏语言名由旁侧 `<code>{{ block.kind }}</code>` 单独展示。
+ */
+export function blockCanvasSurfaceTitle(
+  kind: 'mv-model-sql' | 'mv-model-kv' | 'mv-model-struct' | 'mv-model-interface' | 'mv-map',
+  locale: AppLocale,
+): string {
+  const en = locale === 'en';
+  if (kind === 'mv-model-sql') return en ? 'Model · multi-table' : MV_MODEL_SQL_CANVAS_TITLE;
+  if (kind === 'mv-model-kv') return en ? 'KV document collection' : MV_MODEL_KV_CANVAS_TITLE;
+  if (kind === 'mv-model-struct') return en ? 'Structured hierarchy' : MV_MODEL_STRUCT_CANVAS_TITLE;
+  if (kind === 'mv-model-interface') return en ? 'Interface diagram (sketch)' : MV_MODEL_INTERFACE_CANVAS_TITLE;
+  if (kind === 'mv-map') return en ? 'Mapping rules' : MV_MAP_CANVAS_TITLE;
+  return '';
 }
 
 export function getInsertGroups(

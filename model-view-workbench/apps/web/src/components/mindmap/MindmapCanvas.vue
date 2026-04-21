@@ -5,6 +5,8 @@ import { layoutMindmap } from './core/layout';
 import { parseMindmapPayloadText, serializeMindmapPayload } from './core/adapter';
 import type { MindmapGraphState, MindmapNodeData } from './core/types';
 import type { CodespaceDockContextPayload } from '../../utils/codespace-dock-context';
+import { useAppLocale } from '../../composables/useAppLocale';
+import { mindmapCanvasMessagesFor } from '../../i18n/mindmap-canvas-messages';
 
 export interface MindmapDockState {
   selectedId: string | null;
@@ -87,6 +89,37 @@ const editingNodeLayout = computed(() => (editNodeId.value ? byId.value.get(edit
 const zoomPercent = computed(() => `${Math.round(state.scale * 100)}%`);
 const viewportW = ref(1);
 const viewportH = ref(1);
+
+const { locale } = useAppLocale();
+const mmcUi = computed(() => mindmapCanvasMessagesFor(locale.value));
+const MMC_BAR_H = 21;
+const mmcToolbarLayout = computed(() => {
+  const isZh = locale.value === 'zh';
+  const gap = 2;
+  const w = {
+    fit: isZh ? 30 : 26,
+    origin: isZh ? 30 : 32,
+    reset: isZh ? 30 : 34,
+    zbtn: 20,
+    pct: 36,
+  };
+  let x = 0;
+  const bump = (wi: number) => {
+    const o = x;
+    x += wi + gap;
+    return o;
+  };
+  return {
+    gap,
+    h: MMC_BAR_H,
+    fit: { x: bump(w.fit), w: w.fit },
+    origin: { x: bump(w.origin), w: w.origin },
+    reset: { x: bump(w.reset), w: w.reset },
+    minus: { x: bump(w.zbtn), w: w.zbtn },
+    pct: { x: bump(w.pct), w: w.pct },
+    plus: { x: bump(w.zbtn), w: w.zbtn },
+  };
+});
 
 function viewportRect(): DOMRect {
   return viewportRef.value?.getBoundingClientRect() ?? new DOMRect(0, 0, 1, 1);
@@ -178,16 +211,21 @@ function revealPrimarySelectionIfClipped(): void {
 }
 
 function emitDockContext(): void {
+  const t = mmcUi.value;
   const first = firstSelectedNode();
-  const summary = first ? `Mindmap node: ${first.label}` : selectedIds.value.length > 1 ? `Mindmap selection (${selectedIds.value.length})` : 'Mindmap';
+  const summary = first
+    ? t.dockSummaryNode(first.label)
+    : selectedIds.value.length > 1
+      ? t.dockSummaryMulti(selectedIds.value.length)
+      : t.dockSummaryEmpty;
   const lines = first
     ? [
-        { label: 'id', value: first.id },
-        { label: 'label', value: first.label },
-        { label: 'parentId', value: first.parentId ?? '(root)' },
-        { label: 'children', value: String(state.nodes.filter((n) => n.parentId === first.id).length) },
+        { label: t.dockLineId, value: first.id },
+        { label: t.dockLineLabel, value: first.label },
+        { label: t.dockLineParent, value: first.parentId ?? t.dockRootLabel },
+        { label: t.dockLineChildren, value: String(state.nodes.filter((n) => n.parentId === first.id).length) },
       ]
-    : [{ label: 'nodes', value: String(state.nodes.length) }];
+    : [{ label: t.dockLineNodes, value: String(state.nodes.length) }];
   emit('dockContext', { summary, lines });
   emit('dockState', {
     selectedId: first?.id ?? null,
@@ -229,10 +267,10 @@ function loadPayload(text: string): void {
 }
 watch(() => props.modelValue, (v) => { if (v !== lastSynced.value) loadPayload(v ?? ''); }, { immediate: true });
 
-function createNode(parentId: string | null, label = 'New node'): string {
+function createNode(parentId: string | null, label?: string): string {
   const id = `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   const order = state.nodes.filter((n) => n.parentId === parentId).length;
-  state.nodes.push({ id, label, parentId, order });
+  state.nodes.push({ id, label: label ?? mmcUi.value.newNode, parentId, order });
   normalizeSiblingOrder(parentId);
   return id;
 }
@@ -262,7 +300,7 @@ function confirmInlineEdit(): void {
   const id = editNodeId.value;
   if (!id) return;
   const n = state.nodes.find((x) => x.id === id);
-  if (n) n.label = (editText.value || '').trim() || 'Untitled';
+  if (n) n.label = (editText.value || '').trim() || mmcUi.value.untitled;
   editNodeId.value = null;
   clearImeSeed();
   pushPayload();
@@ -306,7 +344,7 @@ function deleteSelected(): void {
   pushPayload();
 }
 function addChild(parentId: string | null): void {
-  const id = createNode(parentId, 'New child');
+  const id = createNode(parentId, mmcUi.value.newChild);
   selectedIds.value = [id];
   pushPayload();
 }
@@ -322,7 +360,7 @@ function addSibling(sourceId: string | null): void {
     insertIdx = si >= 0 ? si + 1 : sorted.length;
   }
   const id = `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-  state.nodes.push({ id, label: 'New sibling', parentId, order: 0 });
+  state.nodes.push({ id, label: mmcUi.value.newSibling, parentId, order: 0 });
   const ids = sorted.map((n) => n.id);
   ids.splice(insertIdx, 0, id);
   ids.forEach((nid, idx) => {
@@ -802,7 +840,7 @@ watch(
     if (!cmd || cmd.id <= lastCommandId.value) return;
     lastCommandId.value = cmd.id;
     const first = firstSelectedNode();
-    if (cmd.action === 'set-label' && first) { first.label = (cmd.payload ?? '').trim() || 'Untitled'; return pushPayload(); }
+    if (cmd.action === 'set-label' && first) { first.label = (cmd.payload ?? '').trim() || mmcUi.value.untitled; return pushPayload(); }
     if (cmd.action === 'set-note' && first) { first.note = (cmd.payload ?? '').trim() || undefined; return pushPayload(); }
     if (cmd.action === 'set-icon' && first) { first.icon = (cmd.payload ?? '').trim() || undefined; return pushPayload(); }
     if (cmd.action === 'set-text-color' && first) { first.textColor = (cmd.payload ?? '').trim() || undefined; return pushPayload(); }
@@ -895,46 +933,50 @@ onMounted(() => {
             :stroke="hoverDropTargetId === n.id ? '#16a34a' : selectedIds.includes(n.id) ? '#2563eb' : (n.borderColor || '#94a3b8')"
             :stroke-width="selectedIds.includes(n.id) ? Math.max(2.5, n.borderWidth || 1.4) : (n.borderWidth || 1.4)"
           />
-          <text x="12" y="25" :fill="n.textColor || (state.theme === 'night' ? '#f8fafc' : '#0f172a')" :font-size="n.fontSize || 13" class="mmc-node-label">
+          <text x="12" y="24" :fill="n.textColor || (state.theme === 'night' ? '#f8fafc' : '#0f172a')" :font-size="n.fontSize || 12" class="mmc-node-label">
             {{ n.icon ? `${n.icon} ` : '' }}{{ n.label }}
           </text>
         </g>
         <rect v-if="marqueeRect" :x="marqueeRect.x" :y="marqueeRect.y" :width="marqueeRect.w" :height="marqueeRect.h" fill="rgba(37,99,235,0.12)" stroke="#2563eb" stroke-dasharray="4 3" />
       </g>
-      <g class="mmc-ui" :transform="`translate(10, ${Math.max(10, viewportH - 34)})`">
-        <g class="mmc-tool-btn" transform="translate(0,0)" @click="fitView">
-          <rect width="35" height="25" rx="6" />
-          <text x="17.5" y="16" text-anchor="middle">Fit</text>
+      <g class="mmc-ui mmc-toolbar" :transform="`translate(6, ${Math.max(4, viewportH - MMC_BAR_H - 6)})`">
+        <g class="mmc-tool-btn" :transform="`translate(${mmcToolbarLayout.fit.x},0)`" @click="fitView">
+          <title>{{ mmcUi.toolFit }}</title>
+          <rect :width="mmcToolbarLayout.fit.w" :height="MMC_BAR_H" rx="4" />
+          <text class="mmc-toolbar-text" :x="mmcToolbarLayout.fit.w / 2" y="14" text-anchor="middle">{{ mmcUi.toolFit }}</text>
         </g>
-        <g class="mmc-tool-btn" transform="translate(41,0)" @click="originView">
-          <rect width="56" height="25" rx="6" />
-          <text x="28" y="16" text-anchor="middle">Origin</text>
+        <g class="mmc-tool-btn" :transform="`translate(${mmcToolbarLayout.origin.x},0)`" @click="originView">
+          <title>{{ mmcUi.toolOrigin }}</title>
+          <rect :width="mmcToolbarLayout.origin.w" :height="MMC_BAR_H" rx="4" />
+          <text class="mmc-toolbar-text" :x="mmcToolbarLayout.origin.w / 2" y="14" text-anchor="middle">{{ mmcUi.toolOrigin }}</text>
         </g>
-        <g class="mmc-tool-btn" transform="translate(103,0)" @click="resetZoom">
-          <rect width="55" height="25" rx="6" />
-          <text x="27.5" y="16" text-anchor="middle">Reset</text>
+        <g class="mmc-tool-btn" :transform="`translate(${mmcToolbarLayout.reset.x},0)`" @click="resetZoom">
+          <title>{{ mmcUi.toolReset }}</title>
+          <rect :width="mmcToolbarLayout.reset.w" :height="MMC_BAR_H" rx="4" />
+          <text class="mmc-toolbar-text" :x="mmcToolbarLayout.reset.w / 2" y="14" text-anchor="middle">{{ mmcUi.toolReset }}</text>
         </g>
-        <g class="mmc-tool-btn" transform="translate(164,0)" @click="zoomByStep(-0.1)">
-          <rect width="24" height="25" rx="6" />
-          <text x="12" y="16" text-anchor="middle">-</text>
+        <g class="mmc-tool-btn" :transform="`translate(${mmcToolbarLayout.minus.x},0)`" @click="zoomByStep(-0.1)">
+          <rect :width="mmcToolbarLayout.minus.w" :height="MMC_BAR_H" rx="4" />
+          <text class="mmc-toolbar-text" :x="mmcToolbarLayout.minus.w / 2" y="14" text-anchor="middle">−</text>
         </g>
-        <g class="mmc-tool-btn" transform="translate(194,0)" @dblclick="resetZoom">
-          <rect width="53" height="25" rx="6" />
-          <text x="26.5" y="16" text-anchor="middle">{{ zoomPercent }}</text>
+        <g class="mmc-tool-btn" :transform="`translate(${mmcToolbarLayout.pct.x},0)`" @dblclick="resetZoom">
+          <title>{{ mmcUi.toolReset }}</title>
+          <rect :width="mmcToolbarLayout.pct.w" :height="MMC_BAR_H" rx="4" />
+          <text class="mmc-toolbar-text" :x="mmcToolbarLayout.pct.w / 2" y="14" text-anchor="middle">{{ zoomPercent }}</text>
         </g>
-        <g class="mmc-tool-btn" transform="translate(253,0)" @click="zoomByStep(0.1)">
-          <rect width="28" height="25" rx="6" />
-          <text x="14" y="16" text-anchor="middle">+</text>
+        <g class="mmc-tool-btn" :transform="`translate(${mmcToolbarLayout.plus.x},0)`" @click="zoomByStep(0.1)">
+          <rect :width="mmcToolbarLayout.plus.w" :height="MMC_BAR_H" rx="4" />
+          <text class="mmc-toolbar-text" :x="mmcToolbarLayout.plus.w / 2" y="14" text-anchor="middle">+</text>
         </g>
       </g>
-      <g class="mmc-ui mmc-ui-tr" :transform="`translate(${Math.max(8, viewportW - 8 - 36)}, 8)`">
+      <g class="mmc-ui mmc-ui-tr" :transform="`translate(${Math.max(6, viewportW - 6 - 32)}, 6)`">
         <g class="mmc-tool-btn mmc-tool-btn--fs" @click.stop="toggleCanvasFullscreen">
-          <title>{{ isCanvasFullscreen ? '退出全屏' : '画布全屏' }}</title>
-          <rect width="36" height="26" rx="6" />
+          <title>{{ isCanvasFullscreen ? mmcUi.toolExitFullscreen : mmcUi.toolFullscreen }}</title>
+          <rect width="32" :height="MMC_BAR_H" rx="4" />
           <g
             v-if="!isCanvasFullscreen"
             class="mmc-fs-icon"
-            transform="translate(6,1)"
+            transform="translate(4,-1) scale(0.92)"
             fill="none"
             stroke="currentColor"
             stroke-width="2"
@@ -953,7 +995,7 @@ onMounted(() => {
           <g
             v-else
             class="mmc-fs-icon"
-            transform="translate(6,1)"
+            transform="translate(4,-1) scale(0.92)"
             fill="none"
             stroke="currentColor"
             stroke-width="2"
@@ -985,41 +1027,76 @@ onMounted(() => {
       @blur="editNodeId ? confirmInlineEdit() : undefined"
     />
     <div v-if="ctx.open" class="mmc-ctx" :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }" @pointerdown.stop @contextmenu.prevent>
-      <button type="button" @click="addChildFromContext">Add child</button>
-      <button type="button" @click="addSiblingFromContext">Add sibling</button>
-      <button type="button" :disabled="!(ctx.nodeId || selectedIds[0])" @click="editFromContext">Rename</button>
-      <button type="button" :disabled="!(ctx.nodeId || selectedIds[0])" @click="toggleCollapseSelected">Collapse/Expand</button>
-      <button type="button" :disabled="!(ctx.nodeId || selectedIds[0])" @click="deleteFromContext">Delete</button>
-      <button type="button" @click="fitView(); ctx.open = false">Fit view</button>
+      <button type="button" @click="addChildFromContext">{{ mmcUi.ctxAddChild }}</button>
+      <button type="button" @click="addSiblingFromContext">{{ mmcUi.ctxAddSibling }}</button>
+      <button type="button" :disabled="!(ctx.nodeId || selectedIds[0])" @click="editFromContext">{{ mmcUi.ctxRename }}</button>
+      <button type="button" :disabled="!(ctx.nodeId || selectedIds[0])" @click="toggleCollapseSelected">{{ mmcUi.ctxToggleCollapse }}</button>
+      <button type="button" :disabled="!(ctx.nodeId || selectedIds[0])" @click="deleteFromContext">{{ mmcUi.ctxDelete }}</button>
+      <button type="button" @click="fitView(); ctx.open = false">{{ mmcUi.ctxFitView }}</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.mmc { position: relative; flex: 1; min-height: 0; background: #f8fafc; overflow: hidden; cursor: default; }
+.mmc {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: default;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-size: 12px;
+  color: #0f172a;
+  background: linear-gradient(180deg, #f1f5f9 0%, #f8fafc 32%, #f8fafc 100%);
+  border-radius: 6px;
+}
 .mmc:fullscreen {
   width: 100%;
   height: 100%;
+  border-radius: 0;
   background: #f8fafc;
 }
-.mmc-svg { width: 100%; height: 100%; display: block; }
+.mmc-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  font-family: inherit;
+}
 .mmc-node-label { user-select: none; pointer-events: none; }
 .mmc-ui { pointer-events: auto; }
+.mmc-toolbar { user-select: none; }
 .mmc-tool-btn { cursor: pointer; }
-.mmc-tool-btn rect { fill: #fff; stroke: #cbd5e1; stroke-width: 1; }
-.mmc-tool-btn text { fill: #334155; font-size: 12px; font-weight: 600; user-select: none; pointer-events: none; }
-.mmc-tool-btn:hover rect { fill: #eff6ff; stroke: #93c5fd; }
+.mmc-tool-btn rect {
+  fill: #fff;
+  stroke: #cbd5e1;
+  stroke-width: 1;
+}
+.mmc-toolbar-text {
+  fill: #334155;
+  font-size: 10px;
+  font-weight: 600;
+  user-select: none;
+  pointer-events: none;
+}
+.mmc-tool-btn:hover rect {
+  fill: #eff6ff;
+  stroke: #93c5fd;
+}
 .mmc-tool-btn--fs .mmc-fs-icon { color: #334155; pointer-events: none; }
 .mmc-tool-btn--fs:hover .mmc-fs-icon { color: #2563eb; }
 .mmc-editor-overlay {
   position: absolute;
   z-index: 12;
+  box-sizing: border-box;
   border: 1px solid #2563eb;
-  border-radius: 6px;
-  padding: 4px 6px;
+  border-radius: 5px;
+  padding: 3px 6px;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.35;
   background: #fff;
+  color: #0f172a;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
 }
 .mmc-editor-overlay--hidden {
   left: -10000px !important;
@@ -1029,8 +1106,33 @@ onMounted(() => {
   opacity: 0;
   pointer-events: none;
 }
-.mmc-ctx { position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 132px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18); padding: 4px; }
-.mmc-ctx button { text-align: left; background: transparent; border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer; }
-.mmc-ctx button:hover:not(:disabled) { background: #eff6ff; }
+.mmc-ctx {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 128px;
+  padding: 3px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+  font-size: 12px;
+  line-height: 1.3;
+}
+.mmc-ctx button {
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 5px 8px;
+  margin: 0;
+  cursor: pointer;
+  color: #1e293b;
+  font: inherit;
+  font-size: 12px;
+}
+.mmc-ctx button:hover:not(:disabled) { background: #eff6ff; color: #1d4ed8; }
 .mmc-ctx button:disabled { color: #94a3b8; cursor: not-allowed; }
 </style>

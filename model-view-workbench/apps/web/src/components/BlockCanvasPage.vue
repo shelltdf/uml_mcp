@@ -9,11 +9,6 @@ import MindmapCanvas from './mindmap/MindmapCanvas.vue';
 import type { MindmapDockCommand, MindmapDockState } from './mindmap/MindmapCanvas.vue';
 import {
   MV_UML_KIND_DIAGRAM_TYPE,
-  MV_MAP_CANVAS_TITLE,
-  MV_MODEL_INTERFACE_CANVAS_TITLE,
-  MV_MODEL_KV_CANVAS_TITLE,
-  MV_MODEL_SQL_CANVAS_TITLE,
-  MV_MODEL_STRUCT_CANVAS_TITLE,
   parseViewPayloadClassDiagram,
   isMermaidViewKind,
   isUmlViewKind,
@@ -33,7 +28,15 @@ import {
 } from '@mvwb/core';
 import { useAppLocale } from '../composables/useAppLocale';
 import { CS_CANVAS_MSG_KEY, codespaceCanvasMessages } from '../i18n/codespace-canvas-messages';
+import { blockCanvasSurfaceTitle } from '../i18n/insert-modal-locale';
 import { mvViewKindStrings } from '../i18n/mv-view-kind-locale';
+import { kvModelCanvasMessagesFor } from '../i18n/kv-model-canvas-messages';
+import {
+  buildColumnDataHeaderTooltip,
+  sqlModelCanvasMessagesFor,
+} from '../i18n/sql-model-canvas-messages';
+import { interfaceModelCanvasMessagesFor } from '../i18n/interface-model-canvas-messages';
+import { structModelCanvasMessagesFor } from '../i18n/struct-model-canvas-messages';
 import type { CodespaceDockContextPayload } from '../utils/codespace-dock-context';
 import {
   findCodespaceClassifierForClassCanvas,
@@ -53,35 +56,12 @@ const { locale, ui } = useAppLocale();
 const csCanvasMsgForBlock = computed(() => codespaceCanvasMessages[locale.value]);
 provide(CS_CANVAS_MSG_KEY, csCanvasMsgForBlock);
 
+const sqlUi = computed(() => sqlModelCanvasMessagesFor(locale.value));
+const kvUi = computed(() => kvModelCanvasMessagesFor(locale.value));
+const structUi = computed(() => structModelCanvasMessagesFor(locale.value));
+const interfaceUi = computed(() => interfaceModelCanvasMessagesFor(locale.value));
+
 const MODEL_COL_TYPES = ['string', 'int', 'float', 'boolean', 'json'] as const;
-
-/** 表设计列「可空」：列表头与勾选框共用 */
-const TOOLTIP_SCHEMA_NULLABLE =
-  '可空（NULLABLE）：该列在每一行 JSON 中可以不出现键，表示「未填」；数据区把单元格清空也会移除该键。取消可空后，每行必须包含此键，保存前会为缺键行自动补「默认值」或空串。解析会拒绝「必填列却缺键」的行。此为模式设计，不等同于单元格内 SQL NULL 字面量。无全局快捷键。';
-
-/** 表设计列「主键」 */
-const TOOLTIP_SCHEMA_PK =
-  '主键（PRIMARY KEY，PK）：勾选表示该列属于表的主键；多列同时勾选表示联合主键。标记会写入 mv-model-sql JSON，便于与 SQL 表设计对齐。当前工作台不会在保存时校验主键唯一、非空或自增。无全局快捷键。';
-
-/** 表设计列「唯一」 */
-const TOOLTIP_SCHEMA_UQ =
-  '唯一（UNIQUE，UQ）：勾选表示业务上希望该列在整张表内取值不重复（类似 SQL UNIQUE）。标记会写入 JSON；当前不会自动扫描全部行做重复校验，若需真唯一请在业务或后续校验中实现。无全局快捷键。';
-
-function columnDataHeaderTooltip(c: MvModelColumnDef): string {
-  const parts: string[] = [];
-  parts.push(`列「${c.name}」：数据区表头。`);
-  if (c.comment?.trim()) parts.push(`列注释：${c.comment.trim()}`);
-  parts.push(
-    c.nullable === true
-      ? '角标「null」= 可空：行 JSON 可省略该键；清空单元格会不写键。'
-      : '本列不可空：每行须有该键；缺省由默认值或空串补齐。',
-  );
-  if (c.primaryKey === true) parts.push('角标「PK」= 已标主键（设计语义，多列即联合主键）。');
-  if (c.unique === true) parts.push('角标「UQ」= 已标唯一（设计语义，当前不自动查重）。');
-  if (c.type) parts.push(`逻辑类型：${c.type}。`);
-  parts.push('无全局快捷键。');
-  return parts.join(' ');
-}
 
 const props = withDefaults(
   defineProps<{
@@ -228,12 +208,12 @@ watch(subtableDeleteOpen, async (open) => {
 const canvasSurfaceTitle = computed(() => {
   const b = block.value;
   if (!b) return '';
-  if (b.kind === 'mv-model-sql') return MV_MODEL_SQL_CANVAS_TITLE;
-  if (b.kind === 'mv-model-kv') return MV_MODEL_KV_CANVAS_TITLE;
-  if (b.kind === 'mv-model-struct') return MV_MODEL_STRUCT_CANVAS_TITLE;
+  if (b.kind === 'mv-model-sql') return blockCanvasSurfaceTitle('mv-model-sql', locale.value);
+  if (b.kind === 'mv-model-kv') return blockCanvasSurfaceTitle('mv-model-kv', locale.value);
+  if (b.kind === 'mv-model-struct') return blockCanvasSurfaceTitle('mv-model-struct', locale.value);
   if (b.kind === 'mv-model-codespace') return ui.value.canvasTitleMvModelCodespace;
-  if (b.kind === 'mv-model-interface') return MV_MODEL_INTERFACE_CANVAS_TITLE;
-  if (b.kind === 'mv-map') return MV_MAP_CANVAS_TITLE;
+  if (b.kind === 'mv-model-interface') return blockCanvasSurfaceTitle('mv-model-interface', locale.value);
+  if (b.kind === 'mv-map') return blockCanvasSurfaceTitle('mv-map', locale.value);
   if (b.kind === 'mv-view') {
     const k = (b.payload as MvViewPayload).kind;
     return mvViewKindStrings(k, locale.value).canvasTitle;
@@ -587,11 +567,12 @@ function sqlDefaultLiteral(v: unknown): string {
 
 /** 与列定义对齐的 CREATE TABLE 示意（不落盘、不执行） */
 const modelSqlDdlPreview = computed(() => {
+  const u = sqlModelCanvasMessagesFor(locale.value);
   const m = modelDraft.value;
   if (!m) return '--';
-  if (!m.columns.length) return '-- （无列，无法生成 DDL）';
+  if (!m.columns.length) return u.ddlPreviewNoColumns;
   const lines: string[] = [];
-  lines.push('-- 示意 DDL（不执行；保存仍为 mv-model-sql JSON）');
+  lines.push(u.ddlPreviewHeaderLine);
   const grp = modelSqlDraft.value;
   if (grp?.title?.trim()) lines.push(`-- MODEL GROUP: ${grp.title.trim().replace(/\n/g, ' ')}`);
   if (m.title?.trim()) lines.push(`-- TABLE COMMENT: ${m.title.trim().replace(/\n/g, ' ')}`);
@@ -659,9 +640,7 @@ function openSubtableDeleteDialog(index: number) {
   const d = modelSqlDraft.value;
   if (!d || index < 0 || index >= d.tables.length) return;
   if (d.tables.length <= 1) {
-    window.alert(
-      '【警告】无法删除：Model 组内须至少保留一张子表。\n\n若需移除整组数据模型，请在主文档中删除对应的 mv-model-sql 围栏块。',
-    );
+    window.alert(sqlModelCanvasMessagesFor(locale.value).alertCannotDeleteLastSubtable);
     return;
   }
   subtableDeleteIndex.value = index;
@@ -695,13 +674,14 @@ function onSqlTableIdBlur(ev: FocusEvent) {
   const m = modelDraft.value;
   if (!d || !m) return;
   const raw = sanitizeColumnName(el.value);
+  const msg = sqlModelCanvasMessagesFor(locale.value);
   if (!raw) {
-    window.alert('子表 id 不能为空。');
+    window.alert(msg.alertSubtableIdEmpty);
     el.value = m.id;
     return;
   }
   if (d.tables.some((t, j) => t.id === raw && j !== activeTableIndex.value)) {
-    window.alert('子表 id 与同组其它表冲突。');
+    window.alert(msg.alertSubtableIdConflict);
     el.value = m.id;
     return;
   }
@@ -761,12 +741,13 @@ function addModelColumn() {
 function removeModelColumn(ci: number) {
   const m = modelDraft.value;
   if (!m || ci < 0 || ci >= m.columns.length) return;
+  const msg = sqlModelCanvasMessagesFor(locale.value);
   if (m.columns.length <= 1) {
-    window.alert('表至少保留一列。');
+    window.alert(msg.alertTableMinOneColumn);
     return;
   }
   const col = m.columns[ci]!;
-  if (!window.confirm(`确定删除列「${col.name}」？该列上的数据将从所有行中删除。`)) return;
+  if (!window.confirm(msg.confirmDeleteColumn(col.name))) return;
   const key = col.name;
   m.columns = m.columns.filter((_, i) => i !== ci);
   m.rows = m.rows.map((row) => {
@@ -788,15 +769,16 @@ function onColumnNameBlur(ci: number, ev: FocusEvent) {
 function renameModelColumn(ci: number, raw: string) {
   const m = modelDraft.value;
   if (!m) return;
+  const msg = sqlModelCanvasMessagesFor(locale.value);
   const nextName = sanitizeColumnName(raw);
   if (!nextName) {
-    window.alert('列名不能为空。');
+    window.alert(msg.alertColumnNameEmpty);
     return;
   }
   const old = m.columns[ci]!.name;
   if (old === nextName) return;
   if (m.columns.some((c, i) => i !== ci && c.name === nextName)) {
-    window.alert('列名已存在。');
+    window.alert(msg.alertColumnNameExists);
     return;
   }
   const isIdCol = nextName === 'id';
@@ -836,7 +818,7 @@ function setModelColumnNullable(ci: number, nullable: boolean) {
   if (!m) return;
   const col = m.columns[ci]!;
   if (nullable && col.name === 'id' && col.primaryKey === true) {
-    window.alert('列「id」作为主键时不可设为可空。');
+    window.alert(sqlModelCanvasMessagesFor(locale.value).alertIdPkCannotNullable);
     return;
   }
   if (nullable === false) {
@@ -936,7 +918,7 @@ function removeModelRow(index: number) {
 function clearAllModelRows() {
   const m = modelDraft.value;
   if (!m || m.rows.length === 0) return;
-  if (!window.confirm(`确定清空全部 ${m.rows.length} 行数据？（表结构不变）`)) return;
+  if (!window.confirm(sqlModelCanvasMessagesFor(locale.value).confirmClearAllRows(m.rows.length))) return;
   m.rows = [];
 }
 
@@ -1073,7 +1055,7 @@ function onKvDocBlur(i: number) {
     nextS[i] = JSON.stringify(p, null, 2);
     kvDocStrings.value = nextS;
   } catch {
-    window.alert('每条文档须为 JSON 对象（类似 MongoDB 文档，键可自由；不可为数组或 null）。');
+    window.alert(kvModelCanvasMessagesFor(locale.value).alertDocMustBeObject);
     const nextS = [...kvDocStrings.value];
     nextS[i] = JSON.stringify(kvDraft.value.documents[i], null, 2);
     kvDocStrings.value = nextS;
@@ -1381,23 +1363,20 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
       <div class="canvas-surface" :aria-label="ui.blockCanvasBodyAria">
         <template v-if="block.kind === 'mv-model-sql' && modelSqlDraft">
           <div class="model-sql-surface">
-          <FormatHint>
-            本围栏为 <strong>Model</strong>（<code>mv-model-sql</code>）：一个代码块内可含<strong>多张</strong>子表；<code>mv-view</code> 为
-            <strong>View</strong>，通过 <code>modelRefs</code> 绑定 <code>块id#子表id</code>（见下方属性区说明）。子表用标签切换；可对子表做增删。
-          </FormatHint>
-          <h3 class="model-section-title">Model 组 · 元数据</h3>
+          <FormatHint>{{ sqlUi.formatHintIntro }}</FormatHint>
+          <h3 class="model-section-title">{{ sqlUi.metaSectionTitle }}</h3>
           <div class="model-meta-grid model-meta-grid--sql">
             <label class="field field--inline">
               <span class="sql-meta-label">MODEL id</span>
-              <input class="wide sql-mono-inp" type="text" :value="modelSqlDraft.id" readonly title="围栏块 id，与 mv-view 的 modelRefs 第一段对齐 — 无全局快捷键" />
+              <input class="wide sql-mono-inp" type="text" :value="modelSqlDraft.id" readonly :title="sqlUi.modelIdInputTitle" />
             </label>
             <label class="field field--inline">
-              <span class="sql-meta-label">组 COMMENT（title）</span>
-              <input v-model="modelSqlDraft.title" class="wide sql-mono-inp" type="text" placeholder="可选" />
+              <span class="sql-meta-label">{{ sqlUi.groupCommentLabel }}</span>
+              <input v-model="modelSqlDraft.title" class="wide sql-mono-inp" type="text" :placeholder="sqlUi.optionalPlaceholder" />
             </label>
           </div>
           <div class="model-subtable-shell">
-            <div class="model-subtable-tabbar" role="tablist" aria-label="子表（标签切换）">
+            <div class="model-subtable-tabbar" role="tablist" :aria-label="sqlUi.subtableTablistAria">
               <div
                 v-for="(tb, ti) in modelSqlDraft.tables"
                 :key="tb.id"
@@ -1408,7 +1387,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 aria-controls="sql-tabpanel-subtable"
                 class="model-subtable-tab"
                 :class="{ 'model-subtable-tab--active': ti === activeTableIndex }"
-                :title="`子表 ${tb.id}；点击标签切换，× 删除（须确认）— 无全局快捷键`"
+                :title="sqlUi.subtableTabTitle(tb.id)"
                 @click="onSubtableTabStripClick(ti, $event)"
                 @keydown.enter.prevent="selectSqlTable(ti)"
                 @keydown.space.prevent="selectSqlTable(ti)"
@@ -1418,8 +1397,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                   v-if="modelSqlDraft.tables.length > 1"
                   type="button"
                   class="model-subtable-tab-close"
-                  title="删除此子表（弹出确认）— 无全局快捷键"
-                  :aria-label="`删除子表 ${tb.id}`"
+                  :title="sqlUi.deleteSubtableButtonTitle"
+                  :aria-label="sqlUi.deleteSubtableAriaLabel(tb.id)"
                   @click.stop="openSubtableDeleteDialog(ti)"
                 >
                   ×
@@ -1429,10 +1408,10 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
               <button
                 type="button"
                 class="model-subtable-tab model-subtable-tab--action model-subtable-tab--add"
-                title="新增一张子表 — 无全局快捷键"
+                :title="sqlUi.addSubtableButtonTitle"
                 @click="addModelSqlTable"
               >
-                ＋ 子表
+                {{ sqlUi.addSubtableLabel }}
               </button>
             </div>
             <div
@@ -1445,7 +1424,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           <section
             class="model-fold-section"
             :class="{ 'model-fold-section--collapsed': !sqlDdlSectionOpen }"
-            aria-label="DDL 当前子表列定义"
+            :aria-label="sqlUi.ddlSectionAria"
           >
             <h3 class="model-fold-heading">
               <button
@@ -1454,11 +1433,11 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 :aria-expanded="sqlDdlSectionOpen"
                 aria-controls="sql-ddl-fold-panel"
                 id="sql-ddl-fold-trigger"
-                :title="(sqlDdlSectionOpen ? '折叠' : '展开') + ' DDL · 当前子表列定义 — 无全局快捷键'"
+                :title="sqlUi.tooltipDdlFold(sqlDdlSectionOpen)"
                 @click="sqlDdlSectionOpen = !sqlDdlSectionOpen"
               >
                 <span class="model-fold-chevron" aria-hidden="true">{{ sqlDdlSectionOpen ? '▼' : '▶' }}</span>
-                <span class="model-fold-title">DDL · 当前子表列定义</span>
+                <span class="model-fold-title">{{ sqlUi.ddlFoldTitle }}</span>
               </button>
             </h3>
             <div
@@ -1468,12 +1447,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
               role="region"
               aria-labelledby="sql-ddl-fold-trigger"
             >
-          <FormatHint>
-            以 <strong>SQL 表设计</strong> 语义呈现：<code>COLUMN</code> / 逻辑类型映射为示意 <code>TYPE</code>、<code>NULL</code> /
-            <code>NOT NULL</code>、<code>PRIMARY KEY</code>（多列即联合）、<code>UNIQUE</code>、<code>DEFAULT</code>、列级
-            <code>-- comment</code>。下方 <code>CREATE TABLE</code> 为<strong>只读示意</strong>（对应当前子表）；落盘为 <code>mv-model-sql</code> JSON。默认值输入仍按
-            JSON 字面量解析。子表 <code>id</code> 可编辑（失焦校验唯一）。
-          </FormatHint>
+          <FormatHint>{{ sqlUi.ddlFormatHint }}</FormatHint>
           <div class="model-meta-grid model-meta-grid--sql">
             <label class="field field--inline">
               <span class="sql-meta-label">TABLE id</span>
@@ -1481,25 +1455,25 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 class="wide sql-mono-inp"
                 type="text"
                 :value="modelDraft.id"
-                title="子表 id；须在同组内唯一 — 无全局快捷键"
+                :title="sqlUi.tableIdInputTitle"
                 @blur="onSqlTableIdBlur($event)"
               />
             </label>
             <label class="field field--inline">
-              <span class="sql-meta-label">子表 COMMENT（title）</span>
-              <input v-model="modelDraft.title" class="wide sql-mono-inp" type="text" placeholder="可选" />
+              <span class="sql-meta-label">{{ sqlUi.subtableCommentLabel }}</span>
+              <input v-model="modelDraft.title" class="wide sql-mono-inp" type="text" :placeholder="sqlUi.optionalPlaceholder" />
             </label>
           </div>
-          <pre class="model-ddl-preview" aria-label="CREATE TABLE 示意">{{ modelSqlDdlPreview }}</pre>
+          <pre class="model-ddl-preview" :aria-label="sqlUi.ddlPreviewAria">{{ modelSqlDdlPreview }}</pre>
           <div class="canvas-table-wrap model-schema-wrap">
             <table class="canvas-table model-schema-table model-schema-table--wide model-schema-table--sql">
               <thead>
                 <tr>
                   <th><span class="sql-th">column</span></th>
                   <th><span class="sql-th">type</span></th>
-                  <th class="td-center" :title="TOOLTIP_SCHEMA_NULLABLE"><span class="sql-th">null</span></th>
-                  <th class="td-center" :title="TOOLTIP_SCHEMA_PK"><span class="sql-th">pk</span></th>
-                  <th class="td-center" :title="TOOLTIP_SCHEMA_UQ"><span class="sql-th">uq</span></th>
+                  <th class="td-center" :title="sqlUi.tooltipSchemaNullable"><span class="sql-th">null</span></th>
+                  <th class="td-center" :title="sqlUi.tooltipSchemaPk"><span class="sql-th">pk</span></th>
+                  <th class="td-center" :title="sqlUi.tooltipSchemaUq"><span class="sql-th">uq</span></th>
                   <th><span class="sql-th">default</span></th>
                   <th><span class="sql-th">comment</span></th>
                   <th class="col-schema-actions"><span class="sql-th">ord / drop</span></th>
@@ -1512,8 +1486,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                       class="cell-inp sql-mono-inp"
                       type="text"
                       :value="c.name"
-                      :aria-label="`列名 ${ci + 1}`"
-                      title="失焦时校验并重命名（非空、同表不重复）— 无全局快捷键"
+                      :aria-label="sqlUi.columnNameAria(ci)"
+                      :title="sqlUi.columnNameBlurTitle"
                       @blur="onColumnNameBlur(ci, $event)"
                     />
                   </td>
@@ -1521,8 +1495,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     <select
                       class="cell-inp cell-select sql-mono-inp"
                       :value="c.type ?? 'string'"
-                      :aria-label="`列 ${c.name} 类型`"
-                      title="逻辑类型（写入 JSON）；单元格仍按文本编辑 — 无全局快捷键"
+                      :aria-label="sqlUi.columnTypeAria(c.name)"
+                      :title="sqlUi.columnTypeSelectTitle"
                       @change="setModelColumnType(ci, ($event.target as HTMLSelectElement).value)"
                     >
                       <option v-for="t in MODEL_COL_TYPES" :key="t" :value="t">{{ t }}</option>
@@ -1532,8 +1506,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     <input
                       type="checkbox"
                       :checked="c.nullable === true"
-                      :aria-label="`列 ${c.name} 可空`"
-                      :title="TOOLTIP_SCHEMA_NULLABLE"
+                      :aria-label="sqlUi.columnNullableAria(c.name)"
+                      :title="sqlUi.tooltipSchemaNullable"
                       @change="setModelColumnNullable(ci, ($event.target as HTMLInputElement).checked)"
                     />
                   </td>
@@ -1541,8 +1515,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     <input
                       type="checkbox"
                       :checked="c.primaryKey === true"
-                      :aria-label="`列 ${c.name} 主键`"
-                      :title="TOOLTIP_SCHEMA_PK"
+                      :aria-label="sqlUi.columnPkAria(c.name)"
+                      :title="sqlUi.tooltipSchemaPk"
                       @change="setModelColumnPrimaryKey(ci, ($event.target as HTMLInputElement).checked)"
                     />
                   </td>
@@ -1550,8 +1524,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     <input
                       type="checkbox"
                       :checked="c.unique === true"
-                      :aria-label="`列 ${c.name} 唯一`"
-                      :title="TOOLTIP_SCHEMA_UQ"
+                      :aria-label="sqlUi.columnUniqueAria(c.name)"
+                      :title="sqlUi.tooltipSchemaUq"
                       @change="setModelColumnUnique(ci, ($event.target as HTMLInputElement).checked)"
                     />
                   </td>
@@ -1560,9 +1534,9 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                       class="cell-inp cell-inp--default sql-mono-inp"
                       type="text"
                       :value="defaultValueInputStr(c)"
-                      :aria-label="`列 ${c.name} 默认值`"
-                      placeholder="空=无；null / true / 数字 / 文本"
-                      title="失焦写入 JSON；空清除 — 无全局快捷键"
+                      :aria-label="sqlUi.columnDefaultAria(c.name)"
+                      :placeholder="sqlUi.defaultPlaceholder"
+                      :title="sqlUi.defaultBlurTitle"
                       @blur="onColumnDefaultBlur(ci, $event)"
                     />
                   </td>
@@ -1571,29 +1545,29 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                       class="cell-inp cell-inp--comment sql-mono-inp"
                       type="text"
                       :value="c.comment ?? ''"
-                      :aria-label="`列 ${c.name} 注释`"
-                      placeholder="-- 列说明"
-                      title="仅设计/文档用 — 无全局快捷键"
+                      :aria-label="sqlUi.columnCommentAria(c.name)"
+                      :placeholder="sqlUi.columnCommentPlaceholder"
+                      :title="sqlUi.columnCommentTitle"
                       @blur="onColumnCommentBlur(ci, $event)"
                     />
                   </td>
                   <td class="col-schema-actions">
-                    <button type="button" class="btn-ghost" title="左移 — 无全局快捷键" @click="moveModelColumn(ci, -1)">←</button>
-                    <button type="button" class="btn-ghost" title="右移 — 无全局快捷键" @click="moveModelColumn(ci, 1)">→</button>
-                    <button type="button" class="link-btn" title="删除列 — 无全局快捷键" @click="removeModelColumn(ci)">删列</button>
+                    <button type="button" class="btn-ghost" :title="sqlUi.moveColumnLeftTitle" @click="moveModelColumn(ci, -1)">←</button>
+                    <button type="button" class="btn-ghost" :title="sqlUi.moveColumnRightTitle" @click="moveModelColumn(ci, 1)">→</button>
+                    <button type="button" class="link-btn" :title="sqlUi.dropColumnTitle" @click="removeModelColumn(ci)">{{ sqlUi.dropColumnLabel }}</button>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <button type="button" class="add-row" @click="addModelColumn">＋ ADD COLUMN</button>
+          <button type="button" class="add-row" @click="addModelColumn">{{ sqlUi.addColumnButton }}</button>
             </div>
           </section>
 
           <section
             class="model-fold-section"
             :class="{ 'model-fold-section--collapsed': !sqlDmlSectionOpen }"
-            aria-label="DML 行集 JSON 单元格"
+            :aria-label="sqlUi.dmlSectionAria"
           >
             <h3 class="model-fold-heading">
               <button
@@ -1602,11 +1576,11 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 :aria-expanded="sqlDmlSectionOpen"
                 aria-controls="sql-dml-fold-panel"
                 id="sql-dml-fold-trigger"
-                :title="(sqlDmlSectionOpen ? '折叠' : '展开') + ' DML · 行集（JSON 单元格） — 无全局快捷键'"
+                :title="sqlUi.tooltipDmlFold(sqlDmlSectionOpen)"
                 @click="sqlDmlSectionOpen = !sqlDmlSectionOpen"
               >
                 <span class="model-fold-chevron" aria-hidden="true">{{ sqlDmlSectionOpen ? '▼' : '▶' }}</span>
-                <span class="model-fold-title">DML · 行集（JSON 单元格）</span>
+                <span class="model-fold-title">{{ sqlUi.dmlFoldTitle }}</span>
               </button>
             </h3>
             <div
@@ -1616,30 +1590,23 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
               role="region"
               aria-labelledby="sql-dml-fold-trigger"
             >
-          <FormatHint>
-            类比 <code>UPDATE</code> 单格编辑；<code>INSERT</code>/<code>DELETE</code> 用添加行、删行、复制行；筛选为全列子串匹配（视图层
-            <code>LIKE '%…%'</code> 语义，不写回 JSON）。
-          </FormatHint>
+          <FormatHint>{{ sqlUi.dmlFormatHint }}</FormatHint>
           <div class="model-data-toolbar">
             <label class="field field--grow">
-              <span class="sql-meta-label">WHERE 子串</span>
-              <input v-model="modelRowFilter" class="wide sql-mono-inp" type="search" placeholder="任意列 LIKE …" />
+              <span class="sql-meta-label">{{ sqlUi.whereLabel }}</span>
+              <input v-model="modelRowFilter" class="wide sql-mono-inp" type="search" :placeholder="sqlUi.wherePlaceholder" />
             </label>
             <span class="model-row-count">
-              共 {{ modelDraft.rows.length }} 行
-              <template v-if="modelRowFilter.trim()"> · 显示 {{ filteredModelRowEntries.length }} 行</template>
+              {{ sqlUi.rowCountTotal(modelDraft.rows.length) }}
+              <template v-if="modelRowFilter.trim()">{{ sqlUi.rowCountShown(filteredModelRowEntries.length) }}</template>
             </span>
             <button
               type="button"
               class="tb model-readonly-toggle"
-              :title="
-                showModelReadonlyPreview
-                  ? '隐藏下方只读平铺表（当前子表，与 DML 筛选一致）— 无全局快捷键'
-                  : '在画布内只读展示当前子表行（与上方 DML 同一 WHERE 筛选）— 无全局快捷键'
-              "
+              :title="showModelReadonlyPreview ? sqlUi.readonlyToggleHideTitle : sqlUi.readonlyToggleShowTitle"
               @click="showModelReadonlyPreview = !showModelReadonlyPreview"
             >
-              {{ showModelReadonlyPreview ? '隐藏只读视图' : '显示只读视图' }}
+              {{ showModelReadonlyPreview ? sqlUi.readonlyToggleHideLabel : sqlUi.readonlyToggleShowLabel }}
             </button>
           </div>
           <div class="canvas-table-wrap canvas-table-wrap--sql-rows">
@@ -1650,7 +1617,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     v-for="c in modelDraft.columns"
                     :key="c.name"
                     class="th-sql-col"
-                    :title="columnDataHeaderTooltip(c)"
+                    :title="buildColumnDataHeaderTooltip(c, sqlUi)"
                   >
                     <code class="th-sql-col-line">{{ columnHeaderSqlLabel(c) }}</code>
                   </th>
@@ -1669,23 +1636,23 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     />
                   </td>
                   <td class="col-actions">
-                    <button type="button" class="link-btn link-btn--muted" title="复制本行 — 无全局快捷键" @click="duplicateModelRow(ri)">复制</button>
-                    <button type="button" class="link-btn" title="删除本行 — 无全局快捷键" @click="removeModelRow(ri)">删行</button>
+                    <button type="button" class="link-btn link-btn--muted" :title="sqlUi.copyRowTitle" @click="duplicateModelRow(ri)">{{ sqlUi.copyRowLabel }}</button>
+                    <button type="button" class="link-btn" :title="sqlUi.deleteRowTitle" @click="removeModelRow(ri)">{{ sqlUi.deleteRowLabel }}</button>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
           <div class="model-data-actions">
-            <button type="button" class="add-row" @click="addModelRow">＋ INSERT ROW</button>
+            <button type="button" class="add-row" @click="addModelRow">{{ sqlUi.insertRowButton }}</button>
             <button
               type="button"
               class="add-row add-row--danger"
               :disabled="modelDraft.rows.length === 0"
-              title="清空全部行 — 无全局快捷键"
+              :title="sqlUi.clearAllRowsTitle"
               @click="clearAllModelRows"
             >
-              清空全部行
+              {{ sqlUi.clearAllRowsLabel }}
             </button>
           </div>
             </div>
@@ -1696,14 +1663,10 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           <section
             v-if="showModelReadonlyPreview && modelDraft"
             class="model-readonly-preview"
-            aria-label="当前子表只读平铺预览"
+            :aria-label="sqlUi.readonlyPreviewSectionAria"
           >
-            <h3 class="model-section-title model-section-title--readonly">SELECT * 风格 · 只读（当前子表）</h3>
-            <FormatHint>
-              与上方 DML 为同一子表 <code>{{ modelDraft.id }}</code>；行集与 <strong>WHERE 子串</strong> 筛选一致（仅展示
-              {{ filteredModelRowEntries.length }} / {{ modelDraft.rows.length }} 行）。只读单元格，与只读表预览一致；未保存修改即时反映；落盘为
-              <code>mv-model-sql</code> JSON。
-            </FormatHint>
+            <h3 class="model-section-title model-section-title--readonly">{{ sqlUi.readonlyPreviewSectionTitle }}</h3>
+            <FormatHint>{{ sqlUi.readonlyPreviewHint(modelDraft.id, filteredModelRowEntries.length, modelDraft.rows.length) }}</FormatHint>
             <div class="model-readonly-one-table">
               <div class="canvas-table-wrap canvas-table-wrap--readonly">
                 <table class="canvas-table canvas-table--sql-rows">
@@ -1725,47 +1688,47 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
         </template>
 
         <template v-else-if="block.kind === 'mv-model-kv' && kvDraft">
-          <h3 class="model-section-title">KV 数据表画布 · 文档集</h3>
-          <FormatHint>
-            类比 <strong>MongoDB collection</strong>：<code>documents[]</code> 中每条为<strong>独立 JSON 对象</strong>，键集合可不固定。保存时用解析器校验。块
-            <code>id</code> 只读。
-          </FormatHint>
+          <h3 class="model-section-title">{{ kvUi.sectionTitle }}</h3>
+          <FormatHint>{{ kvUi.formatHintIntro }}</FormatHint>
           <div class="model-meta-grid">
             <label class="field field--inline">
-              <span>块 id（只读）</span>
-              <input class="wide" type="text" :value="kvDraft.id" readonly title="块 id — 无全局快捷键" />
+              <span>{{ kvUi.blockIdLabel }}</span>
+              <input class="wide" type="text" :value="kvDraft.id" readonly :title="kvUi.blockIdInputTitle" />
             </label>
             <label class="field field--inline">
-              <span>标题 title</span>
-              <input v-model="kvDraft.title" class="wide" type="text" placeholder="可选" />
+              <span>{{ ui.labelTitle }}</span>
+              <input v-model="kvDraft.title" class="wide" type="text" :placeholder="kvUi.optionalPlaceholder" />
             </label>
           </div>
-          <FormatHint>每条下方为 JSON 对象；失焦时解析并格式化。可增删文档条数。</FormatHint>
+          <FormatHint>{{ kvUi.formatHintDocs }}</FormatHint>
           <div v-for="(_d, di) in kvDraft.documents" :key="di" class="kv-doc-block">
             <div class="kv-doc-head">
-              <span>文档 {{ di + 1 }}</span>
-              <button type="button" class="link-btn" title="删除该文档 — 无全局快捷键" @click="removeKvDocument(di)">删除</button>
+              <span>{{ kvUi.documentHeading(di + 1) }}</span>
+              <button type="button" class="link-btn" :title="kvUi.deleteDocTitle" @click="removeKvDocument(di)">{{ kvUi.deleteDocLabel }}</button>
             </div>
             <textarea
               class="payload-ta kv-doc-ta"
               spellcheck="false"
               rows="8"
               :value="kvDocStrings[di]"
-              :aria-label="`文档 ${di + 1} JSON`"
+              :aria-label="kvUi.docJsonAriaLabel(di + 1)"
               @input="setKvDocString(di, ($event.target as HTMLTextAreaElement).value)"
               @blur="onKvDocBlur(di)"
             />
           </div>
-          <button type="button" class="add-row" @click="addKvDocument">＋ 添加文档</button>
+          <button type="button" class="add-row" @click="addKvDocument">{{ kvUi.addDocumentButton }}</button>
         </template>
 
         <template v-else-if="block.kind === 'mv-model-struct'">
-          <h3 class="model-section-title">结构化层次画布 · HDF5 风格</h3>
-          <FormatHint>
-            类比 <strong>HDF5</strong>：顶层 <code>root</code> 为组（<code>name</code>、可选 <code>attributes</code>、子 <code>groups[]</code>、
-            <code>datasets[]</code>）。数据集含 <code>name</code>、可选 <code>dtype</code>、<code>data</code>。保存前将整段 JSON 送解析器校验。
-          </FormatHint>
-          <textarea v-model="structJsonText" class="payload-ta" spellcheck="false" rows="22" aria-label="mv-model-struct JSON" />
+          <h3 class="model-section-title">{{ structUi.sectionTitle }}</h3>
+          <FormatHint>{{ structUi.formatHintIntro }}</FormatHint>
+          <textarea
+            v-model="structJsonText"
+            class="payload-ta"
+            spellcheck="false"
+            rows="22"
+            :aria-label="structUi.jsonTextareaAriaLabel"
+          />
         </template>
 
         <template v-else-if="block.kind === 'mv-model-codespace' && codespaceDraft">
@@ -1778,13 +1741,15 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
         </template>
 
         <template v-else-if="block.kind === 'mv-model-interface'">
-          <h3 class="model-section-title">接口图模型画布 · 端点列表示意</h3>
-          <FormatHint>
-            <strong>接口图（文档化）</strong>：非空 <code>endpoints[]</code>；每条须含非空 <code>id</code>、<code>name</code>，可选
-            <code>method</code> / <code>path</code> / <code>notes</code>（均为字符串）。端点 <code>id</code> 在块内须唯一。不等同于 OpenAPI
-            等正式契约，仅供示意与对齐讨论。
-          </FormatHint>
-          <textarea v-model="interfaceJsonText" class="payload-ta" spellcheck="false" rows="22" aria-label="mv-model-interface JSON" />
+          <h3 class="model-section-title">{{ interfaceUi.sectionTitle }}</h3>
+          <FormatHint>{{ interfaceUi.formatHintIntro }}</FormatHint>
+          <textarea
+            v-model="interfaceJsonText"
+            class="payload-ta"
+            spellcheck="false"
+            rows="22"
+            :aria-label="interfaceUi.jsonTextareaAriaLabel"
+          />
         </template>
 
         <template v-else-if="block.kind === 'mv-view' && viewDraft">
@@ -1845,7 +1810,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
               aria-labelledby="mv-class-tab-meta"
             >
               <label class="field mv-title-row">
-                <span class="mv-title-row-label">标题 title</span>
+                <span class="mv-title-row-label">{{ ui.labelTitle }}</span>
                 <input v-model="viewDraft.title" type="text" class="wide" />
               </label>
               <div class="mv-model-refs-picker">
@@ -1935,7 +1900,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           </template>
           <template v-else>
             <label class="field mv-title-row">
-              <span class="mv-title-row-label">标题 title</span>
+              <span class="mv-title-row-label">{{ ui.labelTitle }}</span>
               <input v-model="viewDraft.title" type="text" class="wide" />
             </label>
             <div v-if="viewDraft.kind !== 'mindmap-ui'" class="mv-model-refs-picker">
@@ -2024,7 +1989,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
         </template>
 
         <template v-else-if="block.kind === 'mv-map'">
-          <FormatHint variant="title">{{ MV_MAP_CANVAS_TITLE }}</FormatHint>
+          <FormatHint variant="title">{{ canvasSurfaceTitle }}</FormatHint>
           <FormatHint>编辑 <code>mv-map</code> 围栏代码块内的映射规则 JSON；保存后写回 Markdown。</FormatHint>
           <textarea v-model="mapJsonText" class="payload-ta" spellcheck="false" rows="20" />
         </template>
@@ -2052,24 +2017,26 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           tabindex="-1"
           @keydown.esc.stop="cancelSubtableDelete"
         >
-          <h2 id="msc-del-title" class="msc-del-title">删除子表</h2>
+          <h2 id="msc-del-title" class="msc-del-title">{{ sqlUi.subtableDeleteTitle }}</h2>
           <p id="msc-del-desc" class="msc-del-desc">
-            <strong>【警告】</strong>即将删除子表「<code>{{ subtableDeleteTargetId }}</code>」。
+            {{ sqlUi.subtableDeleteWarningLead(subtableDeleteTargetId) }}
           </p>
           <ul class="msc-del-list">
-            <li>该子表上的列定义与全部行数据将从当前编辑内容中移除。</li>
-            <li>其它块中引用「块 id#{{ subtableDeleteTargetId }}」的 modelRefs 在保存后可能失效，需自行修正。</li>
-            <li>此步在本会话内不可撤销（未保存前可关闭画布放弃全部修改）。</li>
+            <li>{{ sqlUi.subtableDeleteLi1 }}</li>
+            <li>{{ sqlUi.subtableDeleteLi2(subtableDeleteTargetId) }}</li>
+            <li>{{ sqlUi.subtableDeleteLi3 }}</li>
           </ul>
           <div class="msc-del-actions">
-            <button type="button" class="msc-del-btn" title="放弃删除 — 无全局快捷键" @click="cancelSubtableDelete">取消</button>
+            <button type="button" class="msc-del-btn" :title="sqlUi.subtableDeleteCancelTitle" @click="cancelSubtableDelete">
+              {{ sqlUi.subtableDeleteCancelLabel }}
+            </button>
             <button
               type="button"
               class="msc-del-btn msc-del-btn--danger"
-              title="确认删除该子表 — 无全局快捷键"
+              :title="sqlUi.subtableDeleteConfirmTitle"
               @click="confirmSubtableDelete"
             >
-              确定删除
+              {{ sqlUi.subtableDeleteConfirmLabel }}
             </button>
           </div>
         </div>
