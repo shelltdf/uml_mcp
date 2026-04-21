@@ -219,9 +219,19 @@ export type ShellChromeMessages = {
   modelRefsPickerListHint: string;
   /** 块画布：目标 .md 未在工作区打开时的提示 */
   modelRefsPickerFileMissing: string;
+  /** 块画布：相对路径旁「从工作区选 .md」按钮 */
+  modelRefsPickerOpenFileButton: string;
+  /** 块画布：清空相对路径输入 */
+  modelRefsPickerClearPathButton: string;
+  /** 块画布：单选绑定列表下的说明（含未上表引用位置） */
+  modelRefsPickerBindListHintSingle: string;
   /** 块画布：modelRefs 分区 Tab — 绑定列表文件与勾选 */
   modelRefsPickerTabBind: string;
-  /** 块画布：modelRefs 分区 Tab — 未出现在候选表中的已保存 ref */
+  /** ui-design mv-view：「绑定模型」Tab 顶部说明（SVG 在并列「画布」Tab） */
+  modelRefsPickerBindNoSvgCanvas: string;
+  /** ui-design：与「绑定模型」并列的 SVG 画布 Tab 标签 */
+  modelRefsPickerCanvasTab: string;
+  /** 块画布：modelRefs 分区 Tab — 未出现在候选表中的已保存 ref（非画布预览） */
   modelRefsPickerTabOrphans: string;
   /** 块画布：孤儿 ref 列表前的说明（与 ref: 示例同一语境） */
   modelRefsPickerOrphansHint: string;
@@ -438,7 +448,13 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     modelRefsPickerPathPlaceholder: '例如 models/data.md；留空表示当前 .md',
     modelRefsPickerListHint: '勾选要绑定的模型（可多选）；未列出的引用见下方高级区。',
     modelRefsPickerFileMissing: '该路径下的 Markdown 未载入工作区，无法列出模型；请在工作区打开对应 .md 或用手写地址。',
+    modelRefsPickerOpenFileButton: '打开文件',
+    modelRefsPickerClearPathButton: '清空',
+    modelRefsPickerBindListHintSingle: '勾选要绑定的模型（单选）；未出现在上表的引用列于下方。',
     modelRefsPickerTabBind: '绑定模型',
+    modelRefsPickerBindNoSvgCanvas:
+      '在此绑定模型引用；编辑 SVG 请切换到「画布」标签。',
+    modelRefsPickerCanvasTab: '画布',
     modelRefsPickerTabOrphans: '未上表引用',
     modelRefsPickerOrphansHint: '其它已保存引用（未出现在上表）：',
     modelRefsPickerTablistAria: '模型引用分区',
@@ -653,7 +669,14 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     modelRefsPickerPathPlaceholder: 'e.g. models/data.md; leave empty for current .md',
     modelRefsPickerListHint: 'Check models to bind (multi-select). Unlisted refs appear in Advanced.',
     modelRefsPickerFileMissing: 'That Markdown file is not loaded in the workspace; open the .md or edit refs manually.',
+    modelRefsPickerOpenFileButton: 'Pick file',
+    modelRefsPickerClearPathButton: 'Clear',
+    modelRefsPickerBindListHintSingle:
+      'Pick one model to bind (single selection). Off-table refs are listed below.',
     modelRefsPickerTabBind: 'Bind models',
+    modelRefsPickerBindNoSvgCanvas:
+      'Bind model refs here. Switch to the Canvas tab to edit SVG.',
+    modelRefsPickerCanvasTab: 'Canvas',
     modelRefsPickerTabOrphans: 'Not in table',
     modelRefsPickerOrphansHint: 'Other saved refs (not listed above):',
     modelRefsPickerTablistAria: 'Model references sections',
