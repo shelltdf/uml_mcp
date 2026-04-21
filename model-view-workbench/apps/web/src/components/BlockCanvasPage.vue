@@ -420,6 +420,13 @@ const modelRefsOrphanRefs = computed((): string[] => {
   return v.modelRefs.filter((r) => !canonSet.has(r) && !valSet.has(r));
 });
 
+/** modelRefs 区内子 Tab：主绑定 vs「未上表」孤儿引用 */
+const modelRefsPickerTab = ref<'bind' | 'orphans'>('bind');
+
+watch(modelRefsOrphanRefs, (refs) => {
+  if (!refs.length) modelRefsPickerTab.value = 'bind';
+});
+
 const classCanvasHasValidModelSource = computed((): boolean => {
   const v = viewDraft.value;
   if (!v || (v.kind !== 'mermaid-class' && v.kind !== 'uml-class')) return true;
@@ -1828,40 +1835,71 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 <input v-model="viewDraft.title" type="text" class="wide" />
               </label>
               <div class="mv-model-refs-picker">
-                <label class="field">
-                  <span>{{ ui.modelRefsPickerPathLabel }}</span>
-                  <div class="mv-model-refs-path-row">
-                    <input
-                      v-model="modelRefsRelPathInput"
-                      type="text"
-                      class="wide"
-                      spellcheck="false"
-                      :placeholder="ui.modelRefsPickerPathPlaceholder"
-                    />
-                    <button type="button" class="tb mv-mini-btn" @click="openModelRefsPathPrompt">打开文件</button>
-                    <button type="button" class="tb mv-mini-btn" @click="clearModelRefsPathInput">清空</button>
-                  </div>
-                </label>
-                <FormatHint v-if="modelRefsTargetMissing" variant="warn">
-                  {{ ui.modelRefsPickerFileMissing }}
-                </FormatHint>
-                <FormatHint v-else>勾选要绑定的模型（单选）；未列出的引用见下方高级区。</FormatHint>
-                <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
-                  <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
-                    <input
-                      type="radio"
-                      name="model-refs-single"
-                      :checked="isModelRefCandidateChecked(c)"
-                      @change="toggleModelRefCandidate(c)"
-                    />
-                    <span>{{ c.label }}</span>
-                  </label>
+                <div class="mv-model-refs-tablist" role="tablist" :aria-label="ui.modelRefsPickerTablistAria">
+                  <button
+                    type="button"
+                    class="mv-class-tab"
+                    role="tab"
+                    :class="{ 'mv-class-tab--active': modelRefsPickerTab === 'bind' }"
+                    :aria-selected="modelRefsPickerTab === 'bind'"
+                    @click="modelRefsPickerTab = 'bind'"
+                  >
+                    {{ ui.modelRefsPickerTabBind }}
+                  </button>
+                  <button
+                    v-if="modelRefsOrphanRefs.length"
+                    type="button"
+                    class="mv-class-tab"
+                    role="tab"
+                    :class="{ 'mv-class-tab--active': modelRefsPickerTab === 'orphans' }"
+                    :aria-selected="modelRefsPickerTab === 'orphans'"
+                    @click="modelRefsPickerTab = 'orphans'"
+                  >
+                    {{ ui.modelRefsPickerTabOrphans }} ({{ modelRefsOrphanRefs.length }})
+                  </button>
                 </div>
-                <FormatHint v-else-if="!modelRefsTargetMissing">（{{ ui.dockViewModelRefsNone }}）</FormatHint>
-                <FormatHint v-if="modelRefsOrphanRefs.length">
-                  其它已保存引用（未出现在上表）：
-                  <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph-' + i" class="mv-model-refs-orph">{{ o }}</code>
-                </FormatHint>
+                <div v-show="modelRefsPickerTab === 'bind'" class="mv-model-refs-tabpanel" role="tabpanel">
+                  <label class="field">
+                    <span>{{ ui.modelRefsPickerPathLabel }}</span>
+                    <div class="mv-model-refs-path-row">
+                      <input
+                        v-model="modelRefsRelPathInput"
+                        type="text"
+                        class="wide"
+                        spellcheck="false"
+                        :placeholder="ui.modelRefsPickerPathPlaceholder"
+                      />
+                      <button type="button" class="tb mv-mini-btn" @click="openModelRefsPathPrompt">打开文件</button>
+                      <button type="button" class="tb mv-mini-btn" @click="clearModelRefsPathInput">清空</button>
+                    </div>
+                  </label>
+                  <FormatHint v-if="modelRefsTargetMissing" variant="warn">
+                    {{ ui.modelRefsPickerFileMissing }}
+                  </FormatHint>
+                  <FormatHint v-else>勾选要绑定的模型（单选）；未列出的引用见下方高级区。</FormatHint>
+                  <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
+                    <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
+                      <input
+                        type="radio"
+                        name="model-refs-single"
+                        :checked="isModelRefCandidateChecked(c)"
+                        @change="toggleModelRefCandidate(c)"
+                      />
+                      <span>{{ c.label }}</span>
+                    </label>
+                  </div>
+                  <FormatHint v-else-if="!modelRefsTargetMissing">（{{ ui.dockViewModelRefsNone }}）</FormatHint>
+                </div>
+                <div
+                  v-show="modelRefsPickerTab === 'orphans' && modelRefsOrphanRefs.length"
+                  class="mv-model-refs-tabpanel mv-model-refs-tabpanel--orphans"
+                  role="tabpanel"
+                >
+                  <FormatHint>
+                    {{ ui.modelRefsPickerOrphansHint }}
+                    <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph-' + i" class="mv-model-refs-orph">{{ o }}</code>
+                  </FormatHint>
+                </div>
               </div>
             </div>
             <div
@@ -1918,40 +1956,71 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
               <input v-model="viewDraft.title" type="text" class="wide" />
             </label>
             <div v-if="viewDraft.kind !== 'mindmap-ui'" class="mv-model-refs-picker">
-              <label class="field">
-                <span>{{ ui.modelRefsPickerPathLabel }}</span>
-                <div class="mv-model-refs-path-row">
-                  <input
-                    v-model="modelRefsRelPathInput"
-                    type="text"
-                    class="wide"
-                    spellcheck="false"
-                    :placeholder="ui.modelRefsPickerPathPlaceholder"
-                  />
-                  <button type="button" class="tb mv-mini-btn" @click="openModelRefsPathPrompt">打开文件</button>
-                  <button type="button" class="tb mv-mini-btn" @click="clearModelRefsPathInput">清空</button>
-                </div>
-              </label>
-              <FormatHint v-if="modelRefsTargetMissing" variant="warn">
-                {{ ui.modelRefsPickerFileMissing }}
-              </FormatHint>
-              <FormatHint v-else>勾选要绑定的模型（单选）；未列出的引用见下方高级区。</FormatHint>
-              <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
-                <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
-                  <input
-                    type="radio"
-                    name="model-refs-single"
-                    :checked="isModelRefCandidateChecked(c)"
-                    @change="toggleModelRefCandidate(c)"
-                  />
-                  <span>{{ c.label }}</span>
-                </label>
+              <div class="mv-model-refs-tablist" role="tablist" :aria-label="ui.modelRefsPickerTablistAria">
+                <button
+                  type="button"
+                  class="mv-class-tab"
+                  role="tab"
+                  :class="{ 'mv-class-tab--active': modelRefsPickerTab === 'bind' }"
+                  :aria-selected="modelRefsPickerTab === 'bind'"
+                  @click="modelRefsPickerTab = 'bind'"
+                >
+                  {{ ui.modelRefsPickerTabBind }}
+                </button>
+                <button
+                  v-if="modelRefsOrphanRefs.length"
+                  type="button"
+                  class="mv-class-tab"
+                  role="tab"
+                  :class="{ 'mv-class-tab--active': modelRefsPickerTab === 'orphans' }"
+                  :aria-selected="modelRefsPickerTab === 'orphans'"
+                  @click="modelRefsPickerTab = 'orphans'"
+                >
+                  {{ ui.modelRefsPickerTabOrphans }} ({{ modelRefsOrphanRefs.length }})
+                </button>
               </div>
-              <FormatHint v-else-if="!modelRefsTargetMissing">（{{ ui.dockViewModelRefsNone }}）</FormatHint>
-              <FormatHint v-if="modelRefsOrphanRefs.length">
-                其它已保存引用（未出现在上表）：
-                <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph-' + i" class="mv-model-refs-orph">{{ o }}</code>
-              </FormatHint>
+              <div v-show="modelRefsPickerTab === 'bind'" class="mv-model-refs-tabpanel" role="tabpanel">
+                <label class="field">
+                  <span>{{ ui.modelRefsPickerPathLabel }}</span>
+                  <div class="mv-model-refs-path-row">
+                    <input
+                      v-model="modelRefsRelPathInput"
+                      type="text"
+                      class="wide"
+                      spellcheck="false"
+                      :placeholder="ui.modelRefsPickerPathPlaceholder"
+                    />
+                    <button type="button" class="tb mv-mini-btn" @click="openModelRefsPathPrompt">打开文件</button>
+                    <button type="button" class="tb mv-mini-btn" @click="clearModelRefsPathInput">清空</button>
+                  </div>
+                </label>
+                <FormatHint v-if="modelRefsTargetMissing" variant="warn">
+                  {{ ui.modelRefsPickerFileMissing }}
+                </FormatHint>
+                <FormatHint v-else>勾选要绑定的模型（单选）；未列出的引用见下方高级区。</FormatHint>
+                <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
+                  <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
+                    <input
+                      type="radio"
+                      name="model-refs-single"
+                      :checked="isModelRefCandidateChecked(c)"
+                      @change="toggleModelRefCandidate(c)"
+                    />
+                    <span>{{ c.label }}</span>
+                  </label>
+                </div>
+                <FormatHint v-else-if="!modelRefsTargetMissing">（{{ ui.dockViewModelRefsNone }}）</FormatHint>
+              </div>
+              <div
+                v-show="modelRefsPickerTab === 'orphans' && modelRefsOrphanRefs.length"
+                class="mv-model-refs-tabpanel mv-model-refs-tabpanel--orphans"
+                role="tabpanel"
+              >
+                <FormatHint>
+                  {{ ui.modelRefsPickerOrphansHint }}
+                  <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph2-' + i" class="mv-model-refs-orph">{{ o }}</code>
+                </FormatHint>
+              </div>
             </div>
           </template>
           <template v-if="viewDraft.kind === 'mindmap-ui'">
@@ -2207,6 +2276,23 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
 }
 .mv-model-refs-picker {
   margin-bottom: 10px;
+}
+.mv-model-refs-tablist {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.mv-model-refs-tabpanel {
+  margin-top: 2px;
+}
+.mv-model-refs-tabpanel--orphans .mv-model-refs-orph {
+  display: block;
+  word-break: break-all;
+}
+.mv-model-refs-tabpanel--orphans .mv-model-refs-orph + .mv-model-refs-orph {
+  margin-top: 4px;
 }
 .mv-model-refs-path-row {
   display: flex;

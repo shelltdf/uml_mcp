@@ -19,8 +19,9 @@ withDefaults(
     selectedIds: string[]
     /** 为 true 时收起窄条由父级（如 LeftDockPanel）独立列渲染 */
     externalRailStrip?: boolean
+    plainBody?: boolean
   }>(),
-  { selectedIds: () => [], externalRailStrip: false },
+  { selectedIds: () => [], externalRailStrip: false, plainBody: false },
 )
 
 const { t } = useI18n()
@@ -107,6 +108,7 @@ function onColResizeStart(e: MouseEvent) {
     v-model="outlineOpen"
     v-model:rail-open="railOpen"
     :external-rail-strip="externalRailStrip"
+    :plain-body="plainBody"
     :title="t('dock.outline')"
     panel-id="dock-outline-body"
     root-class="outline-panel"
@@ -249,7 +251,8 @@ function onColResizeStart(e: MouseEvent) {
   list-style: none;
   overflow: auto;
   flex: 1;
-  min-height: 0;
+  /* 与 OutlineTreeItem .outline-row min-height: 22px 对齐，滚动区至少可视 10 行对象 */
+  min-height: calc(22px * 10);
 }
 
 </style>

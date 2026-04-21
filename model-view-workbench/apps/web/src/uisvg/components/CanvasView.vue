@@ -1328,6 +1328,39 @@ function emitView() {
   emit('viewChange', { scale: scale.value, panX: panX.value, panY: panY.value })
 }
 
+const ZOOM_STEP = 1.12
+
+const zoomPercentLabel = computed(() => `${Math.round(scale.value * 100)}%`)
+
+/** 以视口中心为锚点缩放（与滚轮逻辑一致） */
+function zoomAtViewportCenter(factor: number) {
+  const el = viewportRef.value
+  if (!el) return
+  const mx = el.clientWidth / 2
+  const my = el.clientHeight / 2
+  const next = Math.min(8, Math.max(0.1, scale.value * factor))
+  const wx = (mx - panX.value) / scale.value
+  const wy = (my - panY.value) / scale.value
+  scale.value = next
+  panX.value = mx - wx * next
+  panY.value = my - wy * next
+  emitView()
+  scheduleRefreshSelection()
+}
+
+function onZoomOutClick() {
+  zoomAtViewportCenter(1 / ZOOM_STEP)
+}
+
+function onZoomInClick() {
+  zoomAtViewportCenter(ZOOM_STEP)
+}
+
+function onZoomResetClick() {
+  resetView()
+  scheduleRefreshSelection()
+}
+
 function resetView() {
   panX.value = 0
   panY.value = 0
@@ -1564,26 +1597,67 @@ defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect })
         {{ t('ctxMenu.delete') }}
       </button>
     </div>
-    <div
-      v-if="showSelectionDebug"
-      class="canvas-selection-debug"
-      aria-live="polite"
-      @mousedown.stop
-      @click.stop
-      @wheel.stop
-    >
-      <pre
-        :key="alignDebugNonce"
-        ref="selectionDebugPreRef"
-        class="canvas-selection-debug__pre"
-        spellcheck="false"
+    <div class="canvas-viewport-bottom-stack" @mousedown.stop>
+      <div
+        v-if="showSelectionDebug"
+        class="canvas-selection-debug"
+        aria-live="polite"
+        @click.stop
         @wheel.stop
-      >{{ selectionDebugLines }}</pre>
-      <div class="canvas-selection-debug__row">
-        <button type="button" class="win-button canvas-selection-debug__copy" @click.stop="copySelectionDebug">
-          {{ t('canvas.alignDebug.copyButton') }}
+      >
+        <pre
+          :key="alignDebugNonce"
+          ref="selectionDebugPreRef"
+          class="canvas-selection-debug__pre"
+          spellcheck="false"
+          @wheel.stop
+        >{{ selectionDebugLines }}</pre>
+        <div class="canvas-selection-debug__row">
+          <button type="button" class="win-button canvas-selection-debug__copy" @click.stop="copySelectionDebug">
+            {{ t('canvas.alignDebug.copyButton') }}
+          </button>
+          <span v-if="selectionDebugCopyHint" class="canvas-selection-debug__hint">{{ selectionDebugCopyHint }}</span>
+        </div>
+      </div>
+      <div class="canvas-zoom-hud" role="toolbar" :aria-label="t('canvas.zoomHudAria')">
+        <button
+          type="button"
+          class="canvas-zoom-hud__btn"
+          :title="t('canvas.zoomOut')"
+          :aria-label="t('canvas.zoomOut')"
+          @click="onZoomOutClick"
+        >
+          <span aria-hidden="true">−</span>
         </button>
-        <span v-if="selectionDebugCopyHint" class="canvas-selection-debug__hint">{{ selectionDebugCopyHint }}</span>
+        <span class="canvas-zoom-hud__pct" aria-live="polite">{{ zoomPercentLabel }}</span>
+        <button
+          type="button"
+          class="canvas-zoom-hud__btn"
+          :title="t('canvas.zoomIn')"
+          :aria-label="t('canvas.zoomIn')"
+          @click="onZoomInClick"
+        >
+          <span aria-hidden="true">+</span>
+        </button>
+        <span class="canvas-zoom-hud__sep" aria-hidden="true" />
+        <button
+          type="button"
+          class="canvas-zoom-hud__btn canvas-zoom-hud__btn--text"
+          :title="t('canvas.zoomReset')"
+          :aria-label="t('canvas.zoomReset')"
+          @click="onZoomResetClick"
+        >
+          {{ t('canvas.zoomReset') }}
+        </button>
+        <button
+          type="button"
+          class="canvas-zoom-hud__btn canvas-zoom-hud__btn--text"
+          :title="t('canvas.zoomFit')"
+          :aria-label="t('canvas.zoomFit')"
+          @click="fitView"
+        >
+          {{ t('canvas.zoomFit') }}
+        </button>
       </div>
     </div>
   </div>
@@ -1601,12 +1675,83 @@ defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect })
   user-select: none;
 }
 
-.canvas-selection-debug {
+.canvas-viewport-bottom-stack {
   position: absolute;
   left: 6px;
   bottom: 6px;
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  align-items: flex-start;
   max-width: min(520px, calc(100% - 12px));
+  pointer-events: none;
+}
+
+.canvas-viewport-bottom-stack > * {
+  pointer-events: auto;
+}
+
+.canvas-zoom-hud {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #1a1a1a;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #c0c0c0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-family: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+}
+
+.canvas-zoom-hud__btn {
+  margin: 0;
+  padding: 2px 8px;
+  min-height: 22px;
+  min-width: 26px;
+  border: 1px solid #b8b8b8;
+  border-radius: 3px;
+  background: linear-gradient(to bottom, #ffffff, #f0f0f0);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  color: #1a1a1a;
+}
+
+.canvas-zoom-hud__btn:hover {
+  border-color: #0078d4;
+  background: #e5f3ff;
+}
+
+.canvas-zoom-hud__btn--text {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.canvas-zoom-hud__pct {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: #303030;
+  user-select: none;
+}
+
+.canvas-zoom-hud__sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 18px;
+  margin: 0 2px;
+  background: #c0c0c0;
+}
+
+.canvas-selection-debug {
+  position: relative;
+  width: 100%;
   padding: 6px 8px;
   border-radius: 2px;
   font-size: 11px;
@@ -1615,7 +1760,6 @@ defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect })
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid #c0c0c0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  pointer-events: auto;
   cursor: default;
 }
 

@@ -33,18 +33,28 @@ export type ShellChromeMessages = {
   tbFullscreenExitTitle: string;
   dockOutlineAria: string;
   dockOutlineTitle: string;
+  /** 左侧竖条：文档/围栏/次要 合并面板（全名，非缩写） */
+  dockLeftStripDocPanel: string;
+  /** 左侧竖条：UI 设计对象树（全名） */
+  dockLeftStripUiOutline: string;
+  /** 左侧竖条：UI 控件库（全名） */
+  dockLeftStripUiLibrary: string;
   dockClearSelection: string;
   dockClearSelectionTitle: string;
   dockInsertFenceAtEnd: string;
   dockInsertFenceAtEndTitle: string;
   dockExpandOutline: string;
   dockCollapseOutline: string;
+  /** 左侧 DockPanel 标题栏 ‹：隐藏当前面板（非收起整栏） */
+  dockClosePanelTitle: string;
   dockSectionDoc: string;
   dockNoHeadings: string;
   dockFenceOutline: string;
   dockFenceOutlineHint: string;
   dockNoFenceKinds: string;
   dockFenceOpenCanvas: string;
+  /** 大纲列表每行右侧：打开/编辑画布（左侧 Dock） */
+  dockFenceEditBlock: string;
   dockSecondaryPlaceholder: string;
   outlineExpandChild: string;
   outlineCollapseChild: string;
@@ -209,6 +219,14 @@ export type ShellChromeMessages = {
   modelRefsPickerListHint: string;
   /** 块画布：目标 .md 未在工作区打开时的提示 */
   modelRefsPickerFileMissing: string;
+  /** 块画布：modelRefs 分区 Tab — 绑定列表文件与勾选 */
+  modelRefsPickerTabBind: string;
+  /** 块画布：modelRefs 分区 Tab — 未出现在候选表中的已保存 ref */
+  modelRefsPickerTabOrphans: string;
+  /** 块画布：孤儿 ref 列表前的说明（与 ref: 示例同一语境） */
+  modelRefsPickerOrphansHint: string;
+  /** 块画布：modelRefs 子 Tab 容器 aria-label */
+  modelRefsPickerTablistAria: string;
   /** 块画布：modelRefs 高级手写展开 */
   modelRefsAdvancedToggle: string;
   /** 菜单「新建」生成的 Markdown 一级标题文本（不含 `#`） */
@@ -248,12 +266,16 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     tbFullscreenExitTitle: '退出全屏 — 无全局快捷键（也可按 Esc 视浏览器而定）',
     dockOutlineAria: '大纲视图',
     dockOutlineTitle: '大纲',
+    dockLeftStripDocPanel: '文档与代码块大纲',
+    dockLeftStripUiOutline: 'UI 大纲',
+    dockLeftStripUiLibrary: 'UI 控件库',
     dockClearSelection: '清除选择',
     dockClearSelectionTitle: '清除当前围栏块选择 — 无全局快捷键',
     dockInsertFenceAtEnd: '添加代码段',
     dockInsertFenceAtEndTitle: '在当前文档末尾追加代码段 — 无全局快捷键',
     dockExpandOutline: '展开大纲 Dock — 无全局快捷键',
     dockCollapseOutline: '折叠大纲 Dock — 无全局快捷键',
+    dockClosePanelTitle: '隐藏此面板',
     dockSectionDoc: '文档章节',
     dockNoHeadings: '（当前文档无 ATX 标题）',
     dockFenceOutline: '代码块大纲',
@@ -262,6 +284,7 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockNoFenceKinds:
       '（当前文档无 mv-model-sql / mv-model-kv / mv-model-struct / mv-model-codespace / mv-model-interface / mv-view / mv-map 围栏）',
     dockFenceOpenCanvas: '代码块',
+    dockFenceEditBlock: '编辑',
     dockSecondaryPlaceholder: '在上方「代码块大纲」中选中块后，此处将显示该块相关结构（如 class 列表、表字段等）。',
     outlineExpandChild: '展开子章节',
     outlineCollapseChild: '折叠子章节',
@@ -415,6 +438,10 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     modelRefsPickerPathPlaceholder: '例如 models/data.md；留空表示当前 .md',
     modelRefsPickerListHint: '勾选要绑定的模型（可多选）；未列出的引用见下方高级区。',
     modelRefsPickerFileMissing: '该路径下的 Markdown 未载入工作区，无法列出模型；请在工作区打开对应 .md 或用手写地址。',
+    modelRefsPickerTabBind: '绑定模型',
+    modelRefsPickerTabOrphans: '未上表引用',
+    modelRefsPickerOrphansHint: '其它已保存引用（未出现在上表）：',
+    modelRefsPickerTablistAria: '模型引用分区',
     modelRefsAdvancedToggle: '高级：手写 modelRefs（逗号分隔）',
     newDocHeading: '新文档',
   },
@@ -451,12 +478,16 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     tbFullscreenExitTitle: 'Exit fullscreen — no global shortcut (Esc may work depending on browser)',
     dockOutlineAria: 'Outline',
     dockOutlineTitle: 'Outline',
+    dockLeftStripDocPanel: 'Document & fences',
+    dockLeftStripUiOutline: 'UI outline',
+    dockLeftStripUiLibrary: 'UI library',
     dockClearSelection: 'Clear selection',
     dockClearSelectionTitle: 'Clear current fence-block selection — no global shortcut',
     dockInsertFenceAtEnd: 'Add code block',
     dockInsertFenceAtEndTitle: 'Append a code block to the end of current markdown — no global shortcut',
     dockExpandOutline: 'Expand outline Dock — no global shortcut',
     dockCollapseOutline: 'Collapse outline Dock — no global shortcut',
+    dockClosePanelTitle: 'Hide this panel',
     dockSectionDoc: 'Document headings',
     dockNoHeadings: '(No ATX headings in this document)',
     dockFenceOutline: 'Fence outline',
@@ -465,6 +496,7 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockNoFenceKinds:
       '(No mv-model-sql / mv-model-kv / mv-model-struct / mv-model-codespace / mv-model-interface / mv-view / mv-map fences)',
     dockFenceOpenCanvas: 'Block',
+    dockFenceEditBlock: 'Edit',
     dockSecondaryPlaceholder:
       'Select a block in **Fence outline** above to show structure here (e.g. classes, table columns).',
     outlineExpandChild: 'Expand subsection',
@@ -621,6 +653,10 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     modelRefsPickerPathPlaceholder: 'e.g. models/data.md; leave empty for current .md',
     modelRefsPickerListHint: 'Check models to bind (multi-select). Unlisted refs appear in Advanced.',
     modelRefsPickerFileMissing: 'That Markdown file is not loaded in the workspace; open the .md or edit refs manually.',
+    modelRefsPickerTabBind: 'Bind models',
+    modelRefsPickerTabOrphans: 'Not in table',
+    modelRefsPickerOrphansHint: 'Other saved refs (not listed above):',
+    modelRefsPickerTablistAria: 'Model references sections',
     modelRefsAdvancedToggle: 'Advanced: raw modelRefs (comma-separated)',
     newDocHeading: 'New document',
   },

@@ -33,8 +33,14 @@ function winDisplayKey(controlId: string): MessageKey {
 withDefaults(
   defineProps<{
     externalRailStrip?: boolean
+    plainBody?: boolean
+    /**
+     * 嵌入 App 左侧 Dock：禁用 `height:100% / flex:1` 撑满整条侧栏，
+     * 否则会与上方 UI 大纲 flex 争抢高度，控件库盖住大纲。
+     */
+    workbenchDockEmbed?: boolean
   }>(),
-  { externalRailStrip: false },
+  { externalRailStrip: false, plainBody: false, workbenchDockEmbed: false },
 )
 
 const emit = defineEmits<{
@@ -58,11 +64,12 @@ const windowsSectionOpen = ref(true)
 </script>
 
 <template>
-  <div class="ui-library">
+  <div class="ui-library" :class="{ 'ui-library--workbench-dock': workbenchDockEmbed }">
     <DockFoldSection
       v-model="uiLibraryOpen"
       v-model:rail-open="railOpen"
       :external-rail-strip="externalRailStrip"
+      :plain-body="plainBody"
       :title="t('uiLib.title')"
       panel-id="dock-ui-library"
       root-class="ui-library-root"
@@ -169,6 +176,42 @@ const windowsSectionOpen = ref(true)
   min-height: 0;
   flex: 1;
   height: 100%;
+}
+
+/** App 左侧 Dock：高度随内容，不参与侧栏纵向撑满 */
+.ui-library.ui-library--workbench-dock {
+  flex: none !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+.ui-library--workbench-dock .ui-library-root {
+  flex: none !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+}
+
+.ui-library--workbench-dock :deep(.dock-fold__body) {
+  flex: none !important;
+  overflow: visible !important;
+  min-height: 0 !important;
+}
+
+.ui-library--workbench-dock .ui-library-body {
+  overflow: visible !important;
+  flex: none !important;
+  min-height: auto !important;
+}
+
+/** DockFoldSection plain 默认 flex:1，会在 App 左侧 Dock 里抢满高度盖住大纲 */
+.ui-library--workbench-dock :deep(.dock-fold-outer--plain),
+.ui-library--workbench-dock :deep(.dock-fold--plain) {
+  flex: none !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  min-height: 0 !important;
 }
 
 .ui-library:has(:deep(.dock-fold--collapsed)) {
@@ -353,5 +396,22 @@ const windowsSectionOpen = ref(true)
 .pal-txt-sub--tag {
   font-family: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
   color: #505050;
+}
+
+/**
+ * 必须排在文件末尾：`workbenchDockEmbed` 专用样式若写在前面，
+ * 会被后面的 `.ui-library-root :deep(.dock-fold__body)` / `.ui-library-body` 覆盖，
+ * 控件库又会按 flex:1 + 内部滚动抢高度（与左侧大纲冲突、高度看起来「算错」）。
+ */
+.ui-library.ui-library--workbench-dock .ui-library-root :deep(.dock-fold__body) {
+  flex: none !important;
+  overflow: visible !important;
+  min-height: 0 !important;
+}
+
+.ui-library.ui-library--workbench-dock .ui-library-body {
+  overflow: visible !important;
+  flex: none !important;
+  min-height: auto !important;
 }
 </style>

@@ -72,7 +72,8 @@ import MdMarkdownPreview from './components/MdMarkdownPreview.vue';
 import MdWysiwygEditor from './components/MdWysiwygEditor.vue';
 import BlockCanvasPage from './components/BlockCanvasPage.vue';
 import type { MindmapDockCommand, MindmapDockState } from './components/mindmap/MindmapCanvas.vue';
-import LeftDockPanel from './uisvg/components/LeftDockPanel.vue';
+import OutlinePanel from './uisvg/components/OutlinePanel.vue';
+import UiLibraryPanel from './uisvg/components/UiLibraryPanel.vue';
 import DataPanel from './uisvg/components/DataPanel.vue';
 import type { UiDesignDockCommand, UiDesignDockState } from './uisvg/uiDesignDockTypes';
 import './uisvg/styles/win-theme.css';
@@ -154,6 +155,10 @@ const uiDesignDockCmdSeq = ref(0);
 const uiDesignDockCommand = ref<UiDesignDockCommand | null>(null);
 /** ui-design 右侧 DataPanel：用户点 × 收起后再用底栏按钮展开 */
 const uisvgDataDockCollapsed = ref(false);
+/** 左侧 DockView：竖条切换三块 DockPanel 是否出现在滚动区内（显示/隐藏整块） */
+const leftDockMarkdownPanelShown = ref(true);
+const leftDockUisvgOutlinePanelShown = ref(true);
+const leftDockUisvgLibraryPanelShown = ref(true);
 /** `'markdown'` = 中间列仅 Markdown 编辑；否则为 `canvasTabs` 中某条 `id` */
 const activeEditorTab = ref<'markdown' | string>('markdown');
 const electronApi = computed(() => (typeof window !== 'undefined' ? window.electronAPI : undefined));
@@ -674,6 +679,84 @@ function toggleShowPropsDockMenu() {
   showPropsDock.value = !showPropsDock.value;
   closeMenus();
 }
+
+/** 竖条：切换对应 DockPanel 在 DockView 内的显示；窄条时先展开栏并显示该块 */
+function onLeftDockMarkdownStripClick(): void {
+  if (outlineDockCollapsed.value) {
+    outlineDockCollapsed.value = false;
+    leftDockMarkdownPanelShown.value = true;
+    return;
+  }
+  leftDockMarkdownPanelShown.value = !leftDockMarkdownPanelShown.value;
+}
+
+function onLeftDockUisvgOutlineStripClick(): void {
+  if (!showUiDesignLeftDock.value) return;
+  if (outlineDockCollapsed.value) {
+    outlineDockCollapsed.value = false;
+    leftDockUisvgOutlinePanelShown.value = true;
+    return;
+  }
+  leftDockUisvgOutlinePanelShown.value = !leftDockUisvgOutlinePanelShown.value;
+}
+
+function onLeftDockUisvgLibraryStripClick(): void {
+  if (!showUiDesignLeftDock.value) return;
+  if (outlineDockCollapsed.value) {
+    outlineDockCollapsed.value = false;
+    leftDockUisvgLibraryPanelShown.value = true;
+    return;
+  }
+  leftDockUisvgLibraryPanelShown.value = !leftDockUisvgLibraryPanelShown.value;
+}
+
+/** 标题栏 ‹：隐藏当前 DockPanel（与竖条「关闭显示」一致） */
+function closeLeftDockMarkdownPanel(): void {
+  leftDockMarkdownPanelShown.value = false;
+}
+
+function closeLeftDockUisvgOutlinePanel(): void {
+  leftDockUisvgOutlinePanelShown.value = false;
+}
+
+function closeLeftDockUisvgLibraryPanel(): void {
+  leftDockUisvgLibraryPanelShown.value = false;
+}
+
+/** ‹：各 DockPanel 标题行右侧，隐藏当前这一块（与竖条开关一致） */
+const leftDockCollapseOnMarkdown = computed(() => leftDockMarkdownPanelShown.value);
+
+const leftDockCollapseOnUisvgOutline = computed(
+  () => showUiDesignLeftDock.value && leftDockUisvgOutlinePanelShown.value,
+);
+
+const leftDockCollapseOnUisvgLibrary = computed(
+  () => showUiDesignLeftDock.value && leftDockUisvgLibraryPanelShown.value,
+);
+
+const leftDockMarkdownTitlebarFirst = computed(() => leftDockMarkdownPanelShown.value);
+
+const leftDockUioTitlebarFirst = computed(
+  () =>
+    showUiDesignLeftDock.value &&
+    !leftDockMarkdownPanelShown.value &&
+    leftDockUisvgOutlinePanelShown.value,
+);
+
+const leftDockUilTitlebarFirst = computed(
+  () =>
+    showUiDesignLeftDock.value &&
+    !leftDockMarkdownPanelShown.value &&
+    !leftDockUisvgOutlinePanelShown.value &&
+    leftDockUisvgLibraryPanelShown.value,
+);
+
+/** 无任何 DockPanel 显示时隐藏 DockView，并与窄条同宽以免出现空白栏 */
+const leftDockViewHasVisiblePanels = computed(() => {
+  const md = leftDockMarkdownPanelShown.value;
+  if (!showUiDesignLeftDock.value) return md;
+  return md || leftDockUisvgOutlinePanelShown.value || leftDockUisvgLibraryPanelShown.value;
+});
 
 const selectedBlock = computed(() => {
   const id = selectedBlockId.value;
@@ -2291,158 +2374,269 @@ onUnmounted(() => {
           <aside
             v-if="!blockOnly && showOutlineDock"
             class="dock dock-left dock-area-left"
-            :class="{ 'dock-area-left--buttons-only': outlineDockCollapsed }"
+            :class="{
+              'dock-area-left--buttons-only': outlineDockCollapsed || !leftDockViewHasVisiblePanels,
+            }"
             :aria-label="ui.dockOutlineAria"
           >
             <div class="dock-button-bar dock-button-bar--left" aria-label="Dock Button Bar">
               <button
                 type="button"
                 class="dock-button"
-                :class="{ 'dock-button--active': !outlineDockCollapsed }"
-                :title="ui.dockOutlineTitle"
-                :aria-label="ui.dockOutlineTitle"
-                @click="outlineDockCollapsed = !outlineDockCollapsed"
+                :class="{ 'dock-button--active': !outlineDockCollapsed && leftDockMarkdownPanelShown }"
+                :title="ui.dockLeftStripDocPanel"
+                :aria-label="ui.dockLeftStripDocPanel"
+                @click="onLeftDockMarkdownStripClick"
               >
-                {{ locale === 'en' ? 'Outl' : '大纲' }}
+                {{ ui.dockLeftStripDocPanel }}
               </button>
-            </div>
-            <div v-if="!outlineDockCollapsed" class="dock-view">
-            <div class="dock-titlebar">
-              <span v-show="!outlineDockCollapsed" class="dock-title">{{ ui.dockOutlineTitle }}</span>
               <button
+                v-if="showUiDesignLeftDock"
                 type="button"
-                class="dock-collapse-toggle"
-                :class="{ 'dock-collapse-toggle--fill': outlineDockCollapsed }"
-                :title="outlineDockCollapsed ? ui.dockExpandOutline : ui.dockCollapseOutline"
-                :aria-expanded="!outlineDockCollapsed"
-                @click="outlineDockCollapsed = !outlineDockCollapsed"
+                class="dock-button"
+                :class="{
+                  'dock-button--active':
+                    showUiDesignLeftDock && !outlineDockCollapsed && leftDockUisvgOutlinePanelShown,
+                }"
+                :title="ui.dockLeftStripUiOutline"
+                :aria-label="ui.dockLeftStripUiOutline"
+                @click="onLeftDockUisvgOutlineStripClick"
               >
-                <span v-if="outlineDockCollapsed" class="dock-vlabel">{{ ui.dockOutlineTitle }}</span>
-                <span v-else aria-hidden="true">‹</span>
+                {{ ui.dockLeftStripUiOutline }}
+              </button>
+              <button
+                v-if="showUiDesignLeftDock"
+                type="button"
+                class="dock-button"
+                :class="{
+                  'dock-button--active':
+                    showUiDesignLeftDock && !outlineDockCollapsed && leftDockUisvgLibraryPanelShown,
+                }"
+                :title="ui.dockLeftStripUiLibrary"
+                :aria-label="ui.dockLeftStripUiLibrary"
+                @click="onLeftDockUisvgLibraryStripClick"
+              >
+                {{ ui.dockLeftStripUiLibrary }}
               </button>
             </div>
-            <div v-show="!outlineDockCollapsed" class="dock-scroll">
-              <section class="dock-section">
-                <h3 class="dock-subh">{{ ui.dockSectionDoc }}</h3>
-                <ul v-if="mdOutlineHeadings.length" class="dock-outline-list">
-                  <li
-                    v-for="(h, i) in mdOutlineHeadings"
-                    v-show="!isOutlineRowHiddenByCollapse(i)"
-                    :key="i"
-                    class="dock-outline-li"
+            <div
+              v-if="!outlineDockCollapsed && leftDockViewHasVisiblePanels"
+              class="dock-view dock-view--left-stack"
+            >
+            <div class="dock-scroll dock-scroll--left-stack">
+              <section
+                v-if="leftDockMarkdownPanelShown"
+                class="dock-section dock-left-stack-section dock-left-stack-section--natural"
+              >
+                <div
+                  class="dock-titlebar dock-titlebar--panel-row"
+                  :class="{ 'dock-titlebar--panel-row-first': leftDockMarkdownTitlebarFirst }"
+                >
+                  <span class="dock-title dock-titlebar__panel-heading">{{ ui.dockLeftStripDocPanel }}</span>
+                  <button
+                    v-if="leftDockCollapseOnMarkdown"
+                    type="button"
+                    class="dock-collapse-toggle"
+                    :title="ui.dockClosePanelTitle"
+                    :aria-label="ui.dockClosePanelTitle"
+                    @click="closeLeftDockMarkdownPanel"
                   >
-                    <div
-                      class="dock-outline-row"
-                      :style="{ paddingLeft: `${4 + Math.max(0, h.level - 1) * 12}px` }"
-                    >
-                      <span
-                        v-if="outlineHasChildren(mdOutlineHeadings, i)"
-                        class="dock-outline-chev"
-                        tabindex="0"
-                        role="button"
-                        :aria-expanded="!isOutlineBranchCollapsed(i)"
-                        :aria-label="isOutlineBranchCollapsed(i) ? ui.outlineExpandChild : ui.outlineCollapseChild"
-                        :title="isOutlineBranchCollapsed(i) ? ui.outlineExpandChild : ui.outlineCollapseChild"
-                        @click.stop="toggleOutlineCollapse(i)"
-                        @keydown.enter.prevent.stop="toggleOutlineCollapse(i)"
-                        @keydown.space.prevent.stop="toggleOutlineCollapse(i)"
+                    <span aria-hidden="true">‹</span>
+                  </button>
+                </div>
+                <div id="left-dock-panel-md" class="dock-stack-panel__body dock-stack-panel__body--inset">
+                  <section class="dock-section dock-section--inner">
+                    <h3 class="dock-subh">{{ ui.dockSectionDoc }}</h3>
+                    <ul v-if="mdOutlineHeadings.length" class="dock-outline-list">
+                      <li
+                        v-for="(h, i) in mdOutlineHeadings"
+                        v-show="!isOutlineRowHiddenByCollapse(i)"
+                        :key="i"
+                        class="dock-outline-li"
                       >
-                        {{ isOutlineBranchCollapsed(i) ? '▶' : '▼' }}
-                      </span>
-                      <span v-else class="dock-outline-chev-spacer" aria-hidden="true" />
+                        <div
+                          class="dock-outline-row"
+                          :style="{ paddingLeft: `${4 + Math.max(0, h.level - 1) * 12}px` }"
+                        >
+                          <span
+                            v-if="outlineHasChildren(mdOutlineHeadings, i)"
+                            class="dock-outline-chev"
+                            tabindex="0"
+                            role="button"
+                            :aria-expanded="!isOutlineBranchCollapsed(i)"
+                            :aria-label="isOutlineBranchCollapsed(i) ? ui.outlineExpandChild : ui.outlineCollapseChild"
+                            :title="isOutlineBranchCollapsed(i) ? ui.outlineExpandChild : ui.outlineCollapseChild"
+                            @click.stop="toggleOutlineCollapse(i)"
+                            @keydown.enter.prevent.stop="toggleOutlineCollapse(i)"
+                            @keydown.space.prevent.stop="toggleOutlineCollapse(i)"
+                          >
+                            {{ isOutlineBranchCollapsed(i) ? '▶' : '▼' }}
+                          </span>
+                          <span v-else class="dock-outline-chev-spacer" aria-hidden="true" />
+                          <button
+                            type="button"
+                            class="dock-outline-item dock-outline-item--btn"
+                            :title="trOutlineJumpTitle(locale, h.line)"
+                            @click="scrollToOutlineIndex(i)"
+                          >
+                            <span class="dock-outline-level" :aria-hidden="true">H{{ h.level }}</span>
+                            <span class="dock-outline-text">{{ h.text }}</span>
+                            <span class="dock-outline-ln" :title="trOutlineLineTitle(locale, h.line)">L{{ h.line }}</span>
+                          </button>
+                        </div>
+                      </li>
+                    </ul>
+                    <p v-else class="dock-muted">{{ ui.dockNoHeadings }}</p>
+                  </section>
+                  <section class="dock-section dock-section--inner">
+                    <h3 class="dock-subh">{{ ui.dockFenceOutline }}</h3>
+                    <div class="dock-props-actions" role="group" :aria-label="ui.dockBlockActionsAria">
                       <button
                         type="button"
-                        class="dock-outline-item dock-outline-item--btn"
-                        :title="trOutlineJumpTitle(locale, h.line)"
-                        @click="scrollToOutlineIndex(i)"
+                        class="dock-action"
+                        :title="ui.dockClearSelectionTitle"
+                        @click="clearFenceSelection"
                       >
-                        <span class="dock-outline-level" :aria-hidden="true">H{{ h.level }}</span>
-                        <span class="dock-outline-text">{{ h.text }}</span>
-                        <span class="dock-outline-ln" :title="trOutlineLineTitle(locale, h.line)">L{{ h.line }}</span>
+                        {{ ui.dockClearSelection }}
+                      </button>
+                      <button
+                        type="button"
+                        class="dock-action dock-action--blue-amber"
+                        :title="ui.dockInsertFenceAtEndTitle"
+                        @click="openInsertCodeBlockModalFromDock"
+                      >
+                        {{ ui.dockInsertFenceAtEnd }}
                       </button>
                     </div>
-                  </li>
-                </ul>
-                <p v-else class="dock-muted">{{ ui.dockNoHeadings }}</p>
-              </section>
-              <section class="dock-section">
-                <h3 class="dock-subh">{{ ui.dockFenceOutline }}</h3>
-                <div class="dock-props-actions" role="group" :aria-label="ui.dockBlockActionsAria">
-                  <button
-                    type="button"
-                    class="dock-action"
-                    :title="ui.dockClearSelectionTitle"
-                    @click="clearFenceSelection"
-                  >
-                    {{ ui.dockClearSelection }}
-                  </button>
-                  <button
-                    type="button"
-                    class="dock-action dock-action--blue-amber"
-                    :title="ui.dockInsertFenceAtEndTitle"
-                    @click="openInsertCodeBlockModalFromDock"
-                  >
-                    {{ ui.dockInsertFenceAtEnd }}
-                  </button>
-                </div>
-                <p class="dock-muted dock-hint dock-hint--tight">
-                  {{ ui.dockFenceOutlineHint }}
-                </p>
-                <ul v-if="blocks.length" class="dock-fence-list" role="list">
-                  <li
-                    v-for="b in blocks"
-                    :key="b.payload.id"
-                    class="dock-fence-row"
-                    :class="{ 'dock-fence-row--active': selectedBlockId === b.payload.id }"
-                  >
-                    <button
-                      type="button"
-                      class="dock-fence-select"
-                      :title="trSelectFenceTitle(locale, b.kind, fenceBlockSubtypeLabel(b, locale), b.payload.id)"
-                      @click="selectFenceBlock(b)"
-                    >
-                      <span class="dock-fence-type-line">
-                        <span class="dock-fence-kind">{{ b.kind }}</span>
-                        <span class="dock-fence-sub">{{ fenceBlockSubtypeLabel(b, locale) }}</span>
-                      </span>
-                      <code class="dock-fence-id">{{ b.payload.id }}</code>
-                    </button>
-                    <button
-                      type="button"
-                      class="dock-fence-canvas"
-                      :title="canvasPrimaryActionTitle(b)"
-                      @click.stop="openVisualCanvas(b)"
-                    >
-                      {{ ui.dockFenceOpenCanvas }}
-                    </button>
-                  </li>
-                </ul>
-                <p v-else class="dock-muted">{{ ui.dockNoFenceKinds }}</p>
-              </section>
-              <section v-if="showUiDesignLeftDock" class="dock-section dock-section--uisvg-left">
-                <h3 class="dock-subh">{{ locale === 'en' ? 'UI design' : 'UI 设计' }}</h3>
-                <p class="dock-muted dock-hint dock-hint--tight">
-                  {{ locale === 'en' ? 'Outline and control library for the active ui-design canvas tab.' : '对应当前 ui-design 画布标签页的大纲与控件库。' }}
-                </p>
-                <div class="dock-uisvg-embed dock-uisvg-embed--left">
-                  <LeftDockPanel
-                    :nodes="activeUiDesignDockState?.outlineNodes ?? []"
-                    :selected-ids="activeUiDesignDockState?.selectedIds ?? []"
-                    @select="sendUiDesignDockCommand('outline-select', $event)"
-                    @frame-in-view="sendUiDesignDockCommand('outline-frame', $event)"
-                    @reparent="sendUiDesignDockCommand('outline-reparent', JSON.stringify($event))"
-                    @add-basic="sendUiDesignDockCommand('add-basic', $event)"
-                    @add-windows="sendUiDesignDockCommand('add-windows', $event)"
-                  />
+                    <p class="dock-muted dock-hint dock-hint--tight">
+                      {{ ui.dockFenceOutlineHint }}
+                    </p>
+                    <ul v-if="blocks.length" class="dock-fence-list" role="list">
+                      <li
+                        v-for="b in blocks"
+                        :key="b.payload.id"
+                        class="dock-fence-row"
+                        :class="{ 'dock-fence-row--active': selectedBlockId === b.payload.id }"
+                      >
+                        <button
+                          type="button"
+                          class="dock-fence-select"
+                          :title="trSelectFenceTitle(locale, b.kind, fenceBlockSubtypeLabel(b, locale), b.payload.id)"
+                          @click="selectFenceBlock(b)"
+                        >
+                          <span class="dock-fence-line dock-fence-line--kind">{{ b.kind }}</span>
+                          <span class="dock-fence-line dock-fence-line--subtype">{{
+                            fenceBlockSubtypeLabel(b, locale)
+                          }}</span>
+                          <code class="dock-fence-line dock-fence-line--id">{{ b.payload.id }}</code>
+                        </button>
+                        <button
+                          type="button"
+                          class="dock-fence-canvas"
+                          :title="canvasPrimaryActionLabel(b)"
+                          @click.stop="openVisualCanvas(b)"
+                        >
+                          {{ ui.dockFenceEditBlock }}
+                        </button>
+                      </li>
+                    </ul>
+                    <p v-else class="dock-muted">{{ ui.dockNoFenceKinds }}</p>
+                  </section>
+                  <section v-if="dockSecondaryOutline" class="dock-section dock-section--inner">
+                    <h3 class="dock-subh">{{ dockSecondaryOutline.heading }}</h3>
+                    <ul class="dock-outline-list dock-outline-list--dense">
+                      <li v-for="(ln, i) in dockSecondaryOutline.lines" :key="i" class="dock-outline-item">{{ ln }}</li>
+                    </ul>
+                  </section>
+                  <p v-else class="dock-muted dock-hint dock-section--inner">{{ ui.dockSecondaryPlaceholder }}</p>
                 </div>
               </section>
-              <section v-if="dockSecondaryOutline" class="dock-section">
-                <h3 class="dock-subh">{{ dockSecondaryOutline.heading }}</h3>
-                <ul class="dock-outline-list dock-outline-list--dense">
-                  <li v-for="(ln, i) in dockSecondaryOutline.lines" :key="i" class="dock-outline-item">{{ ln }}</li>
-                </ul>
+
+              <section
+                v-if="showUiDesignLeftDock && leftDockUisvgOutlinePanelShown"
+                class="dock-section dock-left-stack-section dock-left-stack-section--grow dock-section--uisvg-outline"
+              >
+                <div
+                  class="dock-titlebar dock-titlebar--panel-row"
+                  :class="{ 'dock-titlebar--panel-row-first': leftDockUioTitlebarFirst }"
+                >
+                  <span class="dock-title dock-titlebar__panel-heading">{{ ui.dockLeftStripUiOutline }}</span>
+                  <button
+                    v-if="leftDockCollapseOnUisvgOutline"
+                    type="button"
+                    class="dock-collapse-toggle"
+                    :title="ui.dockClosePanelTitle"
+                    :aria-label="ui.dockClosePanelTitle"
+                    @click="closeLeftDockUisvgOutlinePanel"
+                  >
+                    <span aria-hidden="true">‹</span>
+                  </button>
+                </div>
+                <div
+                  id="left-dock-panel-uio"
+                  class="dock-stack-panel__body dock-stack-panel__body--inset dock-stack-panel__body--uisvg-fill"
+                >
+                  <p class="dock-muted dock-hint dock-hint--tight">
+                    {{
+                      locale === 'en'
+                        ? 'Object tree for the active ui-design canvas tab.'
+                        : '对应当前 ui-design 画布标签页的对象大纲。'
+                    }}
+                  </p>
+                  <div class="dock-uisvg-embed dock-uisvg-embed--outline dock-uisvg-embed--left-panel">
+                    <OutlinePanel
+                      plain-body
+                      :nodes="activeUiDesignDockState?.outlineNodes ?? []"
+                      :selected-ids="activeUiDesignDockState?.selectedIds ?? []"
+                      @select="sendUiDesignDockCommand('outline-select', $event)"
+                      @frame-in-view="sendUiDesignDockCommand('outline-frame', $event)"
+                      @reparent="sendUiDesignDockCommand('outline-reparent', JSON.stringify($event))"
+                    />
+                  </div>
+                </div>
               </section>
-              <p v-else class="dock-muted dock-hint">{{ ui.dockSecondaryPlaceholder }}</p>
+
+              <section
+                v-if="showUiDesignLeftDock && leftDockUisvgLibraryPanelShown"
+                class="dock-section dock-left-stack-section dock-left-stack-section--natural dock-section--uisvg-library"
+              >
+                <div
+                  class="dock-titlebar dock-titlebar--panel-row"
+                  :class="{ 'dock-titlebar--panel-row-first': leftDockUilTitlebarFirst }"
+                >
+                  <span class="dock-title dock-titlebar__panel-heading">{{ ui.dockLeftStripUiLibrary }}</span>
+                  <button
+                    v-if="leftDockCollapseOnUisvgLibrary"
+                    type="button"
+                    class="dock-collapse-toggle"
+                    :title="ui.dockClosePanelTitle"
+                    :aria-label="ui.dockClosePanelTitle"
+                    @click="closeLeftDockUisvgLibraryPanel"
+                  >
+                    <span aria-hidden="true">‹</span>
+                  </button>
+                </div>
+                <div
+                  id="left-dock-panel-uil"
+                  class="dock-stack-panel__body dock-stack-panel__body--inset dock-stack-panel__body--uisvg-fill dock-stack-panel__body--uisvg-library-body"
+                >
+                  <p class="dock-muted dock-hint dock-hint--tight">
+                    {{
+                      locale === 'en'
+                        ? 'Drag or click to add controls to the canvas.'
+                        : '拖拽或点击向画布添加控件。'
+                    }}
+                  </p>
+                  <div class="dock-uisvg-embed dock-uisvg-embed--library dock-uisvg-embed--left-panel">
+                    <UiLibraryPanel
+                      plain-body
+                      workbench-dock-embed
+                      @add-basic="sendUiDesignDockCommand('add-basic', $event)"
+                      @add-windows="sendUiDesignDockCommand('add-windows', $event)"
+                    />
+                  </div>
+                </div>
+              </section>
             </div>
             </div>
           </aside>
@@ -3731,6 +3925,12 @@ onUnmounted(() => {
 .dock-section:last-child {
   margin-bottom: 0;
 }
+.dock-stack-panel__body > .dock-section--inner:last-child {
+  margin-bottom: 0;
+}
+.dock-stack-panel__body > .dock-section--inner {
+  margin-bottom: 12px;
+}
 .dock-subh {
   margin: 0 0 6px;
   font-size: 0.72rem;
@@ -4018,6 +4218,124 @@ onUnmounted(() => {
   overflow-x: hidden;
   padding-right: 8px;
 }
+/** 左侧多面板：仅内容区滚动，无单独 DockView 顶栏 */
+.dock-view--left-stack {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dock-scroll--left-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dock-left-stack-section {
+  margin-bottom: 0;
+}
+.dock-left-stack-section--natural {
+  flex: 0 0 auto;
+}
+.dock-left-stack-section--grow {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/**
+ * UI 大纲整块：
+ * - max-height：避免单独占满整列；
+ * - min-height：与下方「文档 / UI 控件库」同列 flex 时，防止 min-height:0 被挤到看不见，而控件库 flex-shrink:0 仍占位导致视觉遮挡。
+ */
+.dock-section--uisvg-outline.dock-left-stack-section--grow {
+  flex: 1 1 auto;
+  max-height: min(52vh, 420px);
+  /* 含 titlebar + 提示 + 表头 + 列表区至少 10×22px；矮视口仍用 vh 封顶以免与 max-height 矛盾 */
+  min-height: min(max(300px, 24vh), 48vh);
+  overflow: hidden;
+}
+.dock-section--uisvg-outline .dock-stack-panel__body.dock-stack-panel__body--uisvg-fill {
+  overflow: hidden;
+  min-height: 0;
+}
+/** UI 控件库：高度随内容，不参与与上方大纲的纵向分栏争夺 */
+.dock-section--uisvg-library.dock-left-stack-section {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+}
+.dock-stack-panel__body--uisvg-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dock-stack-panel__body.dock-stack-panel__body--uisvg-fill.dock-stack-panel__body--inset {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.dock-stack-panel__body--uisvg-library-body.dock-stack-panel__body--uisvg-fill {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.dock-stack-panel__body--uisvg-fill .dock-hint--tight {
+  flex-shrink: 0;
+}
+.dock-stack-panel__body--uisvg-fill > .dock-uisvg-embed--left-panel.dock-uisvg-embed--outline {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.dock-stack-panel__body--uisvg-fill > .dock-uisvg-embed--left-panel.dock-uisvg-embed--library {
+  flex: 0 0 auto;
+}
+/** 控件库：内层随内容增高，滚动交给左侧 dock-scroll */
+.dock-uisvg-embed--library.dock-uisvg-embed--left-panel :deep(.ui-library) {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+.dock-uisvg-embed--library.dock-uisvg-embed--left-panel :deep(.ui-library-root) {
+  flex: 0 0 auto !important;
+  min-height: 0 !important;
+}
+.dock-uisvg-embed--library.dock-uisvg-embed--left-panel :deep(.dock-fold__body) {
+  overflow: visible !important;
+  flex: none !important;
+  min-height: 0 !important;
+}
+.dock-uisvg-embed--library.dock-uisvg-embed--left-panel :deep(.ui-library-body) {
+  overflow: visible !important;
+  flex: none !important;
+  min-height: auto !important;
+}
+.dock-uisvg-embed--library.dock-uisvg-embed--left-panel :deep(.palette-buttons) {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+.dock-uisvg-embed--library.dock-uisvg-embed--left-panel :deep(.palette-hint),
+.dock-uisvg-embed--library.dock-uisvg-embed--left-panel :deep(.palette-subtitle) {
+  margin-left: 2px;
+  margin-right: 2px;
+}
+.dock-titlebar--panel-row {
+  border-radius: 0;
+}
+.dock-titlebar--panel-row-first {
+  border-radius: 6px 6px 0 0;
+}
+.dock-titlebar__panel-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  line-height: 1.35;
+}
+.dock-stack-panel__body--inset {
+  padding: 8px 10px 12px;
+}
 .dock-button-bar {
   display: flex;
   flex: 0 0 36px;
@@ -4222,8 +4540,8 @@ onUnmounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: stretch;
+  gap: 2px;
   padding: 6px 8px;
   margin: 0;
   border: none;
@@ -4234,33 +4552,30 @@ onUnmounted(() => {
   cursor: pointer;
   color: #0f172a;
 }
-.dock-fence-type-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+.dock-fence-line {
+  display: block;
+  line-height: 1.25;
+  min-width: 0;
 }
-.dock-fence-sub {
-  flex-shrink: 0;
-  font-size: 0.65rem;
+.dock-fence-line--kind {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.dock-fence-line--subtype {
+  font-size: 0.66rem;
   font-weight: 600;
-  color: #475569;
+  color: #64748b;
+}
+.dock-fence-line--id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #334155;
+  word-break: break-all;
 }
 .dock-fence-select:hover {
   background: #f1f5f9;
-}
-.dock-fence-kind {
-  flex-shrink: 0;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: #eef2ff;
-  color: #3730a3;
-}
-.dock-fence-id {
-  font-size: 0.7rem;
-  word-break: break-all;
 }
 .dock-fence-canvas {
   flex-shrink: 0;
@@ -4434,8 +4749,61 @@ onUnmounted(() => {
   background: #f8fafc;
 }
 
-.dock-uisvg-embed--left .left-dock-panel {
-  min-height: 200px;
+/** 左侧 DockPanel：大纲在 section max-height 内 flex 填充；列表至少 10 行见 OutlinePanel .outline-list */
+.dock-uisvg-embed.dock-uisvg-embed--left-panel.dock-uisvg-embed--outline {
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/**
+ * 左侧控件库：不要用 column flex 包一层 flex:1 的子树。
+ * UiLibraryPanel 根 .ui-library 与 DockFoldSection plain 根均为 flex:1 1 auto，
+ * 在 workbench 侧栏会错误吃满「兄弟大纲」分配后的剩余高度，视觉上盖住 UI outline。
+ */
+.dock-uisvg-embed.dock-uisvg-embed--left-panel.dock-uisvg-embed--library {
+  max-height: none;
+  overflow: visible;
+  flex: 0 0 auto;
+  display: block;
+}
+
+.dock-uisvg-embed--left-panel.dock-uisvg-embed--outline .outline-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.dock-uisvg-embed--left-panel.dock-uisvg-embed--library .ui-library {
+  display: flex;
+  flex-direction: column;
+  flex: none !important;
+  flex-grow: 0 !important;
+  flex-shrink: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+
+.dock-uisvg-embed--left-panel.dock-uisvg-embed--library .dock-fold-outer--plain {
+  flex: 0 0 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+.dock-uisvg-embed--left-panel.dock-uisvg-embed--library .dock-fold--plain {
+  flex: 0 0 auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+
+.dock-uisvg-embed--library .ui-library {
+  min-height: 160px;
 }
 
 .dock-uisvg-embed--right .data-panel {

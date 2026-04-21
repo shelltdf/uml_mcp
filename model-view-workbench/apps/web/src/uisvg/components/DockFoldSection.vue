@@ -18,13 +18,25 @@ withDefaults(
      * 为 true 时不在本组件内绘制收起窄条（由父级单独一列渲染），避免与主内容区同一列冲突
      */
     externalRailStrip?: boolean
+    /**
+     * 外层已有 workbench dock 标题/侧栏按钮时：只渲染 body，不再套 ▼ 与收起到边条。
+     */
+    plainBody?: boolean
   }>(),
-  { externalRailStrip: false },
+  { externalRailStrip: false, plainBody: false },
 )
 </script>
 
 <template>
+  <div v-if="plainBody" class="dock-fold-outer dock-fold-outer--plain" :class="rootClass">
+    <section class="dock-fold dock-fold--plain">
+      <div :id="panelId" class="dock-fold__body" role="region">
+        <slot />
+      </div>
+    </section>
+  </div>
   <div
+    v-else
     class="dock-fold-outer"
     :class="[
       rootClass,
@@ -104,6 +116,23 @@ withDefaults(
 </template>
 
 <style scoped>
+.dock-fold-outer--plain {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dock-fold--plain {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .dock-fold-outer {
   display: flex;
   flex-direction: column;

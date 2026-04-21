@@ -169,6 +169,11 @@ export type MessageKey =
   | 'canvas.chromeSize'
   | 'canvas.chromeDpi'
   | 'canvas.chromeOrigin'
+  | 'canvas.zoomOut'
+  | 'canvas.zoomIn'
+  | 'canvas.zoomReset'
+  | 'canvas.zoomFit'
+  | 'canvas.zoomHudAria'
   | 'canvas.selectionFrameGeom'
   | 'canvas.alignDebug.header'
   | 'canvas.alignDebug.hintNoSummary'
@@ -446,6 +451,11 @@ export const zh: Record<MessageKey, string> = {
   'canvas.chromeSize': '{w} × {h} px',
   'canvas.chromeDpi': '{dpi} DPI',
   'canvas.chromeOrigin': '原点 (0, 0)',
+  'canvas.zoomOut': '缩小',
+  'canvas.zoomIn': '放大',
+  'canvas.zoomReset': '100%',
+  'canvas.zoomFit': '适应窗口',
+  'canvas.zoomHudAria': '画布缩放',
   'canvas.selectionFrameGeom':
     '选择框位置（画布坐标）: left={left} top={top} width={width} height={height}',
   'canvas.alignDebug.header': '--- 对齐调试 ---',
@@ -729,6 +739,11 @@ export const en: Record<MessageKey, string> = {
   'canvas.chromeSize': '{w} × {h} px',
   'canvas.chromeDpi': '{dpi} DPI',
   'canvas.chromeOrigin': 'Origin (0, 0)',
+  'canvas.zoomOut': 'Zoom out',
+  'canvas.zoomIn': 'Zoom in',
+  'canvas.zoomReset': '100%',
+  'canvas.zoomFit': 'Fit to view',
+  'canvas.zoomHudAria': 'Canvas zoom',
   'canvas.selectionFrameGeom':
     'Selection box (canvas coords): left={left} top={top} width={width} height={height}',
   'canvas.alignDebug.header': '--- Align debug ---',
