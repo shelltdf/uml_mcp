@@ -171,42 +171,80 @@ function firstSelectedNode(): MindmapNodeData | undefined {
   const id = selectedIds.value[0];
   return id ? state.nodes.find((n) => n.id === id) : undefined;
 }
-/** After structural/view changes, keep the primary selected node inside the viewport (minimal pan). */
-function revealPrimarySelectionIfClipped(): void {
+/** Bottom toolbar / chrome in SVG px — keep primary selection above this band when revealing. */
+const REVEAL_BOTTOM_UI_RESERVE = MMC_BAR_H + 10;
+
+/** Screen-space bounds of primary selection (SVG coords, origin top-left of viewport). */
+function primarySelectionScreenBounds(): { x1: number; y1: number; x2: number; y2: number } | null {
   const id = selectedIds.value[0];
-  if (!id) return;
+  if (!id) return null;
   const n = byId.value.get(id);
-  if (!n) return;
+  if (!n) return null;
   const s = state.scale;
-  const rect = viewportRect();
-  const vw = Math.max(1, rect.width);
-  const vh = Math.max(1, rect.height);
-  const m = 28;
-  const b = {
+  return {
     x1: state.panX + n.x * s,
     y1: state.panY + n.y * s,
     x2: state.panX + (n.x + n.w) * s,
     y2: state.panY + (n.y + n.h) * s,
   };
-  const bw = b.x2 - b.x1;
-  const bh = b.y2 - b.y1;
-  let dx = 0;
-  let dy = 0;
-  if (bw <= vw - 2 * m) {
-    if (b.x1 < m) dx = m - b.x1;
-    else if (b.x2 > vw - m) dx = vw - m - b.x2;
-  } else {
-    dx = m - b.x1;
-  }
-  if (bh <= vh - 2 * m) {
-    if (b.y1 < m) dy = m - b.y1;
-    else if (b.y2 > vh - m) dy = vh - m - b.y2;
-  } else {
-    dy = m - b.y1;
-  }
-  if (dx !== 0 || dy !== 0) {
-    state.panX += dx;
-    state.panY += dy;
+}
+
+function primarySelectionIntersectsViewport(): boolean {
+  const b = primarySelectionScreenBounds();
+  if (!b) return false;
+  const rect = viewportRect();
+  const vw = Math.max(1, rect.width);
+  const vh = Math.max(1, rect.height - REVEAL_BOTTOM_UI_RESERVE);
+  return !(b.x2 <= 0 || b.x1 >= vw || b.y2 <= 0 || b.y1 >= vh);
+}
+
+/**
+ * 仅在「当前主选节点与可视区域无交集」时平移一次视口使其可见；已有任意重叠则不修改 pan/zoom。
+ * 不在滚轮、拖画布、pushPayload 等路径调用（不锁定视口）。
+ */
+function revealPrimarySelectionIntoViewOnceIfNeeded(): void {
+  if (!selectedIds.value[0]) return;
+  if (primarySelectionIntersectsViewport()) return;
+
+  const rect = viewportRect();
+  const vw = Math.max(1, rect.width);
+  const vh = Math.max(1, rect.height - REVEAL_BOTTOM_UI_RESERVE);
+  const m = 28;
+
+  for (let pass = 0; pass < 2; pass++) {
+    const b = primarySelectionScreenBounds();
+    if (!b) return;
+
+    const fullyOutside = b.x2 <= 0 || b.x1 >= vw || b.y2 <= 0 || b.y1 >= vh;
+    if (fullyOutside) {
+      const mx = (b.x1 + b.x2) / 2;
+      const my = (b.y1 + b.y2) / 2;
+      state.panX += vw / 2 - mx;
+      state.panY += vh / 2 - my;
+      continue;
+    }
+
+    const bw = b.x2 - b.x1;
+    const bh = b.y2 - b.y1;
+    let dx = 0;
+    let dy = 0;
+    if (bw <= vw - 2 * m) {
+      if (b.x1 < m) dx = m - b.x1;
+      else if (b.x2 > vw - m) dx = vw - m - b.x2;
+    } else {
+      dx = m - b.x1;
+    }
+    if (bh <= vh - 2 * m) {
+      if (b.y1 < m) dy = m - b.y1;
+      else if (b.y2 > vh - m) dy = vh - m - b.y2;
+    } else {
+      dy = m - b.y1;
+    }
+    if (dx !== 0 || dy !== 0) {
+      state.panX += dx;
+      state.panY += dy;
+    }
+    break;
   }
 }
 
@@ -246,7 +284,6 @@ function emitDockContext(): void {
   });
 }
 function pushPayload(): void {
-  revealPrimarySelectionIfClipped();
   const next = serializeMindmapPayload(state);
   lastSynced.value = next;
   emit('update:modelValue', next);
@@ -266,6 +303,15 @@ function loadPayload(text: string): void {
   emitDockContext();
 }
 watch(() => props.modelValue, (v) => { if (v !== lastSynced.value) loadPayload(v ?? ''); }, { immediate: true });
+
+/** 选中变化时：仅当主选节点与视口无交集则平移一次使其可见；其它情况不干预视口。sync 以便同一事件内随后的 pushPayload 写入校正后的 pan。 */
+watch(
+  selectedIds,
+  () => {
+    revealPrimarySelectionIntoViewOnceIfNeeded();
+  },
+  { deep: true, flush: 'sync' },
+);
 
 function createNode(parentId: string | null, label?: string): string {
   const id = `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -499,13 +545,11 @@ function beginNodeDrag(e: PointerEvent, id: string): void {
   const additive = e.ctrlKey || e.metaKey;
   if (additive) {
     selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter((x) => x !== id) : [...selectedIds.value, id];
-    revealPrimarySelectionIfClipped();
     emitDockContext();
     primeImeInput();
     return;
   }
   if (!selectedIds.value.includes(id)) selectedIds.value = [id];
-  revealPrimarySelectionIfClipped();
   primeImeInput();
   const hit = byId.value.get(id);
   if (!hit) return;
@@ -631,6 +675,11 @@ function onBackgroundPointerDown(e: PointerEvent): void {
     panStart.y = e.clientY;
     panStart.ox = state.panX;
     panStart.oy = state.panY;
+    try {
+      viewportRef.value?.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture may fail on some platforms */
+    }
     return;
   }
   if (e.button !== 0) return;
@@ -651,10 +700,19 @@ function onViewportPointerMove(e: PointerEvent): void {
   const w = worldAt(e.clientX, e.clientY);
   marquee.value = { ...marquee.value, x1: w.x, y1: w.y };
 }
-function onViewportPointerUp(): void {
+function endMiddleButtonPan(e: PointerEvent): void {
+  panning.value = false;
+  try {
+    viewportRef.value?.releasePointerCapture(e.pointerId);
+  } catch {
+    /* ignore */
+  }
+  pushPayload();
+}
+
+function onViewportPointerUp(e: PointerEvent): void {
   if (panning.value) {
-    panning.value = false;
-    pushPayload();
+    endMiddleButtonPan(e);
     return;
   }
   if (!marquee.value) return;
@@ -663,18 +721,21 @@ function onViewportPointerUp(): void {
   pushPayload();
   emitDockContext();
 }
+
+function onViewportPointerCancel(e: PointerEvent): void {
+  if (panning.value) endMiddleButtonPan(e);
+}
+
 function onWheel(e: WheelEvent): void {
   const z = zoomAt(state.scale, state.panX, state.panY, e.clientX, e.clientY, viewportRect(), e.deltaY);
   state.scale = z.scale;
   state.panX = z.panX;
   state.panY = z.panY;
-  revealPrimarySelectionIfClipped();
 }
 
 function openContextMenu(e: MouseEvent, nodeId: string | null): void {
   e.preventDefault();
   if (nodeId && !selectedIds.value.includes(nodeId)) selectedIds.value = [nodeId];
-  revealPrimarySelectionIfClipped();
   emitDockContext();
   ctx.open = true;
   ctx.x = e.clientX;
@@ -739,7 +800,6 @@ function onKeyDown(e: KeyboardEvent): void {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
     e.preventDefault();
     selectedIds.value = state.nodes.map((n) => n.id);
-    revealPrimarySelectionIfClipped();
     pushPayload();
     return emitDockContext();
   }
@@ -828,7 +888,6 @@ function onKeyDown(e: KeyboardEvent): void {
     }
   }
   if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    revealPrimarySelectionIfClipped();
     pushPayload();
   }
   emitDockContext();
@@ -900,7 +959,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div ref="viewportRef" class="mmc" @pointermove="onViewportPointerMove" @pointerup="onViewportPointerUp" @wheel.prevent="onWheel">
+  <div
+    ref="viewportRef"
+    class="mmc"
+    @pointermove="onViewportPointerMove"
+    @pointerup="onViewportPointerUp"
+    @pointercancel="onViewportPointerCancel"
+    @wheel.prevent="onWheel"
+  >
     <svg class="mmc-svg" xmlns="http://www.w3.org/2000/svg">
       <g :transform="`translate(${state.panX},${state.panY}) scale(${state.scale})`">
         <rect x="-100000" y="-100000" width="200000" height="200000" fill="transparent" @pointerdown="onBackgroundPointerDown" @contextmenu="openContextMenu($event, null)" />
