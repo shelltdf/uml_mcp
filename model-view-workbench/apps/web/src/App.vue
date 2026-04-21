@@ -2330,7 +2330,7 @@ onUnmounted(() => {
                   </button>
                   <button
                     type="button"
-                    class="dock-action"
+                    class="dock-action dock-action--blue-amber"
                     :title="ui.dockInsertFenceAtEndTitle"
                     @click="openInsertCodeBlockModalFromDock"
                   >
@@ -3783,6 +3783,22 @@ onUnmounted(() => {
 .dock-action--primary:hover {
   background: #dbeafe;
   border-color: #1d4ed8;
+}
+/** 实心蓝底 + 橘黄字（插入代码块主行动点） */
+.dock-action--blue-amber {
+  font-weight: 600;
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fbbf24;
+}
+.dock-action--blue-amber:hover {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  color: #fcd34d;
+}
+.dock-action--blue-amber:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
 }
 .dock-field {
   display: flex;
