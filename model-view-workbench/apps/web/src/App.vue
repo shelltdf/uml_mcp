@@ -646,8 +646,12 @@ const outlineDockCollapsed = ref(false);
 const propertiesDockCollapsed = ref(false);
 const mindmapSpecialDockCollapsed = ref(false);
 const propertiesDockFolded = ref(false);
-const mindmapDockFolded = ref(false);
-const rightDockMaximized = ref<'properties' | 'mindmap' | null>(null);
+const mindmapFormatDockFolded = ref(false);
+const mindmapIconDockFolded = ref(false);
+const mindmapThemeDockFolded = ref(false);
+const mindmapIconDockCollapsed = ref(false);
+const mindmapThemeDockCollapsed = ref(false);
+const rightDockMaximized = ref<'properties' | 'mindmap-format' | 'mindmap-icon' | 'mindmap-theme' | null>(null);
 const rightDockAreaAria = computed(() => (locale.value === 'en' ? 'Right dock area' : '右侧 Dock 区域'));
 
 function toggleShowOutlineDockMenu() {
@@ -1737,20 +1741,43 @@ const showMindmapSpecialDock = computed(() => {
 });
 
 const activeMindmapDockState = computed(() => activeCanvasSession.value?.mindmapDockState ?? null);
-const hasPropertiesDockPanel = computed(() => !!((selectedBlock.value && selectedBlockDocLines.value) || showCodespaceDockCanvasSelection.value));
+const hasPropertiesDockPanel = computed(() => true);
 const hasMindmapDockPanel = computed(() => showMindmapSpecialDock.value);
+const hasMindmapFormatDockPanel = computed(() => hasMindmapDockPanel.value);
+const hasMindmapIconDockPanel = computed(() => hasMindmapDockPanel.value);
+const hasMindmapThemeDockPanel = computed(() => hasMindmapDockPanel.value);
 const propertiesDockVisibleInView = computed(() => {
-  if (!hasPropertiesDockPanel.value || propertiesDockCollapsed.value) return false;
-  if (rightDockMaximized.value === 'mindmap') return false;
+  if (propertiesDockCollapsed.value) return false;
+  if (
+    rightDockMaximized.value === 'mindmap-format' ||
+    rightDockMaximized.value === 'mindmap-icon' ||
+    rightDockMaximized.value === 'mindmap-theme'
+  ) return false;
   return true;
 });
-const mindmapDockVisibleInView = computed(() => {
-  if (!hasMindmapDockPanel.value || mindmapSpecialDockCollapsed.value) return false;
+const mindmapFormatDockVisibleInView = computed(() => {
+  if (!hasMindmapFormatDockPanel.value || mindmapSpecialDockCollapsed.value) return false;
   if (rightDockMaximized.value === 'properties') return false;
+  if (rightDockMaximized.value === 'mindmap-icon' || rightDockMaximized.value === 'mindmap-theme') return false;
+  return true;
+});
+const mindmapIconDockVisibleInView = computed(() => {
+  if (!hasMindmapIconDockPanel.value || mindmapIconDockCollapsed.value) return false;
+  if (rightDockMaximized.value === 'properties') return false;
+  if (rightDockMaximized.value === 'mindmap-format' || rightDockMaximized.value === 'mindmap-theme') return false;
+  return true;
+});
+const mindmapThemeDockVisibleInView = computed(() => {
+  if (!hasMindmapThemeDockPanel.value || mindmapThemeDockCollapsed.value) return false;
+  if (rightDockMaximized.value === 'properties') return false;
+  if (rightDockMaximized.value === 'mindmap-format' || rightDockMaximized.value === 'mindmap-icon') return false;
   return true;
 });
 const showRightDockView = computed(() => {
-  return propertiesDockVisibleInView.value || mindmapDockVisibleInView.value;
+  return propertiesDockVisibleInView.value
+    || mindmapFormatDockVisibleInView.value
+    || mindmapIconDockVisibleInView.value
+    || mindmapThemeDockVisibleInView.value;
 });
 
 function sendMindmapDockCommand(action: MindmapDockCommand['action'], payload?: string): void {
@@ -1758,7 +1785,7 @@ function sendMindmapDockCommand(action: MindmapDockCommand['action'], payload?: 
   mindmapDockCommand.value = { id: mindmapDockCmdSeq.value, action, payload };
 }
 
-function toggleRightDockMaximize(target: 'properties' | 'mindmap'): void {
+function toggleRightDockMaximize(target: 'properties' | 'mindmap-format' | 'mindmap-icon' | 'mindmap-theme'): void {
   rightDockMaximized.value = rightDockMaximized.value === target ? null : target;
 }
 
@@ -2538,13 +2565,13 @@ onUnmounted(() => {
                 <div v-if="showRightDockView" class="dock-view">
                   <section v-if="propertiesDockVisibleInView" class="dock-special-panel">
                     <div class="dock-special-head">
-                      <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Properties Dock' : '属性 Dock' }}</h3>
+                      <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Properties' : '属性' }}</h3>
                       <div class="dock-special-head-actions">
                         <button
                           type="button"
                           class="dock-special-toggle"
-                          :title="propertiesDockFolded ? (locale === 'en' ? 'Expand Properties Dock' : '展开属性 Dock') : (locale === 'en' ? 'Fold Properties Dock' : '折叠属性 Dock')"
-                          :aria-label="propertiesDockFolded ? (locale === 'en' ? 'Expand Properties Dock' : '展开属性 Dock') : (locale === 'en' ? 'Fold Properties Dock' : '折叠属性 Dock')"
+                          :title="propertiesDockFolded ? (locale === 'en' ? 'Expand Properties' : '展开属性') : (locale === 'en' ? 'Fold Properties' : '折叠属性')"
+                          :aria-label="propertiesDockFolded ? (locale === 'en' ? 'Expand Properties' : '展开属性') : (locale === 'en' ? 'Fold Properties' : '折叠属性')"
                           @click="propertiesDockFolded = !propertiesDockFolded"
                         >
                           {{ propertiesDockFolded ? '▸' : '▾' }}
@@ -2561,8 +2588,8 @@ onUnmounted(() => {
                         <button
                           type="button"
                           class="dock-special-toggle"
-                          :title="locale === 'en' ? 'Close Properties Dock' : '关闭属性 Dock'"
-                          :aria-label="locale === 'en' ? 'Close Properties Dock' : '关闭属性 Dock'"
+                          :title="locale === 'en' ? 'Close Properties' : '关闭属性'"
+                          :aria-label="locale === 'en' ? 'Close Properties' : '关闭属性'"
                           @click="propertiesDockCollapsed = true; if (rightDockMaximized === 'properties') rightDockMaximized = null"
                         >
                           ×
@@ -2626,43 +2653,56 @@ onUnmounted(() => {
                           </template>
                         </dl>
                       </template>
+                      <template v-if="!(selectedBlock && selectedBlockDocLines) && !showCodespaceDockCanvasSelection">
+                        <dl class="dock-dl dock-dl--props">
+                          <dt>{{ ui.propsPath }}</dt>
+                          <dd>{{ selectedPath }}</dd>
+                          <dt>{{ ui.propsChars }}</dt>
+                          <dd>{{ currentContent.length }}</dd>
+                          <dt>{{ ui.propsFenceCount }}</dt>
+                          <dd>{{ blocks.length }}</dd>
+                          <dt>{{ ui.propsParseWarns }}</dt>
+                          <dd>{{ parseErrors.length }}</dd>
+                        </dl>
+                        <p class="dock-muted">{{ ui.propsPickBlockHint }}</p>
+                      </template>
                     </template>
                   </section>
 
-                  <section v-if="mindmapDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
+                  <section v-if="mindmapFormatDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
                     <div class="dock-special-head">
-                      <h3 class="dock-subh dock-subh--special">Mindmap Dock</h3>
+                      <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Format' : '格式' }}</h3>
                       <div class="dock-special-head-actions">
                         <button
                           type="button"
                           class="dock-special-toggle"
-                          :title="mindmapDockFolded ? (locale === 'en' ? 'Expand Mindmap Dock' : '展开脑图 Dock') : (locale === 'en' ? 'Fold Mindmap Dock' : '折叠脑图 Dock')"
-                          :aria-label="mindmapDockFolded ? (locale === 'en' ? 'Expand Mindmap Dock' : '展开脑图 Dock') : (locale === 'en' ? 'Fold Mindmap Dock' : '折叠脑图 Dock')"
-                          @click="mindmapDockFolded = !mindmapDockFolded"
+                          :title="mindmapFormatDockFolded ? (locale === 'en' ? 'Expand Format' : '展开格式') : (locale === 'en' ? 'Fold Format' : '折叠格式')"
+                          :aria-label="mindmapFormatDockFolded ? (locale === 'en' ? 'Expand Format' : '展开格式') : (locale === 'en' ? 'Fold Format' : '折叠格式')"
+                          @click="mindmapFormatDockFolded = !mindmapFormatDockFolded"
                         >
-                          {{ mindmapDockFolded ? '▸' : '▾' }}
+                          {{ mindmapFormatDockFolded ? '▸' : '▾' }}
                         </button>
                         <button
                           type="button"
                           class="dock-special-toggle"
-                          :title="rightDockMaximized === 'mindmap' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
-                          :aria-label="rightDockMaximized === 'mindmap' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
-                          @click="toggleRightDockMaximize('mindmap')"
+                          :title="rightDockMaximized === 'mindmap-format' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
+                          :aria-label="rightDockMaximized === 'mindmap-format' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
+                          @click="toggleRightDockMaximize('mindmap-format')"
                         >
-                          {{ rightDockMaximized === 'mindmap' ? '🗗' : '🗖' }}
+                          {{ rightDockMaximized === 'mindmap-format' ? '🗗' : '🗖' }}
                         </button>
                         <button
                           type="button"
                           class="dock-special-toggle"
-                          :title="locale === 'en' ? 'Close Mindmap Dock' : '关闭脑图 Dock'"
-                          :aria-label="locale === 'en' ? 'Close Mindmap Dock' : '关闭脑图 Dock'"
-                          @click="mindmapSpecialDockCollapsed = true; if (rightDockMaximized === 'mindmap') rightDockMaximized = null"
+                          :title="locale === 'en' ? 'Close Format' : '关闭格式'"
+                          :aria-label="locale === 'en' ? 'Close Format' : '关闭格式'"
+                          @click="mindmapSpecialDockCollapsed = true; if (rightDockMaximized === 'mindmap-format') rightDockMaximized = null"
                         >
                           ×
                         </button>
                       </div>
                     </div>
-                    <template v-if="!mindmapDockFolded">
+                    <template v-if="!mindmapFormatDockFolded">
                       <p class="dock-muted dock-canvas-hint">
                         {{ activeMindmapDockState?.selectedId ? `selected: ${activeMindmapDockState.selectedId}` : '请选择脑图节点' }}
                       </p>
@@ -2749,6 +2789,59 @@ onUnmounted(() => {
                           @input="sendMindmapDockCommand('set-font-size', ($event.target as HTMLInputElement).value)"
                         />
                       </label>
+                      <button type="button" class="dock-action" :disabled="!activeMindmapDockState?.selectedId" @click="sendMindmapDockCommand('set-text-color', '')">
+                        {{ locale === 'en' ? 'Reset format' : '重置格式' }}
+                      </button>
+                    </template>
+                  </section>
+
+                  <section v-if="mindmapIconDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
+                    <div class="dock-special-head">
+                      <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Icon' : '图标' }}</h3>
+                      <div class="dock-special-head-actions">
+                        <button type="button" class="dock-special-toggle" :title="mindmapIconDockFolded ? (locale === 'en' ? 'Expand Icon' : '展开图标') : (locale === 'en' ? 'Fold Icon' : '折叠图标')" :aria-label="mindmapIconDockFolded ? (locale === 'en' ? 'Expand Icon' : '展开图标') : (locale === 'en' ? 'Fold Icon' : '折叠图标')" @click="mindmapIconDockFolded = !mindmapIconDockFolded">{{ mindmapIconDockFolded ? '▸' : '▾' }}</button>
+                        <button type="button" class="dock-special-toggle" :title="rightDockMaximized === 'mindmap-icon' ? (locale === 'en' ? 'Restore panel size' : '还原面板尺寸') : (locale === 'en' ? 'Maximize this panel' : '最大化此面板')" :aria-label="rightDockMaximized === 'mindmap-icon' ? (locale === 'en' ? 'Restore panel size' : '还原面板尺寸') : (locale === 'en' ? 'Maximize this panel' : '最大化此面板')" @click="toggleRightDockMaximize('mindmap-icon')">{{ rightDockMaximized === 'mindmap-icon' ? '🗗' : '🗖' }}</button>
+                        <button type="button" class="dock-special-toggle" :title="locale === 'en' ? 'Close Icon' : '关闭图标'" :aria-label="locale === 'en' ? 'Close Icon' : '关闭图标'" @click="mindmapIconDockCollapsed = true; if (rightDockMaximized === 'mindmap-icon') rightDockMaximized = null">×</button>
+                      </div>
+                    </div>
+                    <template v-if="!mindmapIconDockFolded">
+                      <p class="dock-muted dock-canvas-hint">{{ activeMindmapDockState?.selectedId ? `selected: ${activeMindmapDockState.selectedId}` : '请选择脑图节点' }}</p>
+                      <label class="dock-field">
+                        <span>Icon</span>
+                        <select class="dock-input" :value="activeMindmapDockState?.selectedIcon ?? ''" :disabled="!activeMindmapDockState?.selectedId" @change="sendMindmapDockCommand('set-icon', ($event.target as HTMLSelectElement).value)">
+                          <option value="">(none)</option>
+                          <option value="⭐">⭐ Star</option>
+                          <option value="🚩">🚩 Flag</option>
+                          <option value="💡">💡 Bulb</option>
+                          <option value="📘">📘 Book</option>
+                          <option value="✅">✅ Check</option>
+                          <option value="⚠️">⚠️ Warn</option>
+                          <option value="❤️">❤️ Heart</option>
+                          <option value="🚀">🚀 Rocket</option>
+                          <option value="📌">📌 Pin</option>
+                        </select>
+                      </label>
+                    </template>
+                  </section>
+
+                  <section v-if="mindmapThemeDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
+                    <div class="dock-special-head">
+                      <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Theme' : '主题' }}</h3>
+                      <div class="dock-special-head-actions">
+                        <button type="button" class="dock-special-toggle" :title="mindmapThemeDockFolded ? (locale === 'en' ? 'Expand Theme' : '展开主题') : (locale === 'en' ? 'Fold Theme' : '折叠主题')" :aria-label="mindmapThemeDockFolded ? (locale === 'en' ? 'Expand Theme' : '展开主题') : (locale === 'en' ? 'Fold Theme' : '折叠主题')" @click="mindmapThemeDockFolded = !mindmapThemeDockFolded">{{ mindmapThemeDockFolded ? '▸' : '▾' }}</button>
+                        <button type="button" class="dock-special-toggle" :title="rightDockMaximized === 'mindmap-theme' ? (locale === 'en' ? 'Restore panel size' : '还原面板尺寸') : (locale === 'en' ? 'Maximize this panel' : '最大化此面板')" :aria-label="rightDockMaximized === 'mindmap-theme' ? (locale === 'en' ? 'Restore panel size' : '还原面板尺寸') : (locale === 'en' ? 'Maximize this panel' : '最大化此面板')" @click="toggleRightDockMaximize('mindmap-theme')">{{ rightDockMaximized === 'mindmap-theme' ? '🗗' : '🗖' }}</button>
+                        <button type="button" class="dock-special-toggle" :title="locale === 'en' ? 'Close Theme' : '关闭主题'" :aria-label="locale === 'en' ? 'Close Theme' : '关闭主题'" @click="mindmapThemeDockCollapsed = true; if (rightDockMaximized === 'mindmap-theme') rightDockMaximized = null">×</button>
+                      </div>
+                    </div>
+                    <template v-if="!mindmapThemeDockFolded">
+                      <label class="dock-field">
+                        <span>Theme</span>
+                        <select class="dock-input" :value="activeMindmapDockState?.theme ?? 'classic'" @change="sendMindmapDockCommand('set-theme', ($event.target as HTMLSelectElement).value)">
+                          <option value="classic">Classic</option>
+                          <option value="night">Night</option>
+                          <option value="forest">Forest</option>
+                        </select>
+                      </label>
                       <dl class="dock-dl dock-dl--props">
                         <dt>parentId</dt>
                         <dd>{{ activeMindmapDockState?.selectedParentId ?? '(root)' }}</dd>
@@ -2757,42 +2850,9 @@ onUnmounted(() => {
                         <dt>nodes</dt>
                         <dd>{{ activeMindmapDockState?.totalNodes ?? 0 }}</dd>
                       </dl>
-                      <div class="dock-props-actions" role="group" aria-label="mindmap dock actions">
-                        <button type="button" class="dock-action" @click="sendMindmapDockCommand('add-child')">Add child</button>
-                        <button type="button" class="dock-action" @click="sendMindmapDockCommand('add-sibling')">Add sibling</button>
-                        <button
-                          type="button"
-                          class="dock-action"
-                          :disabled="!activeMindmapDockState?.selectedId"
-                          @click="sendMindmapDockCommand('toggle-collapsed')"
-                        >
-                          {{ activeMindmapDockState?.selectedCollapsed ? 'Expand' : 'Collapse' }}
-                        </button>
-                        <button
-                          type="button"
-                          class="dock-action"
-                          :disabled="!activeMindmapDockState?.selectedId"
-                          @click="sendMindmapDockCommand('delete-node')"
-                        >
-                          Delete
-                        </button>
-                      </div>
                     </template>
                   </section>
 
-                  <template v-if="!hasMindmapDockPanel && !hasPropertiesDockPanel">
-                    <dl class="dock-dl">
-                      <dt>{{ ui.propsPath }}</dt>
-                      <dd>{{ selectedPath }}</dd>
-                      <dt>{{ ui.propsChars }}</dt>
-                      <dd>{{ currentContent.length }}</dd>
-                      <dt>{{ ui.propsFenceCount }}</dt>
-                      <dd>{{ blocks.length }}</dd>
-                      <dt>{{ ui.propsParseWarns }}</dt>
-                      <dd>{{ parseErrors.length }}</dd>
-                    </dl>
-                    <p class="dock-muted">{{ ui.propsPickBlockHint }}</p>
-                  </template>
                 </div>
                 <div class="dock-button-bar" aria-label="Dock Button Bar">
                   <button
@@ -2800,22 +2860,44 @@ onUnmounted(() => {
                     class="dock-button"
                     :class="{ 'dock-button--active': hasPropertiesDockPanel && !propertiesDockCollapsed }"
                     :disabled="!hasPropertiesDockPanel"
-                    :title="locale === 'en' ? 'Toggle Properties Dock — no global shortcut' : '切换属性 Dock — 无全局快捷键'"
-                    :aria-label="locale === 'en' ? 'Toggle Properties Dock' : '切换属性 Dock'"
-                    @click="propertiesDockCollapsed = !propertiesDockCollapsed; if (!propertiesDockCollapsed && rightDockMaximized === 'mindmap') rightDockMaximized = null"
+                    :title="locale === 'en' ? 'Toggle Properties — no global shortcut' : '切换属性 — 无全局快捷键'"
+                    :aria-label="locale === 'en' ? 'Toggle Properties' : '切换属性'"
+                    @click="propertiesDockCollapsed = !propertiesDockCollapsed; if (!propertiesDockCollapsed && (rightDockMaximized === 'mindmap-format' || rightDockMaximized === 'mindmap-icon' || rightDockMaximized === 'mindmap-theme')) rightDockMaximized = null"
                   >
                     {{ locale === 'en' ? 'Props' : '属性' }}
                   </button>
                   <button
+                    v-if="hasMindmapFormatDockPanel"
                     type="button"
                     class="dock-button"
-                    :class="{ 'dock-button--active': hasMindmapDockPanel && !mindmapSpecialDockCollapsed }"
-                    :disabled="!hasMindmapDockPanel"
-                    :title="locale === 'en' ? 'Toggle Mindmap Dock — no global shortcut' : '切换脑图 Dock — 无全局快捷键'"
-                    :aria-label="locale === 'en' ? 'Toggle Mindmap Dock' : '切换脑图 Dock'"
+                    :class="{ 'dock-button--active': !mindmapSpecialDockCollapsed }"
+                    :title="locale === 'en' ? 'Toggle Format — no global shortcut' : '切换格式 — 无全局快捷键'"
+                    :aria-label="locale === 'en' ? 'Toggle Format' : '切换格式'"
                     @click="mindmapSpecialDockCollapsed = !mindmapSpecialDockCollapsed; if (!mindmapSpecialDockCollapsed && rightDockMaximized === 'properties') rightDockMaximized = null"
                   >
-                    {{ locale === 'en' ? 'Mind' : '脑图' }}
+                    {{ locale === 'en' ? 'Fmt' : '格式' }}
+                  </button>
+                  <button
+                    v-if="hasMindmapIconDockPanel"
+                    type="button"
+                    class="dock-button"
+                    :class="{ 'dock-button--active': !mindmapIconDockCollapsed }"
+                    :title="locale === 'en' ? 'Toggle Icon — no global shortcut' : '切换图标 — 无全局快捷键'"
+                    :aria-label="locale === 'en' ? 'Toggle Icon' : '切换图标'"
+                    @click="mindmapIconDockCollapsed = !mindmapIconDockCollapsed; if (!mindmapIconDockCollapsed && rightDockMaximized === 'properties') rightDockMaximized = null"
+                  >
+                    {{ locale === 'en' ? 'Icon' : '图标' }}
+                  </button>
+                  <button
+                    v-if="hasMindmapThemeDockPanel"
+                    type="button"
+                    class="dock-button"
+                    :class="{ 'dock-button--active': !mindmapThemeDockCollapsed }"
+                    :title="locale === 'en' ? 'Toggle Theme — no global shortcut' : '切换主题 — 无全局快捷键'"
+                    :aria-label="locale === 'en' ? 'Toggle Theme' : '切换主题'"
+                    @click="mindmapThemeDockCollapsed = !mindmapThemeDockCollapsed; if (!mindmapThemeDockCollapsed && rightDockMaximized === 'properties') rightDockMaximized = null"
+                  >
+                    {{ locale === 'en' ? 'Theme' : '主题' }}
                   </button>
                 </div>
           </aside>
@@ -3486,6 +3568,7 @@ onUnmounted(() => {
   color: #1e293b;
   background: linear-gradient(to bottom, #e2e8f0, #d8dee9);
   border-bottom: 1px solid #c5c9d4;
+  border-radius: 6px 6px 0 0;
 }
 .dock-title {
   letter-spacing: 0.02em;
@@ -3706,15 +3789,21 @@ onUnmounted(() => {
   margin-top: 0;
 }
 .dock-special-panel {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid #e2e8f0;
+  margin-top: 10px;
+  border: 1px solid #c5c9d4;
+  border-radius: 6px;
+  background: #f8fafc;
+  overflow: hidden;
 }
 .dock-special-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding: 6px 10px;
+  background: linear-gradient(to bottom, #e2e8f0, #d8dee9);
+  border-bottom: 1px solid #c5c9d4;
+  border-radius: 6px 6px 0 0;
 }
 .dock-special-head-actions {
   display: inline-flex;
@@ -3734,6 +3823,9 @@ onUnmounted(() => {
   font-weight: 600;
   padding: 0 4px;
   cursor: pointer;
+}
+.dock-special-panel > :not(.dock-special-head) {
+  padding: 8px 10px 10px;
 }
 .dock-area-right {
   display: flex;
@@ -3817,7 +3909,11 @@ onUnmounted(() => {
   background: #eff6ff;
 }
 .dock-subh--special {
-  margin-top: 0;
+  margin: 0;
+  color: #1e293b;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 .dock-json-details {
   margin-top: 10px;
