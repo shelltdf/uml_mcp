@@ -115,6 +115,86 @@ const associatedTypeCandidates = computed((): string[] => {
 function preferredAssociatedType(): string {
   return associatedTypeCandidates.value[0] ?? '';
 }
+
+/** 类图邻居：当前类 — 指定 `associatedClassifierId` 是否有一条边（支持 slug / cls-id）。 */
+function resolveDiagramAssocTypeForTarget(assocClassifierId: string): string | undefined {
+  const cls = selectedClass.value;
+  const diag = props.diagramAssocTargetsByClassId;
+  if (!cls || !diag) return undefined;
+  const bid = assocClassifierId.trim();
+  if (!bid) return undefined;
+  const ownerName = (cls.name ?? cls.id).trim();
+  const otherName = (classifierNameById.value.get(bid) ?? '').trim();
+  const neighborKeys = new Set<string>(
+    [bid, otherName ? slug(otherName) : ''].filter((x) => x.length > 0),
+  );
+  const ownerKeys = [cls.id, slug(ownerName)].filter((x) => x.length > 0);
+  for (const ok of ownerKeys) {
+    const neigh = diag[ok];
+    if (!neigh) continue;
+    for (const nid of neigh) {
+      if (neighborKeys.has(nid)) {
+        return classifierNameById.value.get(bid) ?? classifierNameById.value.get(nid) ?? nid;
+      }
+    }
+  }
+  return undefined;
+}
+
+function resolveRowAssocType(
+  associatedClassifierId: string | undefined,
+  opts?: { emptyMeansPreferred?: boolean },
+): string | undefined {
+  const cls = selectedClass.value;
+  const ns = selectedNamespace.value;
+  const emptyMeansPreferred = opts?.emptyMeansPreferred !== false;
+  if (!cls) return undefined;
+  const bid = associatedClassifierId?.trim();
+  if (!bid) return emptyMeansPreferred ? preferredAssociatedType() : undefined;
+
+  const fromDiagram = resolveDiagramAssocTypeForTarget(bid);
+  if (fromDiagram) return fromDiagram;
+
+  for (const a of ns?.associations ?? []) {
+    if (
+      (a.fromClassifierId === cls.id && a.toClassifierId === bid) ||
+      (a.toClassifierId === cls.id && a.fromClassifierId === bid)
+    ) {
+      return classifierNameById.value.get(bid) ?? bid;
+    }
+  }
+  return classifierNameById.value.get(bid) ?? bid;
+}
+
+function onFieldMemberAssocClassifierChange(miIdx: number, ev: Event) {
+  const raw = (ev.target as HTMLSelectElement).value.trim();
+  const part: Partial<MvCodespaceClassMember> = {
+    associatedClassifierId: raw || undefined,
+  };
+  const t = resolveRowAssocType(raw || undefined, { emptyMeansPreferred: false });
+  if (t) {
+    part.typeFromAssociation = true;
+    part.type = t;
+  } else {
+    part.typeFromAssociation = undefined;
+  }
+  patchFieldMember(miIdx, part);
+}
+
+function onPropertyAssocClassifierChange(pi: number, ev: Event) {
+  const raw = (ev.target as HTMLSelectElement).value.trim();
+  const part: Partial<MvCodespaceProperty> = {
+    associatedClassifierId: raw || undefined,
+  };
+  const t = resolveRowAssocType(raw || undefined, { emptyMeansPreferred: false });
+  if (t) {
+    part.typeFromAssociation = true;
+    part.type = t;
+  } else {
+    part.typeFromAssociation = undefined;
+  }
+  patchProperty(pi, part);
+}
 function classTemplateParamsStr(): string {
   const c = getNamespaceAtPath(props.modelValue, props.mi, props.path)?.classes?.[props.ci];
   return (c?.templateParams ?? []).join(', ');
@@ -303,12 +383,14 @@ function patchProperty(pi: number, part: Partial<MvCodespaceProperty>) {
 }
 
 function enableAssocTypeForCurrentRows(): void {
-  const t = preferredAssociatedType();
-  if (!t) return;
   for (const r of fieldRows.value) {
+    const t = resolveRowAssocType(r.mem.associatedClassifierId);
+    if (!t) continue;
     patchFieldMember(r.idx, { typeFromAssociation: true, type: t });
   }
   for (let pi = 0; pi < propertyRows.value.length; pi++) {
+    const t = resolveRowAssocType(propertyRows.value[pi]?.associatedClassifierId);
+    if (!t) continue;
     patchProperty(pi, { typeFromAssociation: true, type: t });
   }
 }
@@ -376,18 +458,20 @@ function removeClass() {
 }
 
 watch(associatedTypeCandidates, (next, prev) => {
-  const t = preferredAssociatedType();
-  if (!t) return;
   // When association is newly connected, auto-enable assocType and sync types.
   if (next.length > 0 && (!prev || prev.length === 0)) {
     enableAssocTypeForCurrentRows();
     return;
   }
   for (const r of fieldRows.value) {
-    if (r.mem.typeFromAssociation === true) patchFieldMember(r.idx, { type: t });
+    if (r.mem.typeFromAssociation !== true) continue;
+    const t = resolveRowAssocType(r.mem.associatedClassifierId);
+    if (t) patchFieldMember(r.idx, { type: t });
   }
   for (let pi = 0; pi < propertyRows.value.length; pi++) {
-    if (propertyRows.value[pi]?.typeFromAssociation === true) patchProperty(pi, { type: t });
+    if (propertyRows.value[pi]?.typeFromAssociation !== true) continue;
+    const t = resolveRowAssocType(propertyRows.value[pi]?.associatedClassifierId);
+    if (t) patchProperty(pi, { type: t });
   }
 }, { immediate: true });
 </script>
@@ -512,6 +596,7 @@ watch(associatedTypeCandidates, (next, prev) => {
             <th>name</th>
             <th>visibility</th>
             <th>type</th>
+            <th>assocCls</th>
             <th>assocType</th>
             <th>static</th>
             <th></th>
@@ -544,6 +629,19 @@ watch(associatedTypeCandidates, (next, prev) => {
                 <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'mt-' + t" :value="t">{{ t }}</option>
                 <option v-if="mem.type && !memberTypeKnown(mem.type)" :value="mem.type">
                   {{ mem.type }}
+                </option>
+              </select>
+            </td>
+            <td>
+              <select
+                class="wide"
+                :value="mem.associatedClassifierId ?? ''"
+                title="与该成员关联的类型端 Classifier（可与类图中不同邻居分别对应）"
+                @change="onFieldMemberAssocClassifierChange(idx, $event)"
+              >
+                <option value="">—</option>
+                <option v-for="cid in classifierOptions" :key="'macf-' + cid" :value="cid">
+                  {{ classifierNameById.get(cid) ?? cid }}
                 </option>
               </select>
             </td>
@@ -583,6 +681,7 @@ watch(associatedTypeCandidates, (next, prev) => {
             <th>backingField</th>
             <th>backingVisibility</th>
             <th>type</th>
+            <th>assocCls</th>
             <th>assocType</th>
             <th>getter</th>
             <th>setter</th>
@@ -626,6 +725,19 @@ watch(associatedTypeCandidates, (next, prev) => {
                 <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'pt-' + t" :value="t">{{ t }}</option>
                 <option v-if="prop.type && !memberTypeKnown(prop.type)" :value="prop.type">
                   {{ prop.type }}
+                </option>
+              </select>
+            </td>
+            <td>
+              <select
+                class="wide"
+                :value="prop.associatedClassifierId ?? ''"
+                title="与该属性关联的类型端 Classifier"
+                @change="onPropertyAssocClassifierChange(pi, $event)"
+              >
+                <option value="">—</option>
+                <option v-for="cid in classifierOptions" :key="'pacf-' + cid" :value="cid">
+                  {{ classifierNameById.get(cid) ?? cid }}
                 </option>
               </select>
             </td>

@@ -312,6 +312,8 @@ interface CodespaceValCtx {
   classifierIds: Set<string>;
   pendingBases: Array<{ targetId: string; path: string }>;
   pendingAssocs: Array<{ from: string; to: string; path: string }>;
+  /** member[] / properties[] 上 associatedClassifierId 须指向已声明的 classes[].id */
+  pendingAssociatedClassifierRefs: Array<{ targetId: string; path: string }>;
 }
 
 function codespaceAddUniqueId(
@@ -394,8 +396,16 @@ function validateCodespaceClassifierMemberField(
   if (typeof mo.name !== 'string' || !mo.name.trim()) {
     return { ok: false, message: `${mp}.name must be a non-empty string` };
   }
-  const ms = validateCodespaceOptionalString(mo, mp, ['visibility', 'type', 'notes']);
+  const ms = validateCodespaceOptionalString(mo, mp, ['visibility', 'type', 'notes', 'associatedClassifierId']);
   if (!ms.ok) return ms;
+  if (
+    'associatedClassifierId' in mo &&
+    mo.associatedClassifierId !== undefined &&
+    typeof mo.associatedClassifierId === 'string' &&
+    !mo.associatedClassifierId.trim()
+  ) {
+    return { ok: false, message: `${mp}.associatedClassifierId must be non-empty when present` };
+  }
   if ('accessor' in mo && mo.accessor !== undefined) {
     if (typeof mo.accessor !== 'string' || !CODESPACE_FIELD_ACCESSORS.has(mo.accessor)) {
       return {
@@ -424,7 +434,7 @@ function validateCodespaceClassifierMethod(
   if ('kind' in mo) {
     return { ok: false, message: `${mp}: remove "kind"; use top-level "method"[] instead` };
   }
-  const fk = codespaceForbidKeys(mo, mp, new Set(['accessor', 'enumGroup']));
+  const fk = codespaceForbidKeys(mo, mp, new Set(['accessor', 'enumGroup', 'associatedClassifierId']));
   if (!fk.ok) return fk;
   if (typeof mo.name !== 'string' || !mo.name.trim()) {
     return { ok: false, message: `${mp}.name must be a non-empty string` };
@@ -484,6 +494,7 @@ function validateCodespaceClassifierEnum(
       'signature',
       'static',
       'typeFromAssociation',
+      'associatedClassifierId',
     ]),
   );
   if (!fk.ok) return fk;
@@ -608,8 +619,19 @@ function validateCodespaceNamespaceNode(
             return { ok: false, message: `${cp}.member must be an array when present` };
           }
           for (let m = 0; m < co.member.length; m++) {
-            const vr = validateCodespaceClassifierMemberField(co.member[m], `${cp}.member[${m}]`);
+            const mp = `${cp}.member[${m}]`;
+            const vr = validateCodespaceClassifierMemberField(co.member[m], mp);
             if (!vr.ok) return vr;
+            const mob = co.member[m] as Record<string, unknown>;
+            if (
+              typeof mob.associatedClassifierId === 'string' &&
+              mob.associatedClassifierId.trim()
+            ) {
+              ctx.pendingAssociatedClassifierRefs.push({
+                targetId: mob.associatedClassifierId.trim(),
+                path: mp,
+              });
+            }
           }
         }
         if (hasMethodArr) {
@@ -650,8 +672,36 @@ function validateCodespaceNamespaceNode(
               message: `${mp}.kind must be one of: field, method, enumLiteral`,
             };
           }
-          const ms = validateCodespaceOptionalString(mo, mp, ['visibility', 'type', 'signature', 'enumGroup', 'notes']);
+          const optKeys =
+            mo.kind === 'field'
+              ? (['visibility', 'type', 'signature', 'enumGroup', 'notes', 'associatedClassifierId'] as const)
+              : (['visibility', 'type', 'signature', 'enumGroup', 'notes'] as const);
+          const ms = validateCodespaceOptionalString(mo, mp, optKeys);
           if (!ms.ok) return ms;
+          if (mo.kind !== 'field' && mo.associatedClassifierId !== undefined) {
+            return {
+              ok: false,
+              message: `${mp}.associatedClassifierId is only allowed when kind is field`,
+            };
+          }
+          if (
+            mo.kind === 'field' &&
+            typeof mo.associatedClassifierId === 'string' &&
+            mo.associatedClassifierId !== undefined &&
+            !mo.associatedClassifierId.trim()
+          ) {
+            return { ok: false, message: `${mp}.associatedClassifierId must be non-empty when present` };
+          }
+          if (
+            mo.kind === 'field' &&
+            typeof mo.associatedClassifierId === 'string' &&
+            mo.associatedClassifierId.trim()
+          ) {
+            ctx.pendingAssociatedClassifierRefs.push({
+              targetId: mo.associatedClassifierId.trim(),
+              path: mp,
+            });
+          }
           if ('methodKind' in mo && mo.methodKind !== undefined) {
             if (typeof mo.methodKind !== 'string' || !CODESPACE_METHOD_KINDS.has(mo.methodKind)) {
               return {
@@ -719,8 +769,22 @@ function validateCodespaceNamespaceNode(
             'backingVisibility',
             'type',
             'notes',
+            'associatedClassifierId',
           ]);
           if (!ps.ok) return ps;
+          if (
+            typeof po.associatedClassifierId === 'string' &&
+            po.associatedClassifierId !== undefined &&
+            !po.associatedClassifierId.trim()
+          ) {
+            return { ok: false, message: `${pp}.associatedClassifierId must be non-empty when present` };
+          }
+          if (typeof po.associatedClassifierId === 'string' && po.associatedClassifierId.trim()) {
+            ctx.pendingAssociatedClassifierRefs.push({
+              targetId: po.associatedClassifierId.trim(),
+              path: pp,
+            });
+          }
           if ('static' in po && po.static !== undefined && typeof po.static !== 'boolean') {
             return { ok: false, message: `${pp}.static must be a boolean when present` };
           }
@@ -860,6 +924,7 @@ function validateMvModelCodespace(
     classifierIds: new Set<string>(),
     pendingBases: [],
     pendingAssocs: [],
+    pendingAssociatedClassifierRefs: [],
   };
   for (let i = 0; i < mods.length; i++) {
     const m = mods[i];
@@ -917,6 +982,14 @@ function validateMvModelCodespace(
       return {
         ok: false,
         message: `${pa.path}: toClassifierId "${pa.to}" is not a declared classes[].id in this codespace block`,
+      };
+    }
+  }
+  for (const pr of ctx.pendingAssociatedClassifierRefs) {
+    if (!ctx.classifierIds.has(pr.targetId)) {
+      return {
+        ok: false,
+        message: `${pr.path}: associatedClassifierId "${pr.targetId}" is not a declared classes[].id in this codespace block`,
       };
     }
   }

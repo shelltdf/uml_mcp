@@ -69,7 +69,7 @@
 ### 全局 `id` 唯一与引用规则（v1）
 
 - 下列实体的 `id` 在同一围栏对象内 **全局唯一**：各 `modules[].id`、各命名空间节点、各 `classes[]`、各 `variables[]` / `functions[]` / `macros[]`、各 `associations[]`。
-- **`classes[].id`（Classifier）**：`bases[].targetId`、`associations[].fromClassifierId` / `toClassifierId` **必须**指向本围栏内某条 **`classes[].id`**（可跨模块下的不同命名空间，但须在同一 JSON 块内已声明）。**不**使用 `qualifiedName` 做解析。
+- **`classes[].id`（Classifier）**：`bases[].targetId`、`associations[].fromClassifierId` / `toClassifierId`、`member[]` / `properties[]` 上的 **`associatedClassifierId`**（若存在）**必须**指向本围栏内某条 **`classes[].id`**（可跨模块下的不同命名空间，但须在同一 JSON 块内已声明）。**不**使用 `qualifiedName` 做解析。
 - **宏**：`macros[]` 为文档化预处理宏示意，**不**执行。
 
 ### UML 概念映射（文档化类比，非 OMG 规范替代）
@@ -113,10 +113,11 @@
 | stereotype | string? | 可选（如文档化版型名） |
 | templateParams | string[]? | 可选；模板形参名列表（示意） |
 | bases | array? | 每项：`targetId`（string，指向本块内 `classes[].id`）、`relation`：`generalization` \| `realization` |
-| member | array? | **字段 / 普通成员变量**；每项：`name`（必填）；可选 `static`、`visibility`、`accessor`（`none` \| `get` \| `set` \| `getset`）、`type`、`typeFromAssociation`、`notes` |
+| member | array? | **字段 / 普通成员变量**；每项：`name`（必填）；可选 `static`、`visibility`、`accessor`（`none` \| `get` \| `set` \| `getset`）、`type`、`associatedClassifierId`（string，指向本块内另一侧 Classifier 的 `classes[].id`，用于从类图/关联推导该成员类型）、`typeFromAssociation`、`notes` |
 | method | array? | **方法**；每项：`name`（必填）；可选 `static`、`visibility`、`virtual`、`methodKind`、`operatorSymbol`、`signature`、`type`、`typeFromAssociation`、`notes` |
 | enum | array? | **枚举字面量**（JSON 键名 `enum`）；每项：`name`（必填）；可选 `enumGroup`、`type`、`notes` |
-| members | array? | **已弃用**：旧版混排数组（`kind`：`field` \| `method` \| `enumLiteral`）。解析器在校验通过后**归并**为 `member` / `method` / `enum` 并移除 `members`；**不得**与上述三键同时出现 |
+| properties | array? | **属性（property）示意**；每项：`name`（必填）；可选 `backingFieldName`、`backingVisibility`、`type`、`associatedClassifierId`（语义同 `member[]`）、getter/setter 相关布尔与可见性等（见工作台实现） |
+| members | array? | **已弃用**：旧版混排数组（`kind`：`field` \| `method` \| `enumLiteral`）。解析器在校验通过后**归并**为 `member` / `method` / `enum` 并移除 `members`；**不得**与上述三键同时出现；其中 **`kind` 为 `field` 时可含 `associatedClassifierId`**，其它 kind 不允许 |
 
 ### `associations[]`
 

@@ -114,6 +114,8 @@ export interface MvCodespaceClassMember {
   /** 如 public / private / protected / package */
   visibility?: string;
   accessor?: MvCodespaceFieldAccessor;
+  /** 该成员对应的关联另一端 Classifier（同围栏 `classes[].id`）；与类图/同步类型语义独立可配 */
+  associatedClassifierId?: string;
   typeFromAssociation?: boolean;
   type?: string;
   notes?: string;
@@ -149,6 +151,8 @@ export interface MvCodespaceProperty {
   backingFieldName?: string;
   /** backing 字段可见性；默认 private */
   backingVisibility?: string;
+  /** 该属性对应的关联另一端 Classifier（同围栏 `classes[].id`） */
+  associatedClassifierId?: string;
   type?: string;
   /** type 是否由关联关系自动推导（只读语义开关） */
   typeFromAssociation?: boolean;

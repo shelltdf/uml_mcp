@@ -644,6 +644,70 @@ describe('parseMarkdownBlocks', () => {
     );
   });
 
+  it('parses mv-model-codespace member and property associatedClassifierId', () => {
+    const payload = {
+      id: 'cs-assoccls',
+      modules: [
+        {
+          id: 'mod',
+          name: 'Mod',
+          namespaces: [
+            {
+              id: 'ns',
+              name: 'Ns',
+              classes: [
+                {
+                  id: 'cls-a',
+                  name: 'A',
+                  member: [{ name: 'ref', associatedClassifierId: 'cls-b' }],
+                  properties: [{ name: 'Prop', associatedClassifierId: 'cls-b' }],
+                },
+                { id: 'cls-b', name: 'B' },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks[0].payload).toMatchObject(payload);
+  });
+
+  it('rejects mv-model-codespace associatedClassifierId when not a classifier id', () => {
+    const md =
+      '\`\`\`mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'x',
+        modules: [
+          {
+            id: 'm',
+            name: 'M',
+            namespaces: [
+              {
+                id: 'ns',
+                name: 'Ns',
+                classes: [
+                  {
+                    id: 'c1',
+                    name: 'C1',
+                    member: [{ name: 'f', associatedClassifierId: 'nosuch' }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.blocks).toHaveLength(0);
+    expect(r.errors.some((e) => e.message.includes('associatedClassifierId') && e.message.includes('nosuch'))).toBe(
+      true,
+    );
+  });
+
   it('parses mv-model-interface', () => {
     const payload = {
       id: 'api1',

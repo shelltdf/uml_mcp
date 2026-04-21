@@ -368,7 +368,7 @@ function syncAssocTypeFromDiagramToCodespace(): void {
     walk(mod.namespaces);
   }
   /** 类图连线端点用的是 `slug(类名)`，codespace 里常用 `cls-*` id；两边都试才能推类型。 */
-  const resolveType = (classId: string, className: string): string | undefined => {
+  const resolveClassLevelType = (classId: string, className: string): string | undefined => {
     const keys = [classId, slug(className)].filter((k) => k.trim().length > 0);
     for (const k of keys) {
       const first = targets[k]?.[0];
@@ -376,16 +376,41 @@ function syncAssocTypeFromDiagramToCodespace(): void {
     }
     return undefined;
   };
+  /** member / properties 上 `associatedClassifierId`：仅推导「当前类 ↔ 指定 Classifier」沿类图存在边时的对端显示名。 */
+  const resolveTypeForAssociatedClassifier = (
+    ownerClassId: string,
+    ownerClassName: string,
+    assocClassifierId: string,
+  ): string | undefined => {
+    const bid = assocClassifierId.trim();
+    if (!bid) return undefined;
+    const otherName = (nameById.get(bid) ?? '').trim();
+    const neighborKeys = new Set<string>([bid, otherName ? slug(otherName) : ''].filter((x) => x.length > 0));
+    const ownerKeys = [ownerClassId, slug(ownerClassName)].filter((k) => k.trim().length > 0);
+    for (const ok of ownerKeys) {
+      const neigh = targets[ok];
+      if (!neigh) continue;
+      for (const nid of neigh) {
+        if (neighborKeys.has(nid)) return nameById.get(bid) ?? nameById.get(nid) ?? nid;
+      }
+    }
+    return undefined;
+  };
   for (const mod of side.modules ?? []) {
     const walk = (nodes: typeof mod.namespaces) => {
       for (const n of nodes ?? []) {
         for (const c of n.classes ?? []) {
-          const t = resolveType(c.id, (c.name ?? c.id).trim());
+          const cn = (c.name ?? c.id).trim();
+          const fallback = resolveClassLevelType(c.id, cn);
           for (const m of c.member ?? []) {
+            const aid = m.associatedClassifierId?.trim();
+            const t = aid ? resolveTypeForAssociatedClassifier(c.id, cn, aid) : fallback;
             m.typeFromAssociation = !!t || undefined;
             if (t) m.type = t;
           }
           for (const p of c.properties ?? []) {
+            const aid = p.associatedClassifierId?.trim();
+            const t = aid ? resolveTypeForAssociatedClassifier(c.id, cn, aid) : fallback;
             p.typeFromAssociation = !!t || undefined;
             if (t) p.type = t;
           }
