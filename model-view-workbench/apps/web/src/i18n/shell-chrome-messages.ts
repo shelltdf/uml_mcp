@@ -35,6 +35,8 @@ export type ShellChromeMessages = {
   dockOutlineTitle: string;
   dockClearSelection: string;
   dockClearSelectionTitle: string;
+  dockInsertFenceAtEnd: string;
+  dockInsertFenceAtEndTitle: string;
   dockExpandOutline: string;
   dockCollapseOutline: string;
   dockSectionDoc: string;
@@ -248,6 +250,8 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockOutlineTitle: '大纲',
     dockClearSelection: '清空块',
     dockClearSelectionTitle: '取消围栏块选中 — 无全局快捷键',
+    dockInsertFenceAtEnd: '添加代码段',
+    dockInsertFenceAtEndTitle: '在当前文档末尾追加代码段 — 无全局快捷键',
     dockExpandOutline: '展开大纲 Dock — 无全局快捷键',
     dockCollapseOutline: '折叠大纲 Dock — 无全局快捷键',
     dockSectionDoc: '文档章节',
@@ -449,6 +453,8 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockOutlineTitle: 'Outline',
     dockClearSelection: 'Clear block',
     dockClearSelectionTitle: 'Clear selected fence block — no global shortcut',
+    dockInsertFenceAtEnd: 'Add code block',
+    dockInsertFenceAtEndTitle: 'Append a code block to the end of current markdown — no global shortcut',
     dockExpandOutline: 'Expand outline Dock — no global shortcut',
     dockCollapseOutline: 'Collapse outline Dock — no global shortcut',
     dockSectionDoc: 'Document headings',

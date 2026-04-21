@@ -153,6 +153,7 @@ const mdPaneRef = ref<HTMLElement | null>(null);
 /** 文档章节大纲：被用户折叠的父标题索引（其子项在侧栏隐藏） */
 const outlineCollapsedParents = ref(new Set<number>());
 const insertCodeBlockOpen = ref(false);
+const insertCodeBlockAppendToEnd = ref(false);
 let electronWriteTimer: ReturnType<typeof setTimeout> | undefined;
 
 
@@ -364,6 +365,7 @@ function onMdPaneContextMenu(e: MouseEvent) {
 
 function openInsertCodeBlockModal() {
   closeMdContextMenu();
+  insertCodeBlockAppendToEnd.value = false;
   const L = shellChromeMessages[locale.value];
   if (!selectedPath.value) {
     logLine(L.logNeedDoc, 'warn');
@@ -373,6 +375,17 @@ function openInsertCodeBlockModal() {
     logLine(L.logNeedRichOrSource, 'warn');
     return;
   }
+  insertCodeBlockOpen.value = true;
+}
+
+function openInsertCodeBlockModalFromDock() {
+  closeMdContextMenu();
+  const L = shellChromeMessages[locale.value];
+  if (!selectedPath.value) {
+    logLine(L.logNeedDoc, 'warn');
+    return;
+  }
+  insertCodeBlockAppendToEnd.value = true;
   insertCodeBlockOpen.value = true;
 }
 
@@ -394,10 +407,21 @@ function insertIntoSourceAtCursor(fragment: string) {
   });
 }
 
+function appendToCurrentDocEnd(fragment: string): void {
+  const p = selectedPath.value;
+  if (!p) return;
+  const cur = files.value.get(p) ?? '';
+  const needsNewline = cur.length > 0 && !cur.endsWith('\n');
+  const next = `${cur}${needsNewline ? '\n' : ''}${fragment}`;
+  sourceEditorText.value = next;
+  files.value = new Map(files.value).set(p, next);
+  scheduleElectronWrite(p, next);
+}
+
 function onInsertCodeBlockSelect(kind: InsertCodeBlockKind) {
   const p = selectedPath.value;
   if (!p) return;
-  if (mdPaneMode.value === 'preview') {
+  if (mdPaneMode.value === 'preview' && !insertCodeBlockAppendToEnd.value) {
     insertCodeBlockOpen.value = false;
     return;
   }
@@ -407,11 +431,14 @@ function onInsertCodeBlockSelect(kind: InsertCodeBlockKind) {
     locale: locale.value,
   });
   insertCodeBlockOpen.value = false;
-  if (mdPaneMode.value === 'rich') {
+  if (insertCodeBlockAppendToEnd.value) {
+    appendToCurrentDocEnd(fence);
+  } else if (mdPaneMode.value === 'rich') {
     mdWysiwygRef.value?.insertMarkdown(fence);
   } else {
     insertIntoSourceAtCursor(fence);
   }
+  insertCodeBlockAppendToEnd.value = false;
   logLine(trLogInsertedFence(locale.value, kind), 'info');
 }
 
@@ -510,6 +537,7 @@ function onGlobalKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     if (insertCodeBlockOpen.value) {
       insertCodeBlockOpen.value = false;
+      insertCodeBlockAppendToEnd.value = false;
       return;
     }
     closeMdContextMenu();
@@ -2120,6 +2148,15 @@ onUnmounted(() => {
                 {{ ui.dockClearSelection }}
               </button>
               <button
+                v-show="!outlineDockCollapsed"
+                type="button"
+                class="dock-ghost"
+                :title="ui.dockInsertFenceAtEndTitle"
+                @click="openInsertCodeBlockModalFromDock"
+              >
+                {{ ui.dockInsertFenceAtEnd }}
+              </button>
+              <button
                 type="button"
                 class="dock-collapse-toggle"
                 :class="{ 'dock-collapse-toggle--fill': outlineDockCollapsed }"
@@ -2521,10 +2558,6 @@ onUnmounted(() => {
         @click.stop
         @contextmenu.prevent
       >
-        <div v-if="mdPaneMode === 'preview'" class="ctx-note" role="note">
-          {{ ui.ctxPreviewReadonlyHint }}
-        </div>
-        <div v-if="mdPaneMode === 'preview'" class="ctx-sep" role="separator" aria-hidden="true" />
         <button
           type="button"
           class="ctx-item"

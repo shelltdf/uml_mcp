@@ -10,7 +10,7 @@ import {
   diagramBounds,
   parseViewPayloadClassDiagram,
   slug,
-} from '@mvwb/core';
+} from '../../utils/uml-class-payload';
 import { useAppLocale } from '../../composables/useAppLocale';
 import { classDiagramCanvasMessages } from '../../i18n/class-diagram-canvas-messages';
 import type { CodespaceClassTreeItem } from '../../utils/class-canvas-codespace-bridge';
@@ -35,6 +35,7 @@ const emit = defineEmits<{
 
 const { locale } = useAppLocale();
 const cd = computed(() => classDiagramCanvasMessages[locale.value]);
+const noGlobalShortcutText = computed(() => (locale.value === 'en' ? 'No global shortcuts' : '无全局快捷键'));
 
 const mkId = computed(() => `mk-${props.canvasId.replace(/[^a-zA-Z0-9_-]/g, '')}`);
 const markerAssocUrl = computed(() => `url(#${mkId.value}-asc)`);
@@ -301,7 +302,9 @@ function onClassSearchInput(ev: Event): void {
   classSearch.value = raw;
   classSearchWarn.value = SEARCH_ALLOWED_RE.test(raw)
     ? ''
-    : '仅允许英文、数字、下划线、点与空格';
+    : locale.value === 'en'
+      ? 'Only letters, numbers, underscores, dots, and spaces are allowed.'
+      : '仅允许英文、数字、下划线、点与空格';
 }
 
 function onCustomClassInput(ev: Event): void {
@@ -310,7 +313,9 @@ function onCustomClassInput(ev: Event): void {
   customClassWarn.value =
     raw.trim() === '' || CLASS_NAME_RE.test(raw.trim())
       ? ''
-      : '类名仅允许英文开头，后续可含英文/数字/下划线';
+      : locale.value === 'en'
+        ? 'Class name must start with a letter and can contain letters, numbers, or underscores.'
+        : '类名仅允许英文开头，后续可含英文/数字/下划线';
 }
 
 const codespaceClassRows = computed(() => {
@@ -425,7 +430,7 @@ function resolveCodespaceMembers(c: ClassDef):
 function effectiveAttributes(c: ClassDef): string[] {
   const fromModel = resolveCodespaceMembers(c)?.attrs;
   if (fromModel && fromModel.length) return fromModel;
-  return c.attributes;
+  return c.attributes ?? [];
 }
 
 function effectiveProperties(c: ClassDef): string[] {
@@ -437,7 +442,7 @@ function effectiveProperties(c: ClassDef): string[] {
 function effectiveMethods(c: ClassDef): string[] {
   const fromModel = resolveCodespaceMembers(c)?.meths;
   if (fromModel && fromModel.length) return fromModel;
-  return c.methods;
+  return c.methods ?? [];
 }
 
 function effectiveEnumLiterals(c: ClassDef): string[] {
@@ -623,7 +628,10 @@ function addCustomClassAndSyncModel(): void {
   const raw = customClassName.value.trim();
   if (!raw) return;
   if (!CLASS_NAME_RE.test(raw)) {
-    customClassWarn.value = '类名仅允许英文开头，后续可含英文/数字/下划线';
+    customClassWarn.value =
+      locale.value === 'en'
+        ? 'Class name must start with a letter and can contain letters, numbers, or underscores.'
+        : '类名仅允许英文开头，后续可含英文/数字/下划线';
     return;
   }
   const desiredId = slug(raw);
@@ -1503,7 +1511,7 @@ function deleteClass(classId: string): void {
         'cde-viewport--marquee': !!marquee,
         'cde-viewport--dragging': !!drag,
       }"
-      :title="`${cd.cdeFit} · ${cd.cdeOrigin} · ${cd.cdeResetZoom} — 无全局快捷键`"
+      :title="`${cd.cdeFit} · ${cd.cdeOrigin} · ${cd.cdeResetZoom} — ${noGlobalShortcutText}`"
       @wheel.prevent="onWheel"
       @pointerdown="onViewportPointerDown"
       @pointermove="onViewportPointerMove"
@@ -1939,7 +1947,7 @@ function deleteClass(classId: string): void {
             type="button"
             class="cde-panel__toggle"
             :aria-expanded="shortcutsOpen"
-            :title="`${cd.cdeShortcutsPanel} — 无全局快捷键`"
+            :title="`${cd.cdeShortcutsPanel} — ${noGlobalShortcutText}`"
             @click="shortcutsOpen = !shortcutsOpen"
           >
             {{ cd.cdeShortcutsPanel }}
@@ -1953,7 +1961,7 @@ function deleteClass(classId: string): void {
             type="button"
             class="cde-canvas-toolbar__btn"
             :aria-label="cd.cdeAutoLayout"
-            :title="`${cd.cdeAutoLayout} — 无全局快捷键`"
+            :title="`${cd.cdeAutoLayout} — ${noGlobalShortcutText}`"
             @click="autoLayoutClasses"
           >
             <svg class="cde-canvas-toolbar__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -1967,7 +1975,7 @@ function deleteClass(classId: string): void {
             type="button"
             class="cde-canvas-toolbar__btn"
             :aria-label="cd.cdeNewClass"
-            :title="`${cd.cdeNewClassHint} — 无全局快捷键`"
+            :title="`${cd.cdeNewClassHint} — ${noGlobalShortcutText}`"
             @click="addNewClass"
           >
             <svg class="cde-canvas-toolbar__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -1989,7 +1997,7 @@ function deleteClass(classId: string): void {
           type="button"
           class="cde-panel__toggle"
           :aria-expanded="visibilityOpen"
-          :title="`${cd.cdeVisibilityPanel} — 无全局快捷键`"
+          :title="`${cd.cdeVisibilityPanel} — ${noGlobalShortcutText}`"
           @click="visibilityOpen = !visibilityOpen"
         >
           {{ cd.cdeVisibilityPanel }}
@@ -2013,7 +2021,7 @@ function deleteClass(classId: string): void {
             type="button"
             class="cde-hud__mini cde-hud__iconbtn"
             :aria-label="cd.cdeFit"
-            :title="`${cd.cdeFit} — 无全局快捷键`"
+            :title="`${cd.cdeFit} — ${noGlobalShortcutText}`"
             @click="fitAll"
           >
             <span class="cde-hud__glyph" aria-hidden="true">⤢</span>
@@ -2022,7 +2030,7 @@ function deleteClass(classId: string): void {
             type="button"
             class="cde-hud__mini cde-hud__iconbtn"
             :aria-label="cd.cdeOrigin"
-            :title="`${cd.cdeOrigin} — 无全局快捷键`"
+            :title="`${cd.cdeOrigin} — ${noGlobalShortcutText}`"
             @click="originCenter"
           >
             <span class="cde-hud__glyph" aria-hidden="true">◎</span>
@@ -2031,18 +2039,18 @@ function deleteClass(classId: string): void {
             type="button"
             class="cde-hud__mini cde-hud__iconbtn"
             :aria-label="cd.cdeResetZoom"
-            :title="`${cd.cdeResetZoom} — 无全局快捷键`"
+            :title="`${cd.cdeResetZoom} — ${noGlobalShortcutText}`"
             @click="resetZoom100"
           >
             <span class="cde-hud__glyph" aria-hidden="true">↺</span>
           </button>
         </div>
         <div class="cde-hud__row cde-hud__row--zoom">
-          <button type="button" class="cde-hud__zoombtn" :title="`${cd.cdeZoomOut} — 无全局快捷键`" @click="zoomDelta(-0.1)">
+          <button type="button" class="cde-hud__zoombtn" :title="`${cd.cdeZoomOut} — ${noGlobalShortcutText}`" @click="zoomDelta(-0.1)">
             −
           </button>
           <span class="cde-hud__pct">{{ Math.round(scale * 100) }}%</span>
-          <button type="button" class="cde-hud__zoombtn" :title="`${cd.cdeZoomIn} — 无全局快捷键`" @click="zoomDelta(0.1)">
+          <button type="button" class="cde-hud__zoombtn" :title="`${cd.cdeZoomIn} — ${noGlobalShortcutText}`" @click="zoomDelta(0.1)">
             +
           </button>
         </div>
@@ -2131,18 +2139,18 @@ function deleteClass(classId: string): void {
         @click.stop
         @wheel.stop
       >
-        <div class="cde-addctx-title">从已绑定 model 添加 class</div>
+        <div class="cde-addctx-title">{{ locale === 'en' ? 'Add class from bound model' : '从已绑定 model 添加 class' }}</div>
         <div class="cde-addctx-custom">
           <input
             :value="customClassName"
             type="text"
             class="cde-addctx-search"
-            placeholder="新增不存在的 class 名称（会同步到 model）"
+            :placeholder="locale === 'en' ? 'Add a new class name (will sync to model)' : '新增不存在的 class 名称（会同步到 model）'"
             @input="onCustomClassInput"
             @keydown.enter.prevent="addCustomClassAndSyncModel"
           />
           <button type="button" class="cde-addctx-custom-btn" :disabled="!!customClassWarn" @click="addCustomClassAndSyncModel">
-            添加新 class
+            {{ locale === 'en' ? 'Add new class' : '添加新 class' }}
           </button>
         </div>
         <p v-if="customClassWarn" class="cde-addctx-warn">{{ customClassWarn }}</p>
@@ -2150,12 +2158,14 @@ function deleteClass(classId: string): void {
           :value="classSearch"
           type="text"
           class="cde-addctx-search"
-          placeholder="搜索 module / namespace / class"
+          :placeholder="locale === 'en' ? 'Search module / namespace / class' : '搜索 module / namespace / class'"
           @input="onClassSearchInput"
         />
         <p v-if="classSearchWarn" class="cde-addctx-warn">{{ classSearchWarn }}</p>
         <div class="cde-addctx-list" @wheel.stop>
-          <div v-if="!codespaceClassRows.length" class="cde-addctx-empty">未匹配到可添加的 class</div>
+          <div v-if="!codespaceClassRows.length" class="cde-addctx-empty">
+            {{ locale === 'en' ? 'No class matched for adding' : '未匹配到可添加的 class' }}
+          </div>
           <div v-for="g in codespaceTreeGroups" :key="'grp-' + g.pathLabel" class="cde-addctx-group">
             <div class="cde-addctx-group-title">{{ g.pathLabel }}</div>
             <button
@@ -2166,7 +2176,7 @@ function deleteClass(classId: string): void {
               @click="addClassFromCodespace(row)"
             >
               <span class="cde-addctx-item-class">{{ row.className }}</span>
-              <span v-if="isClassAlreadyAdded(row)" class="cde-addctx-item-added">已添加</span>
+              <span v-if="isClassAlreadyAdded(row)" class="cde-addctx-item-added">{{ locale === 'en' ? 'Added' : '已添加' }}</span>
             </button>
           </div>
         </div>

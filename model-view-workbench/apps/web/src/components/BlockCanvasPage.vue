@@ -6,6 +6,7 @@ import CodespaceClassifierFloat from './codespace/floating/CodespaceClassifierFl
 import MermaidClassDiagramCanvas from './mvview/MermaidClassDiagramCanvas.vue';
 import UmlClassDiagramCanvas from './mvview/UmlClassDiagramCanvas.vue';
 import {
+  MV_UML_KIND_DIAGRAM_TYPE,
   MV_MAP_CANVAS_TITLE,
   MV_MODEL_INTERFACE_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
@@ -193,6 +194,9 @@ watch(
       ) {
         viewDraft.value.payload = '';
       }
+      if (viewDraft.value.kind === 'uml-class' && typeof viewDraft.value.payload === 'string') {
+        viewDraft.value.payload = fromViewPayloadText('uml-class', viewDraft.value.payload);
+      }
       // 用户要求：路径输入框默认保持空字符串，不做 modelRefs 自动反推。
       modelRefsRelPathInput.value = '';
       tryAutoBindSingleModelRefOnViewOpen();
@@ -258,6 +262,22 @@ function toViewPayloadText(payload: MvViewPayload['payload']): string {
   return '';
 }
 
+function defaultUmlPayloadObject(kind: MvViewKind): Record<string, unknown> | null {
+  const diagramType = MV_UML_KIND_DIAGRAM_TYPE[kind];
+  if (!diagramType) return null;
+  const base: Record<string, unknown> = {
+    schema: 'mvwb-uml/v1',
+    diagramType,
+  };
+  if (kind === 'uml-class') {
+    base.classes = [{ id: 'new_class', name: 'NewClass', attributes: [], methods: [] }];
+    base.relations = [];
+    base.layout = { positions: { new_class: { x: 80, y: 80 } }, folded: {} };
+    base.edgeVisibility = { inherit: true, association: true };
+  }
+  return base;
+}
+
 function fromViewPayloadText(kind: MvViewKind, text: string): MvViewPayload['payload'] {
   if (!viewPayloadPrefersObject(kind)) return text;
   const s = text.trim();
@@ -269,6 +289,9 @@ function fromViewPayloadText(kind: MvViewKind, text: string): MvViewPayload['pay
     }
   } catch {
     // keep raw text while editing incomplete JSON
+  }
+  if (kind === 'uml-class') {
+    return defaultUmlPayloadObject(kind) ?? '';
   }
   return text;
 }
