@@ -145,7 +145,7 @@ interface CanvasTabSpec {
   unsaved?: boolean;
   /** mindmap-ui 专用右侧 Dock 状态 */
   mindmapDockState?: MindmapDockState;
-  /** ui-design：UISVG 左右栏同步状态 */
+  /** ui-design：画布与左右 dock 同步状态 */
   uiDesignDockState?: UiDesignDockState;
 }
 const canvasTabs = ref<CanvasTabSpec[]>([]);
@@ -153,8 +153,10 @@ const mindmapDockCmdSeq = ref(0);
 const mindmapDockCommand = ref<MindmapDockCommand | null>(null);
 const uiDesignDockCmdSeq = ref(0);
 const uiDesignDockCommand = ref<UiDesignDockCommand | null>(null);
-/** ui-design 右侧 DataPanel：用户点 × 收起后再用底栏按钮展开 */
-const uisvgDataDockCollapsed = ref(false);
+/** ui-design 右侧：三块独立 dock（与「UISVG」文件格式无关），竖条分别切换 */
+const rightDockDesignUiPropsShown = ref(true);
+const rightDockDesignSvgTreeShown = ref(true);
+const rightDockDesignSvgObjectShown = ref(true);
 /** 左侧 DockView：竖条切换三块 DockPanel 是否出现在滚动区内（显示/隐藏整块） */
 const leftDockMarkdownPanelShown = ref(true);
 const leftDockUisvgOutlinePanelShown = ref(true);
@@ -721,6 +723,19 @@ function closeLeftDockUisvgOutlinePanel(): void {
 
 function closeLeftDockUisvgLibraryPanel(): void {
   leftDockUisvgLibraryPanelShown.value = false;
+}
+
+function onRightDockDesignUiPropsStripClick(): void {
+  if (!showUiDesignSpecialDock.value) return;
+  rightDockDesignUiPropsShown.value = !rightDockDesignUiPropsShown.value;
+}
+function onRightDockDesignSvgTreeStripClick(): void {
+  if (!showUiDesignSpecialDock.value) return;
+  rightDockDesignSvgTreeShown.value = !rightDockDesignSvgTreeShown.value;
+}
+function onRightDockDesignSvgObjectStripClick(): void {
+  if (!showUiDesignSpecialDock.value) return;
+  rightDockDesignSvgObjectShown.value = !rightDockDesignSvgObjectShown.value;
 }
 
 /** ‹：各 DockPanel 标题行右侧，隐藏当前这一块（与竖条开关一致） */
@@ -1839,7 +1854,7 @@ const showMindmapSpecialDock = computed(() => {
   return !!(b && b.kind === 'mv-view' && (b.payload as MvViewPayload).kind === 'mindmap-ui');
 });
 
-/** 当前嵌入画布为 mv-view · ui-design：显示 UISVG 左/右 dock */
+/** 当前嵌入画布为 mv-view · ui-design：显示 UI 设计左/右 dock */
 const showUiDesignSpecialDock = computed(() => {
   if (activeEditorTab.value === 'markdown') return false;
   const b = activeCanvasBlock.value;
@@ -1857,8 +1872,7 @@ const hasMindmapIconDockPanel = computed(() => hasMindmapDockPanel.value);
 const hasMindmapThemeDockPanel = computed(() => hasMindmapDockPanel.value);
 const propertiesDockVisibleInView = computed(() => {
   if (propertiesDockCollapsed.value) return false;
-  /** ui-design 激活时右侧让给 UISVG DataPanel，避免与通用属性重复占地 */
-  if (showUiDesignSpecialDock.value) return false;
+  /** 与 ui-design 三 dock 可同时显示：围栏「属性」仍用于块元数据 / modelRefs 等 */
   if (
     rightDockMaximized.value === 'mindmap-format' ||
     rightDockMaximized.value === 'mindmap-icon' ||
@@ -1886,14 +1900,23 @@ const mindmapThemeDockVisibleInView = computed(() => {
   return true;
 });
 
-const hasUisvgDataDockPanel = computed(() => showUiDesignSpecialDock.value);
+const hasUiDesignRightDock = computed(() => showUiDesignSpecialDock.value);
 
-const uisvgDataDockVisibleInView = computed(
-  () => hasUisvgDataDockPanel.value && !uisvgDataDockCollapsed.value,
+/** 右侧滚动区内至少有一块 ui-design dock 在显示 */
+const designDockAnyPanelInScroll = computed(
+  () =>
+    hasUiDesignRightDock.value &&
+    (rightDockDesignUiPropsShown.value ||
+      rightDockDesignSvgTreeShown.value ||
+      rightDockDesignSvgObjectShown.value),
 );
 
 watch(showUiDesignSpecialDock, (on) => {
-  if (on) uisvgDataDockCollapsed.value = false;
+  if (on) {
+    rightDockDesignUiPropsShown.value = true;
+    rightDockDesignSvgTreeShown.value = true;
+    rightDockDesignSvgObjectShown.value = true;
+  }
 });
 
 const showRightDockView = computed(() => {
@@ -1901,7 +1924,7 @@ const showRightDockView = computed(() => {
     || mindmapFormatDockVisibleInView.value
     || mindmapIconDockVisibleInView.value
     || mindmapThemeDockVisibleInView.value
-    || uisvgDataDockVisibleInView.value;
+    || designDockAnyPanelInScroll.value;
 });
 
 function sendMindmapDockCommand(action: MindmapDockCommand['action'], payload?: string): void {
@@ -2823,7 +2846,8 @@ onUnmounted(() => {
             :class="{ 'dock-area-right--buttons-only': !showRightDockView }"
             :aria-label="rightDockAreaAria"
           >
-                <div v-if="showRightDockView" class="dock-view">
+                <div v-if="showRightDockView" class="dock-view dock-view--right-stack">
+                  <div class="dock-scroll dock-scroll--right-stack">
                   <section v-if="propertiesDockVisibleInView" class="dock-special-panel">
                     <div class="dock-special-head">
                       <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Properties' : '属性' }}</h3>
@@ -2930,23 +2954,16 @@ onUnmounted(() => {
                     </template>
                   </section>
 
-                  <section v-if="uisvgDataDockVisibleInView" class="dock-special-panel dock-special-panel--uisvg">
-                    <div class="dock-special-head">
-                      <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'UISVG' : 'UISVG 数据' }}</h3>
-                      <div class="dock-special-head-actions">
-                        <button
-                          type="button"
-                          class="dock-special-toggle"
-                          :title="locale === 'en' ? 'Close UISVG panel' : '关闭 UISVG 面板'"
-                          :aria-label="locale === 'en' ? 'Close UISVG panel' : '关闭 UISVG 面板'"
-                          @click="uisvgDataDockCollapsed = true"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                    <div class="dock-uisvg-embed dock-uisvg-embed--right">
+                  <div
+                    v-if="designDockAnyPanelInScroll"
+                    class="dock-right-stack-host dock-right-stack-host--ui-design"
+                  >
+                    <div class="dock-uisvg-embed dock-uisvg-embed--right dock-scroll dock-scroll--right-uisvg">
                       <DataPanel
+                        workbench-dock-embed
+                        :show-ui-props-dock="rightDockDesignUiPropsShown"
+                        :show-svg-tree-dock="rightDockDesignSvgTreeShown"
+                        :show-svg-object-dock="rightDockDesignSvgObjectShown"
                         :svg-markup="activeUiDesignDockState?.svgMarkup ?? ''"
                         :selected-id="activeUiDesignDockState?.selectedIds?.[0] ?? null"
                         @update:svg="sendUiDesignDockCommand('update-svg', $event)"
@@ -2955,7 +2972,7 @@ onUnmounted(() => {
                         "
                       />
                     </div>
-                  </section>
+                  </div>
 
                   <section v-if="mindmapFormatDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
                     <div class="dock-special-head">
@@ -3163,6 +3180,7 @@ onUnmounted(() => {
                     </template>
                   </section>
 
+                  </div>
                 </div>
                 <div class="dock-button-bar" aria-label="Dock Button Bar">
                   <button
@@ -3170,22 +3188,22 @@ onUnmounted(() => {
                     class="dock-button"
                     :class="{ 'dock-button--active': hasPropertiesDockPanel && !propertiesDockCollapsed }"
                     :disabled="!hasPropertiesDockPanel"
-                    :title="locale === 'en' ? 'Toggle Properties — no global shortcut' : '切换属性 — 无全局快捷键'"
-                    :aria-label="locale === 'en' ? 'Toggle Properties' : '切换属性'"
+                    :title="locale === 'en' ? 'Toggle Properties panel — no global shortcut' : '切换属性面板 — 无全局快捷键'"
+                    :aria-label="locale === 'en' ? 'Toggle Properties panel' : '切换属性面板'"
                     @click="propertiesDockCollapsed = !propertiesDockCollapsed; if (!propertiesDockCollapsed && (rightDockMaximized === 'mindmap-format' || rightDockMaximized === 'mindmap-icon' || rightDockMaximized === 'mindmap-theme')) rightDockMaximized = null"
                   >
-                    {{ locale === 'en' ? 'Props' : '属性' }}
+                    {{ ui.propsTitle }}
                   </button>
                   <button
                     v-if="hasMindmapFormatDockPanel"
                     type="button"
                     class="dock-button"
                     :class="{ 'dock-button--active': !mindmapSpecialDockCollapsed }"
-                    :title="locale === 'en' ? 'Toggle Format — no global shortcut' : '切换格式 — 无全局快捷键'"
-                    :aria-label="locale === 'en' ? 'Toggle Format' : '切换格式'"
+                    :title="locale === 'en' ? 'Toggle Format panel — no global shortcut' : '切换格式面板 — 无全局快捷键'"
+                    :aria-label="locale === 'en' ? 'Toggle Format panel' : '切换格式面板'"
                     @click="mindmapSpecialDockCollapsed = !mindmapSpecialDockCollapsed; if (!mindmapSpecialDockCollapsed && rightDockMaximized === 'properties') rightDockMaximized = null"
                   >
-                    {{ locale === 'en' ? 'Fmt' : '格式' }}
+                    {{ ui.dockRightStripMindmapFormat }}
                   </button>
                   <button
                     v-if="hasMindmapIconDockPanel"
@@ -3210,15 +3228,37 @@ onUnmounted(() => {
                     {{ locale === 'en' ? 'Theme' : '主题' }}
                   </button>
                   <button
-                    v-if="hasUisvgDataDockPanel"
+                    v-if="hasUiDesignRightDock"
                     type="button"
                     class="dock-button"
-                    :class="{ 'dock-button--active': !uisvgDataDockCollapsed }"
-                    :title="locale === 'en' ? 'Toggle UISVG data panel' : '切换 UISVG 数据面板'"
-                    :aria-label="locale === 'en' ? 'UISVG' : 'UISVG'"
-                    @click="uisvgDataDockCollapsed = !uisvgDataDockCollapsed"
+                    :class="{ 'dock-button--active': rightDockDesignUiPropsShown }"
+                    :title="ui.dockRightStripDesignUiPropsTitle"
+                    :aria-label="ui.dockRightStripDesignUiPropsTitle"
+                    @click="onRightDockDesignUiPropsStripClick"
                   >
-                    {{ locale === 'en' ? 'UISVG' : 'UISVG' }}
+                    {{ ui.dockRightStripDesignUiProps }}
+                  </button>
+                  <button
+                    v-if="hasUiDesignRightDock"
+                    type="button"
+                    class="dock-button"
+                    :class="{ 'dock-button--active': rightDockDesignSvgTreeShown }"
+                    :title="ui.dockRightStripDesignSvgTreeTitle"
+                    :aria-label="ui.dockRightStripDesignSvgTreeTitle"
+                    @click="onRightDockDesignSvgTreeStripClick"
+                  >
+                    {{ ui.dockRightStripDesignSvgTree }}
+                  </button>
+                  <button
+                    v-if="hasUiDesignRightDock"
+                    type="button"
+                    class="dock-button"
+                    :class="{ 'dock-button--active': rightDockDesignSvgObjectShown }"
+                    :title="ui.dockRightStripDesignSvgObjectTitle"
+                    :aria-label="ui.dockRightStripDesignSvgObjectTitle"
+                    @click="onRightDockDesignSvgObjectStripClick"
+                  >
+                    {{ ui.dockRightStripDesignSvgObject }}
                   </button>
                 </div>
           </aside>
@@ -4138,6 +4178,10 @@ onUnmounted(() => {
   background: #f8fafc;
   overflow: hidden;
 }
+.dock-scroll--right-uisvg .data-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .dock-special-head {
   display: flex;
   align-items: center;
@@ -4217,6 +4261,39 @@ onUnmounted(() => {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 8px;
+}
+/** 右侧多面板：与左侧 stack 同构，外层不滚动、内层 dock-scroll 滚动 */
+.dock-view.dock-view--right-stack {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-right: 8px;
+}
+.dock-scroll--right-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dock-scroll--right-stack > :first-child {
+  margin-top: 0;
+}
+/** ui-design：三块为独立 dock；此容器仅占满剩余高度 */
+.dock-right-stack-host--ui-design {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dock-right-stack-host--ui-design .dock-scroll--right-uisvg {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 /** 左侧多面板：仅内容区滚动，无单独 DockView 顶栏 */
 .dock-view--left-stack {
@@ -4808,5 +4885,54 @@ onUnmounted(() => {
 
 .dock-uisvg-embed--right .data-panel {
   min-height: 220px;
+}
+
+/**
+ * 嵌入 DataPanel（右侧 ui-design）：三块 Dock 与「属性」dock-special-panel 同款外观；
+ * DockFoldSection 在主壳 scoped 之外，需在非 scoped 中镜像关键样式。
+ */
+.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench {
+  margin-top: 10px;
+  border: 1px solid #c5c9d4;
+  border-radius: 6px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench:first-child {
+  margin-top: 0;
+}
+.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench > .dock-special-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: linear-gradient(to bottom, #e2e8f0, #d8dee9);
+  border-bottom: 1px solid #c5c9d4;
+  border-radius: 6px 6px 0 0;
+}
+.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench .dock-subh.dock-subh--special {
+  margin: 0;
+  color: #1e293b;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench > .dock-fold-workbench__body {
+  padding: 8px 10px 10px;
+}
+.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench .dock-special-toggle {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  border-radius: 6px;
+  min-width: 28px;
+  width: auto;
+  height: 22px;
+  line-height: 1;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 4px;
+  cursor: pointer;
 }
 </style>

@@ -27,10 +27,26 @@ import { formatSvgFragmentIndented } from '../lib/formatSvgXml'
 
 const { t, locale } = useI18n()
 
-const props = defineProps<{
-  svgMarkup: string
-  selectedId: string | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    svgMarkup: string
+    selectedId: string | null
+    /** 嵌入主窗口右侧 dock：三组块使用与左 dock 一致的 panel 标题栏 + 内边距，并隐藏收起到窄条列 */
+    workbenchDockEmbed?: boolean
+    /** workbench 下由主壳竖条独立切换：是否显示「UI 属性」dock */
+    showUiPropsDock?: boolean
+    /** workbench 下：是否显示「SVG 结构」dock */
+    showSvgTreeDock?: boolean
+    /** workbench 下：是否显示「SVG 对象属性」dock */
+    showSvgObjectDock?: boolean
+  }>(),
+  {
+    workbenchDockEmbed: false,
+    showUiPropsDock: true,
+    showSvgTreeDock: true,
+    showSvgObjectDock: true,
+  },
+)
 
 const emit = defineEmits<{
   'update:svg': [markup: string]
@@ -57,13 +73,29 @@ const treeRailOpen = ref(false)
 const uiRailOpen = ref(true)
 const svgRailOpen = ref(false)
 
-const allRightRailsCollapsed = computed(
-  () => !treeRailOpen.value && !uiRailOpen.value && !svgRailOpen.value,
+const allRightRailsCollapsed = computed(() =>
+  props.workbenchDockEmbed
+    ? false
+    : !treeRailOpen.value && !uiRailOpen.value && !svgRailOpen.value,
 )
 
 /** 至少有一个 dock 收起到边条时，右侧独立窄条列 */
 const hasRightRailStrip = computed(
-  () => !treeRailOpen.value || !uiRailOpen.value || !svgRailOpen.value,
+  () =>
+    !props.workbenchDockEmbed &&
+    (!treeRailOpen.value || !uiRailOpen.value || !svgRailOpen.value),
+)
+
+watch(
+  () => props.workbenchDockEmbed,
+  (v) => {
+    if (v) {
+      treeRailOpen.value = true
+      uiRailOpen.value = true
+      svgRailOpen.value = true
+    }
+  },
+  { immediate: true },
 )
 
 watch(
@@ -96,6 +128,58 @@ const pane2Style = computed(() => {
   if (svgRailOpen.value && svgOpen.value) return { height: `${rightPane2H.value}px`, flex: '0 0 auto' }
   return { flex: '1 1 auto', minHeight: `${rightPane2H.value}px` }
 })
+
+/** 主窗口右侧嵌入：三块为独立 dock（纵向堆叠），不用 dock-pane + 分割条 */
+const workbenchStackPanel1Class = computed(() =>
+  props.workbenchDockEmbed
+    ? 'dock-right-stack-block'
+    : ['dock-pane', 'dock-pane--right-third', { 'dock-pane--v-collapsed': !uiOpen.value }],
+)
+const workbenchStackPanel2Class = computed(() =>
+  props.workbenchDockEmbed
+    ? 'dock-right-stack-block'
+    : ['dock-pane', 'dock-pane--right-third', { 'dock-pane--v-collapsed': !treeOpen.value }],
+)
+const workbenchStackPanel3Class = computed(() =>
+  props.workbenchDockEmbed
+    ? 'dock-right-stack-block'
+    : [
+        'dock-pane',
+        'dock-pane--right-third',
+        {
+          'dock-pane--fill': svgOpen.value,
+          'dock-pane--v-collapsed': !svgOpen.value,
+        },
+      ],
+)
+
+/** workbench：每块即独立 dock section（与 App 左 dock stack 命名对齐） */
+const workbenchUiPropsRootClass = computed(() =>
+  props.workbenchDockEmbed
+    ? 'panel-section ui-props-section dock-right-stack-section dock-right-stack-section--natural'
+    : 'panel-section ui-props-section',
+)
+const workbenchTreeRootClass = computed(() =>
+  props.workbenchDockEmbed
+    ? 'tree-block dock-right-stack-section dock-right-stack-section--natural dock-right-stack-section--svg-tree'
+    : 'tree-block',
+)
+const workbenchSvgPropsRootClass = computed(() =>
+  props.workbenchDockEmbed
+    ? 'panel-section svg-props-section dock-right-stack-section dock-right-stack-section--natural'
+    : 'panel-section svg-props-section',
+)
+
+/** workbench：各块是否渲染（与主窗口右侧竖条一一对应） */
+const embedUiPropsOuterVisible = computed(() =>
+  props.workbenchDockEmbed ? props.showUiPropsDock : uiRailOpen.value,
+)
+const embedSvgTreeOuterVisible = computed(() =>
+  props.workbenchDockEmbed ? props.showSvgTreeDock : treeRailOpen.value,
+)
+const embedSvgObjectOuterVisible = computed(() =>
+  props.workbenchDockEmbed ? props.showSvgObjectDock : svgRailOpen.value,
+)
 
 function onRightDockSplit(which: 1 | 2, e: MouseEvent) {
   e.preventDefault()
@@ -304,26 +388,29 @@ defineExpose({ expandAllRails })
   <div
     ref="dataPanelRootRef"
     class="data-panel"
-    :class="{ 'data-panel--all-rail-tabs': allRightRailsCollapsed }"
+    :class="{
+      'data-panel--all-rail-tabs': allRightRailsCollapsed,
+      'data-panel--workbench-embed': workbenchDockEmbed,
+    }"
   >
     <!-- 展开中的 dock：主列，与收起的边条列分离 -->
     <div
       class="data-panel__main"
-      :class="{ 'data-panel__main--empty': allRightRailsCollapsed }"
+      :class="{
+        'data-panel__main--empty': allRightRailsCollapsed,
+        'data-panel__main--workbench-stack': workbenchDockEmbed,
+      }"
     >
-      <template v-if="uiRailOpen">
-        <div
-          class="dock-pane dock-pane--right-third"
-          :class="{ 'dock-pane--v-collapsed': !uiOpen }"
-          :style="pane1Style"
-        >
+      <template v-if="embedUiPropsOuterVisible">
+        <div :class="workbenchStackPanel1Class" :style="workbenchDockEmbed ? undefined : pane1Style">
           <DockFoldSection
             v-model="uiOpen"
             v-model:railOpen="uiRailOpen"
-            external-rail-strip
+            :external-rail-strip="!workbenchDockEmbed"
+            :workbench-dock-panel="workbenchDockEmbed"
             :title="t('panel.dockUiProps')"
             panel-id="dp-ui-props"
-            root-class="panel-section ui-props-section"
+            :root-class="workbenchUiPropsRootClass"
             rail-edge="right"
           >
       <div v-if="!uiModel" class="section-muted">{{ t('panel.notSelectedObject') }}</div>
@@ -438,7 +525,7 @@ defineExpose({ expandAllRails })
       </template>
 
       <div
-        v-show="uiRailOpen && treeRailOpen"
+        v-if="!workbenchDockEmbed && embedUiPropsOuterVisible && embedSvgTreeOuterVisible"
         class="dock-splitter dock-splitter--h dock-splitter--in-data"
         role="separator"
         aria-orientation="horizontal"
@@ -447,19 +534,16 @@ defineExpose({ expandAllRails })
         @mousedown="onRightDockSplit(1, $event)"
       />
 
-      <template v-if="treeRailOpen">
-        <div
-          class="dock-pane dock-pane--right-third"
-          :class="{ 'dock-pane--v-collapsed': !treeOpen }"
-          :style="pane2Style"
-        >
+      <template v-if="embedSvgTreeOuterVisible">
+        <div :class="workbenchStackPanel2Class" :style="workbenchDockEmbed ? undefined : pane2Style">
           <DockFoldSection
             v-model="treeOpen"
             v-model:railOpen="treeRailOpen"
-            external-rail-strip
+            :external-rail-strip="!workbenchDockEmbed"
+            :workbench-dock-panel="workbenchDockEmbed"
             :title="t('panel.dockSvgTree')"
             panel-id="dp-svg-tree"
-            root-class="tree-block"
+            :root-class="workbenchTreeRootClass"
             rail-edge="right"
           >
             <div class="tree-scroll">
@@ -470,7 +554,7 @@ defineExpose({ expandAllRails })
       </template>
 
       <div
-        v-show="treeRailOpen && svgRailOpen"
+        v-if="!workbenchDockEmbed && embedSvgTreeOuterVisible && embedSvgObjectOuterVisible"
         class="dock-splitter dock-splitter--h dock-splitter--in-data"
         role="separator"
         aria-orientation="horizontal"
@@ -479,21 +563,16 @@ defineExpose({ expandAllRails })
         @mousedown="onRightDockSplit(2, $event)"
       />
 
-      <template v-if="svgRailOpen">
-        <div
-          class="dock-pane dock-pane--right-third"
-          :class="{
-            'dock-pane--fill': svgOpen,
-            'dock-pane--v-collapsed': !svgOpen,
-          }"
-        >
+      <template v-if="embedSvgObjectOuterVisible">
+        <div :class="workbenchStackPanel3Class">
           <DockFoldSection
             v-model="svgOpen"
             v-model:railOpen="svgRailOpen"
-            external-rail-strip
+            :external-rail-strip="!workbenchDockEmbed"
+            :workbench-dock-panel="workbenchDockEmbed"
             :title="t('panel.dockSvgObjectProps')"
             panel-id="dp-svg-props"
-            root-class="panel-section svg-props-section"
+            :root-class="workbenchSvgPropsRootClass"
             rail-edge="right"
           >
       <div v-if="!resolvedDomId" class="data-meta muted">{{ t('panel.notEditableNode') }}</div>
@@ -595,7 +674,7 @@ defineExpose({ expandAllRails })
 
     <!-- 收起 dock 独占右侧窄条列，不与主列混排 -->
     <aside
-      v-if="hasRightRailStrip"
+      v-if="!workbenchDockEmbed && hasRightRailStrip"
       class="data-panel__rail-strip"
       aria-label="已收起的面板"
     >
@@ -632,6 +711,15 @@ defineExpose({ expandAllRails })
   overflow: hidden;
 }
 
+.data-panel--workbench-embed {
+  flex-direction: column;
+}
+
+.data-panel--workbench-embed .data-panel__main {
+  width: 100%;
+  max-width: 100%;
+}
+
 /** 展开区：与右侧收起窄条列分离 */
 .data-panel__main {
   flex: 1 1 auto;
@@ -640,6 +728,50 @@ defineExpose({ expandAllRails })
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/**
+ * 主窗口右侧嵌入：三块各自为独立 dock（纵向堆叠），
+ * 不再使用 dock-pane + 分割条 + 固定高度比例（那是「单窗格三联」模型）。
+ */
+.data-panel__main--workbench-stack {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+/**
+ * 包装层不参与布局：三个 section.dock-section 直接作为本列 flex 子项，
+ * DOM/无障碍结构仍可有中间 div，但不会出现「block 套 section」的双层 dock 壳。
+ */
+.data-panel__main--workbench-stack > .dock-right-stack-block {
+  display: contents;
+}
+.data-panel__main--workbench-stack section.dock-right-stack-section {
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.data-panel__main--workbench-stack section.dock-right-stack-section--svg-tree {
+  min-height: min(168px, 32vh);
+}
+/** 与主壳「属性」卡片一致：去掉 panel-section 底部分割线（卡片自有边框） */
+.data-panel__main--workbench-stack section.dock-special-panel.panel-section {
+  border-bottom: none;
+}
+.data-panel__main--workbench-stack .ui-props-section,
+.data-panel__main--workbench-stack .tree-block,
+.data-panel__main--workbench-stack .svg-props-section {
+  flex: 0 0 auto !important;
+  flex-grow: 0 !important;
+  height: auto !important;
+}
+.data-panel__main--workbench-stack .ui-props-body {
+  flex: 0 1 auto;
+  overflow: visible;
+}
+.data-panel__main--workbench-stack .tree-scroll {
+  flex: 0 1 auto;
+  max-height: min(38vh, 360px);
 }
 
 /** 全部收起：主列不占宽，整栏仅窄条列（配合 AppShell 窄宽度） */

@@ -39,6 +39,15 @@ export type ShellChromeMessages = {
   dockLeftStripUiOutline: string;
   /** 左侧竖条：UI 控件库（全名） */
   dockLeftStripUiLibrary: string;
+  /** 右侧竖条（ui-design）：UI 属性 / SVG 结构 / SVG 对象属性 — 各为独立 dock */
+  dockRightStripDesignUiProps: string;
+  dockRightStripDesignUiPropsTitle: string;
+  dockRightStripDesignSvgTree: string;
+  dockRightStripDesignSvgTreeTitle: string;
+  dockRightStripDesignSvgObject: string;
+  dockRightStripDesignSvgObjectTitle: string;
+  /** 右侧竖条：脑图「格式」面板（完整词，非 Fmt 缩写） */
+  dockRightStripMindmapFormat: string;
   dockClearSelection: string;
   dockClearSelectionTitle: string;
   dockInsertFenceAtEnd: string;
@@ -279,6 +288,13 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockLeftStripDocPanel: '文档与代码块大纲',
     dockLeftStripUiOutline: 'UI 大纲',
     dockLeftStripUiLibrary: 'UI 控件库',
+    dockRightStripDesignUiProps: 'UI 属性',
+    dockRightStripDesignUiPropsTitle: '切换 UI 属性面板 — 无全局快捷键',
+    dockRightStripDesignSvgTree: 'SVG 结构',
+    dockRightStripDesignSvgTreeTitle: '切换 SVG 结构面板 — 无全局快捷键',
+    dockRightStripDesignSvgObject: 'SVG 对象属性',
+    dockRightStripDesignSvgObjectTitle: '切换 SVG 对象属性面板 — 无全局快捷键',
+    dockRightStripMindmapFormat: '格式',
     dockClearSelection: '清除选择',
     dockClearSelectionTitle: '清除当前围栏块选择 — 无全局快捷键',
     dockInsertFenceAtEnd: '添加代码段',
@@ -497,6 +513,13 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockLeftStripDocPanel: 'Document & fences',
     dockLeftStripUiOutline: 'UI outline',
     dockLeftStripUiLibrary: 'UI library',
+    dockRightStripDesignUiProps: 'UI properties',
+    dockRightStripDesignUiPropsTitle: 'Toggle UI properties panel — no global shortcut',
+    dockRightStripDesignSvgTree: 'SVG structure',
+    dockRightStripDesignSvgTreeTitle: 'Toggle SVG structure panel — no global shortcut',
+    dockRightStripDesignSvgObject: 'SVG object properties',
+    dockRightStripDesignSvgObjectTitle: 'Toggle SVG object properties panel — no global shortcut',
+    dockRightStripMindmapFormat: 'Format',
     dockClearSelection: 'Clear selection',
     dockClearSelectionTitle: 'Clear current fence-block selection — no global shortcut',
     dockInsertFenceAtEnd: 'Add code block',

@@ -22,13 +22,49 @@ withDefaults(
      * 外层已有 workbench dock 标题/侧栏按钮时：只渲染 body，不再套 ▼ 与收起到边条。
      */
     plainBody?: boolean
+    /**
+     * 与主窗口右侧「属性」面板一致：`dock-special-panel` + `dock-special-head` + 内容区；
+     * 无收起到边条，仅用 ▾/▸ 折叠内容。
+     */
+    workbenchDockPanel?: boolean
   }>(),
-  { externalRailStrip: false, plainBody: false },
+  { externalRailStrip: false, plainBody: false, workbenchDockPanel: false },
 )
 </script>
 
 <template>
-  <div v-if="plainBody" class="dock-fold-outer dock-fold-outer--plain" :class="rootClass">
+  <section
+    v-if="workbenchDockPanel"
+    class="dock-section dock-fold-workbench dock-special-panel"
+    :class="rootClass"
+  >
+    <div class="dock-special-head">
+      <h3 class="dock-subh dock-subh--special">{{ title }}</h3>
+      <div class="dock-special-head-actions">
+        <button
+          type="button"
+          class="dock-special-toggle"
+          :aria-expanded="open"
+          :aria-controls="panelId"
+          :title="open ? 'Fold' : 'Expand'"
+          :aria-label="open ? 'Fold section' : 'Expand section'"
+          @click="open = !open"
+        >
+          {{ open ? '▾' : '▸' }}
+        </button>
+      </div>
+    </div>
+    <div
+      v-show="open"
+      :id="panelId"
+      class="dock-fold-workbench__body"
+      role="region"
+      :aria-hidden="!open"
+    >
+      <slot />
+    </div>
+  </section>
+  <div v-else-if="plainBody" class="dock-fold-outer dock-fold-outer--plain" :class="rootClass">
     <section class="dock-fold dock-fold--plain">
       <div :id="panelId" class="dock-fold__body" role="region">
         <slot />
@@ -116,6 +152,21 @@ withDefaults(
 </template>
 
 <style scoped>
+.dock-fold-workbench {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.dock-fold-workbench__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .dock-fold-outer--plain {
   flex: 1 1 auto;
   min-height: 0;
