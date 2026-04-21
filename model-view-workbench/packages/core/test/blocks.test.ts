@@ -122,6 +122,32 @@ describe('parseMarkdownBlocks', () => {
     expect((r.blocks[1].payload as { kind: string }).kind).toBe('uml-diagram');
   });
 
+  it('parses mv-view mindmap-ui with object payload', () => {
+    const md =
+      '\`\`\`mv-view\n' +
+      JSON.stringify({
+        id: 'mm_obj_1',
+        kind: 'mindmap-ui',
+        title: 'mindmap object payload',
+        modelRefs: [],
+        payload: {
+          format: 'mv-mindmap-v0',
+          nodes: [
+            { id: 'root', label: 'Root' },
+            { id: 'n1', label: 'Topic 1', parentId: 'root' },
+          ],
+        },
+      }) +
+      '\n\`\`\`\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toEqual([]);
+    expect(r.blocks).toHaveLength(1);
+    const p = r.blocks[0].payload as { kind: string; payload: unknown };
+    expect(p.kind).toBe('mindmap-ui');
+    expect(typeof p.payload).toBe('object');
+    expect((p.payload as { nodes?: unknown[] }).nodes?.length).toBe(2);
+  });
+
   it('parses mv-view ui-design and uml-class kinds', () => {
     const md =
       '\`\`\`mv-view\n' +

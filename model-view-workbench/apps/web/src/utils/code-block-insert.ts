@@ -168,7 +168,7 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
   const obj: MvViewPayload = {
     id,
     kind,
-    modelRefs: inferDefaultModelRefs(ctx),
+    modelRefs: kind === 'mindmap-ui' ? [] : inferDefaultModelRefs(ctx),
     title,
   };
   /** `mermaid-*`：JSON 内不写正文，仅紧随的 `` ```mermaid `` 承载源码（解析器会回填 `payload`）。 */
@@ -182,6 +182,14 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     const umlPayload = buildUmlDefaultPayload(kind);
     if (umlPayload) {
       obj.payload = umlPayload;
+    } else if (kind === 'mindmap-ui') {
+      obj.payload = {
+        format: 'mv-mindmap-v0',
+        nodes: [
+          { id: 'root', label: 'Root' },
+          { id: 'topic_1', label: 'Topic 1', parentId: 'root' },
+        ],
+      };
     } else if (!skipPayload && ph && !ph.startsWith('（')) {
       obj.payload = ph;
     }

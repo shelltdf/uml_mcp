@@ -15,6 +15,12 @@ import { useAppLocale } from '../../composables/useAppLocale';
 import { classDiagramCanvasMessages } from '../../i18n/class-diagram-canvas-messages';
 import type { CodespaceClassTreeItem } from '../../utils/class-canvas-codespace-bridge';
 
+type ClassDefCompat = ClassDef & {
+  stereotype?: string | null;
+  attributes?: string[];
+  methods?: string[];
+};
+
 const props = defineProps<{
   modelValue: string;
   /** 用于 SVG marker id 去重 */
@@ -430,7 +436,8 @@ function resolveCodespaceMembers(c: ClassDef):
 function effectiveAttributes(c: ClassDef): string[] {
   const fromModel = resolveCodespaceMembers(c)?.attrs;
   if (fromModel && fromModel.length) return fromModel;
-  return c.attributes ?? [];
+  const cc = c as ClassDefCompat;
+  return cc.attributes ?? c.attrs ?? [];
 }
 
 function effectiveProperties(c: ClassDef): string[] {
@@ -442,7 +449,8 @@ function effectiveProperties(c: ClassDef): string[] {
 function effectiveMethods(c: ClassDef): string[] {
   const fromModel = resolveCodespaceMembers(c)?.meths;
   if (fromModel && fromModel.length) return fromModel;
-  return c.methods ?? [];
+  const cc = c as ClassDefCompat;
+  return cc.methods ?? c.meth ?? [];
 }
 
 function effectiveEnumLiterals(c: ClassDef): string[] {
@@ -614,9 +622,8 @@ function addClassFromCodespace(row: (typeof codespaceClassRows.value)[number]): 
   state.classes.push({
     id,
     name: row.className,
-    stereotype: null,
-    attributes: [],
-    methods: [],
+    attrs: [],
+    meth: [],
   });
   positions[id] = { x: cx - 124, y: cy - 50 };
   selectedIds.value = [id];
@@ -650,9 +657,8 @@ function addCustomClassAndSyncModel(): void {
   state.classes.push({
     id,
     name: raw,
-    stereotype: null,
-    attributes: [],
-    methods: [],
+    attrs: [],
+    meth: [],
   });
   positions[id] = { x: cx - 124, y: cy - 50 };
   selectedIds.value = [id];
@@ -703,7 +709,7 @@ function isDarkTheme(): boolean {
 
 /** 按 UML 构造型区分主色（无构造型时用序号色相） */
 function classBodyFill(c: ClassDef, index: number): string {
-  const s = (c.stereotype ?? '').toLowerCase();
+  const s = (((c as ClassDefCompat).stereotype ?? '') as string).toLowerCase();
   if (s === 'interface') return isDarkTheme() ? '#1e3a2f' : '#dcfce7';
   if (s === 'abstract' || s.includes('abstract')) return isDarkTheme() ? '#1e2a3e' : '#dbeafe';
   if (s === 'enumeration' || s === 'enum') return isDarkTheme() ? '#3b2a4a' : '#fae8ff';
@@ -714,7 +720,7 @@ function classBodyFill(c: ClassDef, index: number): string {
 }
 
 function classBodyStroke(c: ClassDef, index: number): string {
-  const s = (c.stereotype ?? '').toLowerCase();
+  const s = (((c as ClassDefCompat).stereotype ?? '') as string).toLowerCase();
   if (s === 'interface') return isDarkTheme() ? '#4ade80' : '#166534';
   if (s === 'abstract' || s.includes('abstract')) return isDarkTheme() ? '#60a5fa' : '#1d4ed8';
   if (s === 'enumeration' || s === 'enum') return isDarkTheme() ? '#c084fc' : '#7e22ce';
@@ -725,7 +731,7 @@ function classBodyStroke(c: ClassDef, index: number): string {
 }
 
 function classAttrBg(c: ClassDef, index: number): string {
-  const s = (c.stereotype ?? '').toLowerCase();
+  const s = (((c as ClassDefCompat).stereotype ?? '') as string).toLowerCase();
   if (s === 'interface') return isDarkTheme() ? 'rgba(34, 197, 94, 0.12)' : 'hsl(142, 42%, 96%)';
   if (s === 'abstract' || s.includes('abstract')) return isDarkTheme() ? 'rgba(59, 130, 246, 0.12)' : 'hsl(214, 42%, 96%)';
   const h = (index * 47) % 360;
@@ -733,11 +739,15 @@ function classAttrBg(c: ClassDef, index: number): string {
 }
 
 function classMethBg(c: ClassDef, index: number): string {
-  const s = (c.stereotype ?? '').toLowerCase();
+  const s = (((c as ClassDefCompat).stereotype ?? '') as string).toLowerCase();
   if (s === 'interface') return isDarkTheme() ? 'rgba(16, 185, 129, 0.1)' : 'hsl(150, 38%, 95%)';
   if (s === 'abstract' || s.includes('abstract')) return isDarkTheme() ? 'rgba(96, 165, 250, 0.1)' : 'hsl(220, 48%, 95%)';
   const h = (index * 47) % 360;
   return `hsl(${(h + 12) % 360}, ${isDarkTheme() ? 30 : 48}%, ${isDarkTheme() ? 16 : 95}%)`;
+}
+
+function classStereotype(c: ClassDef): string {
+  return (((c as ClassDefCompat).stereotype ?? '') as string).trim();
 }
 
 function worldTransform(): Record<string, string> {
@@ -1475,7 +1485,7 @@ function propTextY(c: ClassDef, i: number): number {
 }
 
 function titleNameY(c: ClassDef): number {
-  return c.stereotype ? 30 : 20;
+  return classStereotype(c) ? 30 : 20;
 }
 
 function openClassifierFromDiagram(classId: string): void {
@@ -1620,7 +1630,7 @@ function deleteClass(classId: string): void {
               </text>
             </g>
             <text
-              v-if="c.stereotype"
+              v-if="classStereotype(c)"
               x="124"
               y="14"
               text-anchor="middle"
@@ -1628,7 +1638,7 @@ function deleteClass(classId: string): void {
               :fill="isDarkTheme() ? '#94a3b8' : '#475569'"
               style="pointer-events: none; user-select: none"
             >
-              «{{ escapeXml(c.stereotype) }}»
+              «{{ escapeXml(classStereotype(c)) }}»
             </text>
             <text
               x="124"

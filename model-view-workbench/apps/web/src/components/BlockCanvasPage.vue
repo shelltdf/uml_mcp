@@ -5,6 +5,8 @@ import FormatHint from './common/FormatHint.vue';
 import CodespaceClassifierFloat from './codespace/floating/CodespaceClassifierFloat.vue';
 import MermaidClassDiagramCanvas from './mvview/MermaidClassDiagramCanvas.vue';
 import UmlClassDiagramCanvas from './mvview/UmlClassDiagramCanvas.vue';
+import MindmapCanvas from './mindmap/MindmapCanvas.vue';
+import type { MindmapDockCommand, MindmapDockState } from './mindmap/MindmapCanvas.vue';
 import {
   MV_UML_KIND_DIAGRAM_TYPE,
   MV_MAP_CANVAS_TITLE,
@@ -90,8 +92,9 @@ const props = withDefaults(
     embedded?: boolean;
     /** 工作区内其它 .md 全文，用于解析 ref: 跨文件 modelRefs（浏览器画布弹窗由主窗口注入） */
     workspaceFiles?: Record<string, string>;
+    mindmapDockCommand?: MindmapDockCommand | null;
   }>(),
-  { embedded: false, workspaceFiles: () => ({}) },
+  { embedded: false, workspaceFiles: () => ({}), mindmapDockCommand: null },
 );
 
 const emit = defineEmits<{
@@ -101,6 +104,8 @@ const emit = defineEmits<{
   (e: 'codespaceDockContext', ctx: CodespaceDockContextPayload): void;
   /** 画布是否有未保存改动（供外层工具栏“保存”按钮高亮） */
   (e: 'dirtyChange', dirty: boolean): void;
+  /** mindmap-ui 专用右侧 Dock 状态 */
+  (e: 'mindmapDockState', ctx: MindmapDockState): void;
 }>();
 
 const block = computed<ParsedFenceBlock | null>(() => {
@@ -302,10 +307,18 @@ function setViewPayloadText(text: string): void {
   v.payload = fromViewPayloadText(v.kind, text);
 }
 
+function onMindmapDockContext(ctx: CodespaceDockContextPayload): void {
+  emit('codespaceDockContext', ctx);
+}
+function onMindmapDockState(ctx: MindmapDockState): void {
+  emit('mindmapDockState', ctx);
+}
+
 const classTabMetaLabel = computed(() => (locale.value === 'en' ? 'Basic Info' : '基本信息'));
 const classTabCanvasLabel = computed(() => (locale.value === 'en' ? 'Class Canvas' : '类图画布'));
 const classTabSourceLabel = computed(() => (locale.value === 'en' ? 'Source' : '源码'));
 const isClassCanvasKind = computed(() => viewDraft.value?.kind === 'mermaid-class' || viewDraft.value?.kind === 'uml-class');
+const isMindmapCanvasKind = computed(() => viewDraft.value?.kind === 'mindmap-ui');
 
 const modelRefsTargetFileRel = computed(() =>
   resolvePickerTargetFileRel(props.relPath, modelRefsRelPathInput.value),
@@ -1777,7 +1790,10 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
         <template v-else-if="block.kind === 'mv-view' && viewDraft">
           <div
             class="mv-view-shell"
-            :class="{ 'mv-view-shell--class-canvas': isClassCanvasKind && classCanvasPayloadMode === 'canvas' }"
+            :class="{
+              'mv-view-shell--class-canvas': isClassCanvasKind && classCanvasPayloadMode === 'canvas',
+              'mv-view-shell--mindmap-canvas': isMindmapCanvasKind,
+            }"
           >
           <template v-if="isClassCanvasKind">
             <div class="mv-class-payload-head" role="tablist">
@@ -1828,8 +1844,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
               role="tabpanel"
               aria-labelledby="mv-class-tab-meta"
             >
-              <label class="field">
-                <span>标题 title</span>
+              <label class="field mv-title-row">
+                <span class="mv-title-row-label">标题 title</span>
                 <input v-model="viewDraft.title" type="text" class="wide" />
               </label>
               <div class="mv-model-refs-picker">
@@ -1918,11 +1934,11 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
             </label>
           </template>
           <template v-else>
-            <label class="field">
-              <span>标题 title</span>
+            <label class="field mv-title-row">
+              <span class="mv-title-row-label">标题 title</span>
               <input v-model="viewDraft.title" type="text" class="wide" />
             </label>
-            <div class="mv-model-refs-picker">
+            <div v-if="viewDraft.kind !== 'mindmap-ui'" class="mv-model-refs-picker">
               <label class="field">
                 <span>{{ ui.modelRefsPickerPathLabel }}</span>
                 <div class="mv-model-refs-path-row">
@@ -1959,7 +1975,19 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
               </FormatHint>
             </div>
           </template>
-          <label v-if="!isClassCanvasKind" class="field">
+          <template v-if="viewDraft.kind === 'mindmap-ui'">
+            <div class="mv-class-canvas-wrap">
+              <MindmapCanvas
+                :model-value="toViewPayloadText(viewDraft.payload)"
+                :canvas-id="`${blockId}-mindmap`"
+                :dock-command="mindmapDockCommand"
+                @update:model-value="(v: string) => setViewPayloadText(v)"
+                @dock-context="onMindmapDockContext"
+                @dock-state="onMindmapDockState"
+              />
+            </div>
+          </template>
+          <label v-if="!isClassCanvasKind && viewDraft.kind !== 'mindmap-ui'" class="field">
             <span
               >payload（{{
                 isUmlViewKind(viewDraft.kind)
@@ -2257,6 +2285,21 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
   margin-bottom: 0;
   display: flex;
   flex-direction: column;
+}
+.canvas-root--embedded .mv-view-shell--mindmap-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.canvas-root--embedded .mv-view-shell--mindmap-canvas .mv-class-canvas-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+.canvas-root--embedded .mv-view-shell--mindmap-canvas .mv-class-canvas-wrap :deep(.mmc) {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .canvas-root--embedded .mv-view-shell--class-canvas .mv-class-canvas-wrap :deep(.cde) {
   flex: 1 1 auto;
@@ -2753,6 +2796,18 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
   gap: 6px;
   margin-bottom: 14px;
   max-width: 960px;
+}
+.mv-title-row {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr);
+  align-items: center;
+  column-gap: 10px;
+}
+.mv-title-row .wide {
+  width: 100%;
+}
+.mv-title-row-label {
+  white-space: nowrap;
 }
 .field span {
   font-size: 0.78rem;

@@ -71,6 +71,7 @@ import { detectShell } from './platform';
 import MdMarkdownPreview from './components/MdMarkdownPreview.vue';
 import MdWysiwygEditor from './components/MdWysiwygEditor.vue';
 import BlockCanvasPage from './components/BlockCanvasPage.vue';
+import type { MindmapDockCommand, MindmapDockState } from './components/mindmap/MindmapCanvas.vue';
 import type { CodespaceDockContextPayload, CodespaceDockPropLine } from './utils/codespace-dock-context';
 import InsertCodeBlockModal from './components/InsertCodeBlockModal.vue';
 import { buildFenceMarkdownForInsert, type InsertCodeBlockKind } from './utils/code-block-insert';
@@ -82,6 +83,24 @@ import {
   exportSvg,
   stripMdExtension,
 } from './utils/export-document';
+
+type FsFilePickerAcceptType = {
+  description?: string;
+  accept: Record<string, string[]>;
+};
+type FsSaveFilePickerOptions = {
+  suggestedName?: string;
+  types?: FsFilePickerAcceptType[];
+};
+type FsOpenFilePickerOptions = {
+  multiple?: boolean;
+  types?: FsFilePickerAcceptType[];
+};
+type WindowFsa = Window &
+  typeof globalThis & {
+    showSaveFilePicker?: (o?: FsSaveFilePickerOptions) => Promise<FileSystemFileHandle>;
+    showOpenFilePicker?: (o?: FsOpenFilePickerOptions) => Promise<FileSystemFileHandle[]>;
+  };
 
 const { locale, ui, setLocale } = useAppLocale();
 const shell = computed(() => detectShell());
@@ -119,8 +138,12 @@ interface CanvasTabSpec {
   codespaceDockLines?: CodespaceDockPropLine[];
   /** 画布草稿尚未保存回 Markdown */
   unsaved?: boolean;
+  /** mindmap-ui 专用右侧 Dock 状态 */
+  mindmapDockState?: MindmapDockState;
 }
 const canvasTabs = ref<CanvasTabSpec[]>([]);
+const mindmapDockCmdSeq = ref(0);
+const mindmapDockCommand = ref<MindmapDockCommand | null>(null);
 /** `'markdown'` = 中间列仅 Markdown 编辑；否则为 `canvasTabs` 中某条 `id` */
 const activeEditorTab = ref<'markdown' | string>('markdown');
 const electronApi = computed(() => (typeof window !== 'undefined' ? window.electronAPI : undefined));
@@ -620,7 +643,12 @@ const showPropsDock = ref(true);
 /** 大纲 Dock 在「已显示」前提下可折叠为窄条，不占 244px 全宽 */
 const outlineDockCollapsed = ref(false);
 /** 属性 Dock 同上 */
-const propsDockCollapsed = ref(false);
+const propertiesDockCollapsed = ref(false);
+const mindmapSpecialDockCollapsed = ref(false);
+const propertiesDockFolded = ref(false);
+const mindmapDockFolded = ref(false);
+const rightDockMaximized = ref<'properties' | 'mindmap' | null>(null);
+const rightDockAreaAria = computed(() => (locale.value === 'en' ? 'Right dock area' : '右侧 Dock 区域'));
 
 function toggleShowOutlineDockMenu() {
   showOutlineDock.value = !showOutlineDock.value;
@@ -630,7 +658,6 @@ function toggleShowOutlineDockMenu() {
 
 function toggleShowPropsDockMenu() {
   showPropsDock.value = !showPropsDock.value;
-  if (showPropsDock.value) propsDockCollapsed.value = false;
   closeMenus();
 }
 
@@ -1060,13 +1087,16 @@ function extractComponentNodes(src: string): string[] {
 function extractUmlGenericOutline(src: string, loc: 'zh' | 'en'): string[] {
   const L = shellChromeMessages[loc];
   try {
-    const obj = JSON.parse(src || '') as { relations?: Array<{ from?: string; to?: string; type?: string }>; transitions?: Array<{ from?: string; to?: string; event?: string }> };
+    const obj = JSON.parse(src || '') as {
+      relations?: Array<{ from?: string; to?: string; type?: string }>;
+      transitions?: Array<{ from?: string; to?: string; event?: string }>;
+    };
     const rels = Array.isArray(obj.relations) ? obj.relations : Array.isArray(obj.transitions) ? obj.transitions : [];
     const lines = rels
       .map((r) => {
         const a = (r.from ?? '').toString().trim();
         const b = (r.to ?? '').toString().trim();
-        const t = (r.type ?? r.event ?? '').toString().trim();
+        const t = ('type' in r ? r.type : ('event' in r ? r.event : ''))?.toString().trim() ?? '';
         if (!a && !b && !t) return '';
         return `${a || '?'} -> ${b || '?'}${t ? ` (${t})` : ''}`;
       })
@@ -1489,7 +1519,8 @@ async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<voi
 
   if (fsaSupported()) {
     try {
-      const handle = await window.showSaveFilePicker({
+      const wfsa = window as unknown as WindowFsa;
+      const handle = await wfsa.showSaveFilePicker!({
         suggestedName: tabLabel(p),
         types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
       });
@@ -1539,7 +1570,8 @@ async function openMarkdownFileUnified(): Promise<void> {
 
   if (fsaSupported()) {
     try {
-      const [handle] = await window.showOpenFilePicker({
+      const wfsa = window as unknown as WindowFsa;
+      const [handle] = await wfsa.showOpenFilePicker!({
         multiple: false,
         types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
       });
@@ -1652,13 +1684,24 @@ const embeddedCanvasMarkdown = computed(() => {
   return files.value.get(s.relPath) ?? '';
 });
 
+const activeCanvasBlock = computed((): ParsedFenceBlock | null => {
+  const tab = activeCanvasSession.value;
+  if (!tab) return null;
+  const md = embeddedCanvasMarkdown.value;
+  if (!md) return null;
+  const { blocks } = parseMarkdownBlocks(md);
+  return blocks.find((b) => b.payload.id === tab.blockId) ?? null;
+});
+
 /** 主窗口内嵌代码空间画布时，在属性 Dock 展示画布当前选中节点 */
 const showCodespaceDockCanvasSelection = computed(() => {
   const tab = activeCanvasSession.value;
-  const b = selectedBlock.value;
+  const b = activeCanvasBlock.value;
   if (activeEditorTab.value === 'markdown') return false;
-  if (!tab || b?.kind !== 'mv-model-codespace' || b.payload.id !== tab.blockId) return false;
-  return true;
+  if (!tab || !b || b.payload.id !== tab.blockId) return false;
+  if (b.kind === 'mv-model-codespace') return true;
+  if (b.kind === 'mv-view' && (b.payload as MvViewPayload).kind === 'mindmap-ui') return true;
+  return false;
 });
 
 const codespaceDockCanvasSelectionText = computed(() => {
@@ -1679,6 +1722,44 @@ function onCodespaceDockContext(ctx: CodespaceDockContextPayload) {
   canvasTabs.value = canvasTabs.value.map((t) =>
     t.id === tab.id ? { ...t, codespaceDockSummary: ctx.summary, codespaceDockLines: ctx.lines } : t,
   );
+}
+
+function onMindmapDockState(ctx: MindmapDockState) {
+  const tab = activeCanvasSession.value;
+  if (!tab) return;
+  canvasTabs.value = canvasTabs.value.map((t) => (t.id === tab.id ? { ...t, mindmapDockState: ctx } : t));
+}
+
+const showMindmapSpecialDock = computed(() => {
+  if (activeEditorTab.value === 'markdown') return false;
+  const b = activeCanvasBlock.value;
+  return !!(b && b.kind === 'mv-view' && (b.payload as MvViewPayload).kind === 'mindmap-ui');
+});
+
+const activeMindmapDockState = computed(() => activeCanvasSession.value?.mindmapDockState ?? null);
+const hasPropertiesDockPanel = computed(() => !!((selectedBlock.value && selectedBlockDocLines.value) || showCodespaceDockCanvasSelection.value));
+const hasMindmapDockPanel = computed(() => showMindmapSpecialDock.value);
+const propertiesDockVisibleInView = computed(() => {
+  if (!hasPropertiesDockPanel.value || propertiesDockCollapsed.value) return false;
+  if (rightDockMaximized.value === 'mindmap') return false;
+  return true;
+});
+const mindmapDockVisibleInView = computed(() => {
+  if (!hasMindmapDockPanel.value || mindmapSpecialDockCollapsed.value) return false;
+  if (rightDockMaximized.value === 'properties') return false;
+  return true;
+});
+const showRightDockView = computed(() => {
+  return propertiesDockVisibleInView.value || mindmapDockVisibleInView.value;
+});
+
+function sendMindmapDockCommand(action: MindmapDockCommand['action'], payload?: string): void {
+  mindmapDockCmdSeq.value += 1;
+  mindmapDockCommand.value = { id: mindmapDockCmdSeq.value, action, payload };
+}
+
+function toggleRightDockMaximize(target: 'properties' | 'mindmap'): void {
+  rightDockMaximized.value = rightDockMaximized.value === target ? null : target;
 }
 
 function onActiveCanvasDirtyChange(dirty: boolean) {
@@ -1904,8 +1985,10 @@ onUnmounted(() => {
     :rel-path="canvasRelPath"
     :block-id="canvasBlockId"
     :workspace-files="canvasWorkspaceFiles"
+    :mindmap-dock-command="mindmapDockCommand"
     @saved="onCanvasSavedInPopup"
     @close="onCanvasClosePopup"
+    @mindmap-dock-state="onMindmapDockState"
     @dirty-change="onActiveCanvasDirtyChange"
   />
   <div v-else ref="layoutRootRef" class="layout" :class="{ blockOnly }">
@@ -2096,7 +2179,7 @@ onUnmounted(() => {
             class="tb-btn"
             :disabled="!selectedPath"
             :title="ui.tbSaveAsTitle"
-            @click="saveCurrentDocumentAs"
+            @click="() => saveCurrentDocumentAs()"
           >
             {{ ui.tbSaveAs }}
           </button>
@@ -2132,30 +2215,25 @@ onUnmounted(() => {
         <div class="workspace-row">
           <aside
             v-if="!blockOnly && showOutlineDock"
-            class="dock dock-left"
-            :class="{ 'dock--collapsed': outlineDockCollapsed }"
+            class="dock dock-left dock-area-left"
+            :class="{ 'dock-area-left--buttons-only': outlineDockCollapsed }"
             :aria-label="ui.dockOutlineAria"
           >
+            <div class="dock-button-bar dock-button-bar--left" aria-label="Dock Button Bar">
+              <button
+                type="button"
+                class="dock-button"
+                :class="{ 'dock-button--active': !outlineDockCollapsed }"
+                :title="ui.dockOutlineTitle"
+                :aria-label="ui.dockOutlineTitle"
+                @click="outlineDockCollapsed = !outlineDockCollapsed"
+              >
+                {{ locale === 'en' ? 'Outl' : '大纲' }}
+              </button>
+            </div>
+            <div v-if="!outlineDockCollapsed" class="dock-view">
             <div class="dock-titlebar">
               <span v-show="!outlineDockCollapsed" class="dock-title">{{ ui.dockOutlineTitle }}</span>
-              <button
-                v-show="!outlineDockCollapsed"
-                type="button"
-                class="dock-ghost"
-                :title="ui.dockClearSelectionTitle"
-                @click="clearFenceSelection"
-              >
-                {{ ui.dockClearSelection }}
-              </button>
-              <button
-                v-show="!outlineDockCollapsed"
-                type="button"
-                class="dock-ghost"
-                :title="ui.dockInsertFenceAtEndTitle"
-                @click="openInsertCodeBlockModalFromDock"
-              >
-                {{ ui.dockInsertFenceAtEnd }}
-              </button>
               <button
                 type="button"
                 class="dock-collapse-toggle"
@@ -2214,6 +2292,24 @@ onUnmounted(() => {
               </section>
               <section class="dock-section">
                 <h3 class="dock-subh">{{ ui.dockFenceOutline }}</h3>
+                <div class="dock-props-actions" role="group" :aria-label="ui.dockBlockActionsAria">
+                  <button
+                    type="button"
+                    class="dock-action"
+                    :title="ui.dockClearSelectionTitle"
+                    @click="clearFenceSelection"
+                  >
+                    {{ ui.dockClearSelection }}
+                  </button>
+                  <button
+                    type="button"
+                    class="dock-action"
+                    :title="ui.dockInsertFenceAtEndTitle"
+                    @click="openInsertCodeBlockModalFromDock"
+                  >
+                    {{ ui.dockInsertFenceAtEnd }}
+                  </button>
+                </div>
                 <p class="dock-muted dock-hint dock-hint--tight">
                   {{ ui.dockFenceOutlineHint }}
                 </p>
@@ -2255,6 +2351,7 @@ onUnmounted(() => {
                 </ul>
               </section>
               <p v-else class="dock-muted dock-hint">{{ ui.dockSecondaryPlaceholder }}</p>
+            </div>
             </div>
           </aside>
           <div class="editor-column">
@@ -2420,10 +2517,12 @@ onUnmounted(() => {
                   :rel-path="activeCanvasSession.relPath"
                   :block-id="activeCanvasSession.blockId"
                   :workspace-files="workspaceFilesRecord()"
+                  :mindmap-dock-command="mindmapDockCommand"
                   :key="activeCanvasSession.id"
                   @saved="onEmbeddedCanvasSaved"
                   @close="closeCanvasTab(activeCanvasSession.id)"
                   @codespace-dock-context="onCodespaceDockContext"
+                  @mindmap-dock-state="onMindmapDockState"
                   @dirty-change="onActiveCanvasDirtyChange"
                 />
               </div>
@@ -2432,95 +2531,293 @@ onUnmounted(() => {
           </div>
           <aside
             v-if="!blockOnly && showPropsDock"
-            class="dock dock-right"
-            :class="{ 'dock--collapsed': propsDockCollapsed }"
-            :aria-label="ui.propsAria"
+            class="dock dock-right dock-area-right"
+            :class="{ 'dock-area-right--buttons-only': !showRightDockView }"
+            :aria-label="rightDockAreaAria"
           >
-            <div class="dock-titlebar dock-titlebar--right">
-              <button
-                type="button"
-                class="dock-collapse-toggle"
-                :class="{ 'dock-collapse-toggle--fill': propsDockCollapsed }"
-                :title="propsDockCollapsed ? ui.propsExpand : ui.propsCollapse"
-                :aria-expanded="!propsDockCollapsed"
-                @click="propsDockCollapsed = !propsDockCollapsed"
-              >
-                <span v-if="propsDockCollapsed" class="dock-vlabel">{{ ui.propsTitle }}</span>
-                <span v-else aria-hidden="true">›</span>
-              </button>
-              <span v-show="!propsDockCollapsed" class="dock-title dock-title--trailing">{{ ui.propsTitle }}</span>
-            </div>
-            <div v-show="!propsDockCollapsed" class="dock-scroll">
-              <template v-if="selectedBlock && selectedBlockDocLines">
-                <div class="dock-props-actions" role="group" :aria-label="ui.dockBlockActionsAria">
+                <div v-if="showRightDockView" class="dock-view">
+                  <section v-if="propertiesDockVisibleInView" class="dock-special-panel">
+                    <div class="dock-special-head">
+                      <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Properties Dock' : '属性 Dock' }}</h3>
+                      <div class="dock-special-head-actions">
+                        <button
+                          type="button"
+                          class="dock-special-toggle"
+                          :title="propertiesDockFolded ? (locale === 'en' ? 'Expand Properties Dock' : '展开属性 Dock') : (locale === 'en' ? 'Fold Properties Dock' : '折叠属性 Dock')"
+                          :aria-label="propertiesDockFolded ? (locale === 'en' ? 'Expand Properties Dock' : '展开属性 Dock') : (locale === 'en' ? 'Fold Properties Dock' : '折叠属性 Dock')"
+                          @click="propertiesDockFolded = !propertiesDockFolded"
+                        >
+                          {{ propertiesDockFolded ? '▸' : '▾' }}
+                        </button>
+                        <button
+                          type="button"
+                          class="dock-special-toggle"
+                          :title="rightDockMaximized === 'properties' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
+                          :aria-label="rightDockMaximized === 'properties' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
+                          @click="toggleRightDockMaximize('properties')"
+                        >
+                          {{ rightDockMaximized === 'properties' ? '🗗' : '🗖' }}
+                        </button>
+                        <button
+                          type="button"
+                          class="dock-special-toggle"
+                          :title="locale === 'en' ? 'Close Properties Dock' : '关闭属性 Dock'"
+                          :aria-label="locale === 'en' ? 'Close Properties Dock' : '关闭属性 Dock'"
+                          @click="propertiesDockCollapsed = true; if (rightDockMaximized === 'properties') rightDockMaximized = null"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                    <template v-if="!propertiesDockFolded">
+                      <template v-if="selectedBlock && selectedBlockDocLines">
+                        <div class="dock-props-actions" role="group" :aria-label="ui.dockBlockActionsAria">
+                          <button
+                            type="button"
+                            class="dock-action dock-action--primary"
+                            :title="canvasPrimaryActionTitleForSelected"
+                            @click="openVisualForSelected"
+                          >
+                            {{ canvasPrimaryActionLabelForSelected }}
+                          </button>
+                          <button
+                            type="button"
+                            class="dock-action"
+                            :title="ui.editJsonTitle"
+                            @click="openJsonForSelected"
+                          >
+                            {{ ui.editJson }}
+                          </button>
+                          <button
+                            type="button"
+                            class="dock-action"
+                            :title="ui.shellEditTitle"
+                            @click="openShellForSelected"
+                          >
+                            {{ ui.shellEdit }}
+                          </button>
+                        </div>
+                        <p v-if="selectedBlockCanvasHint" class="dock-muted dock-canvas-hint">{{ selectedBlockCanvasHint }}</p>
+                        <h3 class="dock-subh">{{ ui.basicProps }}</h3>
+                        <dl class="dock-dl dock-dl--props">
+                          <template v-for="(row, i) in selectedBlockDocLines" :key="i">
+                            <dt>{{ row.label }}</dt>
+                            <dd>{{ row.value }}</dd>
+                          </template>
+                        </dl>
+                        <details v-if="selectedBlock.kind === 'mv-view'" class="dock-json-details dock-ref-details">
+                          <summary class="dock-json-summary" :title="ui.modelRefsSummaryHover">{{ ui.modelRefsSummaryTitle }}</summary>
+                          <p class="dock-muted dock-ref-doc">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>
+                        </details>
+                        <details class="dock-json-details">
+                          <summary class="dock-json-summary" :title="ui.fullJsonSummaryHover">{{ ui.fullJsonSummary }}</summary>
+                          <pre class="dock-json dock-json--nested" tabindex="0">{{ JSON.stringify(selectedBlock.payload, null, 2) }}</pre>
+                        </details>
+                      </template>
+                      <template v-if="showCodespaceDockCanvasSelection">
+                        <h3 class="dock-subh">{{ ui.codespaceDockSelectionHeading }}</h3>
+                        <p class="dock-muted dock-canvas-hint" :title="ui.codespaceCanvasSelectionTitle">
+                          {{ codespaceDockCanvasSelectionText || ui.codespaceClickCanvas }}
+                        </p>
+                        <dl v-if="codespaceDockCanvasLines.length" class="dock-dl dock-dl--props">
+                          <template v-for="(row, i) in codespaceDockCanvasLines" :key="'csdock-' + i">
+                            <dt>{{ row.label }}</dt>
+                            <dd>{{ row.value }}</dd>
+                          </template>
+                        </dl>
+                      </template>
+                    </template>
+                  </section>
+
+                  <section v-if="mindmapDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
+                    <div class="dock-special-head">
+                      <h3 class="dock-subh dock-subh--special">Mindmap Dock</h3>
+                      <div class="dock-special-head-actions">
+                        <button
+                          type="button"
+                          class="dock-special-toggle"
+                          :title="mindmapDockFolded ? (locale === 'en' ? 'Expand Mindmap Dock' : '展开脑图 Dock') : (locale === 'en' ? 'Fold Mindmap Dock' : '折叠脑图 Dock')"
+                          :aria-label="mindmapDockFolded ? (locale === 'en' ? 'Expand Mindmap Dock' : '展开脑图 Dock') : (locale === 'en' ? 'Fold Mindmap Dock' : '折叠脑图 Dock')"
+                          @click="mindmapDockFolded = !mindmapDockFolded"
+                        >
+                          {{ mindmapDockFolded ? '▸' : '▾' }}
+                        </button>
+                        <button
+                          type="button"
+                          class="dock-special-toggle"
+                          :title="rightDockMaximized === 'mindmap' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
+                          :aria-label="rightDockMaximized === 'mindmap' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
+                          @click="toggleRightDockMaximize('mindmap')"
+                        >
+                          {{ rightDockMaximized === 'mindmap' ? '🗗' : '🗖' }}
+                        </button>
+                        <button
+                          type="button"
+                          class="dock-special-toggle"
+                          :title="locale === 'en' ? 'Close Mindmap Dock' : '关闭脑图 Dock'"
+                          :aria-label="locale === 'en' ? 'Close Mindmap Dock' : '关闭脑图 Dock'"
+                          @click="mindmapSpecialDockCollapsed = true; if (rightDockMaximized === 'mindmap') rightDockMaximized = null"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                    <template v-if="!mindmapDockFolded">
+                      <p class="dock-muted dock-canvas-hint">
+                        {{ activeMindmapDockState?.selectedId ? `selected: ${activeMindmapDockState.selectedId}` : '请选择脑图节点' }}
+                      </p>
+                      <label class="dock-field">
+                        <span>Label</span>
+                        <input
+                          class="dock-input"
+                          type="text"
+                          :value="activeMindmapDockState?.selectedLabel ?? ''"
+                          :disabled="!activeMindmapDockState?.selectedId"
+                          @change="sendMindmapDockCommand('set-label', ($event.target as HTMLInputElement).value)"
+                        />
+                      </label>
+                      <label class="dock-field">
+                        <span>Note</span>
+                        <input
+                          class="dock-input"
+                          type="text"
+                          :value="activeMindmapDockState?.selectedNote ?? ''"
+                          :disabled="!activeMindmapDockState?.selectedId"
+                          @change="sendMindmapDockCommand('set-note', ($event.target as HTMLInputElement).value)"
+                        />
+                      </label>
+                      <label class="dock-field">
+                        <span>Icon</span>
+                        <select
+                          class="dock-input"
+                          :value="activeMindmapDockState?.selectedIcon ?? ''"
+                          :disabled="!activeMindmapDockState?.selectedId"
+                          @change="sendMindmapDockCommand('set-icon', ($event.target as HTMLSelectElement).value)"
+                        >
+                          <option value="">(none)</option>
+                          <option value="⭐">⭐ Star</option>
+                          <option value="🚩">🚩 Flag</option>
+                          <option value="💡">💡 Bulb</option>
+                          <option value="✅">✅ Check</option>
+                          <option value="⚠️">⚠️ Warn</option>
+                          <option value="🚀">🚀 Rocket</option>
+                        </select>
+                      </label>
+                      <label class="dock-field">
+                        <span>Theme</span>
+                        <select
+                          class="dock-input"
+                          :value="activeMindmapDockState?.theme ?? 'classic'"
+                          @change="sendMindmapDockCommand('set-theme', ($event.target as HTMLSelectElement).value)"
+                        >
+                          <option value="classic">Classic</option>
+                          <option value="night">Night</option>
+                          <option value="forest">Forest</option>
+                        </select>
+                      </label>
+                      <div class="dock-grid2">
+                        <label class="dock-field">
+                          <span>Text color</span>
+                          <input
+                            class="dock-input"
+                            type="color"
+                            :value="activeMindmapDockState?.selectedTextColor || '#0f172a'"
+                            :disabled="!activeMindmapDockState?.selectedId"
+                            @input="sendMindmapDockCommand('set-text-color', ($event.target as HTMLInputElement).value)"
+                          />
+                        </label>
+                        <label class="dock-field">
+                          <span>Background</span>
+                          <input
+                            class="dock-input"
+                            type="color"
+                            :value="activeMindmapDockState?.selectedBgColor || '#ffffff'"
+                            :disabled="!activeMindmapDockState?.selectedId"
+                            @input="sendMindmapDockCommand('set-bg-color', ($event.target as HTMLInputElement).value)"
+                          />
+                        </label>
+                      </div>
+                      <label class="dock-field">
+                        <span>Font size</span>
+                        <input
+                          class="dock-input"
+                          type="range"
+                          min="10"
+                          max="28"
+                          :value="activeMindmapDockState?.selectedFontSize ?? 13"
+                          :disabled="!activeMindmapDockState?.selectedId"
+                          @input="sendMindmapDockCommand('set-font-size', ($event.target as HTMLInputElement).value)"
+                        />
+                      </label>
+                      <dl class="dock-dl dock-dl--props">
+                        <dt>parentId</dt>
+                        <dd>{{ activeMindmapDockState?.selectedParentId ?? '(root)' }}</dd>
+                        <dt>children</dt>
+                        <dd>{{ activeMindmapDockState?.selectedChildren ?? 0 }}</dd>
+                        <dt>nodes</dt>
+                        <dd>{{ activeMindmapDockState?.totalNodes ?? 0 }}</dd>
+                      </dl>
+                      <div class="dock-props-actions" role="group" aria-label="mindmap dock actions">
+                        <button type="button" class="dock-action" @click="sendMindmapDockCommand('add-child')">Add child</button>
+                        <button type="button" class="dock-action" @click="sendMindmapDockCommand('add-sibling')">Add sibling</button>
+                        <button
+                          type="button"
+                          class="dock-action"
+                          :disabled="!activeMindmapDockState?.selectedId"
+                          @click="sendMindmapDockCommand('toggle-collapsed')"
+                        >
+                          {{ activeMindmapDockState?.selectedCollapsed ? 'Expand' : 'Collapse' }}
+                        </button>
+                        <button
+                          type="button"
+                          class="dock-action"
+                          :disabled="!activeMindmapDockState?.selectedId"
+                          @click="sendMindmapDockCommand('delete-node')"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </template>
+                  </section>
+
+                  <template v-if="!hasMindmapDockPanel && !hasPropertiesDockPanel">
+                    <dl class="dock-dl">
+                      <dt>{{ ui.propsPath }}</dt>
+                      <dd>{{ selectedPath }}</dd>
+                      <dt>{{ ui.propsChars }}</dt>
+                      <dd>{{ currentContent.length }}</dd>
+                      <dt>{{ ui.propsFenceCount }}</dt>
+                      <dd>{{ blocks.length }}</dd>
+                      <dt>{{ ui.propsParseWarns }}</dt>
+                      <dd>{{ parseErrors.length }}</dd>
+                    </dl>
+                    <p class="dock-muted">{{ ui.propsPickBlockHint }}</p>
+                  </template>
+                </div>
+                <div class="dock-button-bar" aria-label="Dock Button Bar">
                   <button
                     type="button"
-                    class="dock-action dock-action--primary"
-                    :title="canvasPrimaryActionTitleForSelected"
-                    @click="openVisualForSelected"
+                    class="dock-button"
+                    :class="{ 'dock-button--active': hasPropertiesDockPanel && !propertiesDockCollapsed }"
+                    :disabled="!hasPropertiesDockPanel"
+                    :title="locale === 'en' ? 'Toggle Properties Dock — no global shortcut' : '切换属性 Dock — 无全局快捷键'"
+                    :aria-label="locale === 'en' ? 'Toggle Properties Dock' : '切换属性 Dock'"
+                    @click="propertiesDockCollapsed = !propertiesDockCollapsed; if (!propertiesDockCollapsed && rightDockMaximized === 'mindmap') rightDockMaximized = null"
                   >
-                    {{ canvasPrimaryActionLabelForSelected }}
+                    {{ locale === 'en' ? 'Props' : '属性' }}
                   </button>
                   <button
                     type="button"
-                    class="dock-action"
-                    :title="ui.editJsonTitle"
-                    @click="openJsonForSelected"
+                    class="dock-button"
+                    :class="{ 'dock-button--active': hasMindmapDockPanel && !mindmapSpecialDockCollapsed }"
+                    :disabled="!hasMindmapDockPanel"
+                    :title="locale === 'en' ? 'Toggle Mindmap Dock — no global shortcut' : '切换脑图 Dock — 无全局快捷键'"
+                    :aria-label="locale === 'en' ? 'Toggle Mindmap Dock' : '切换脑图 Dock'"
+                    @click="mindmapSpecialDockCollapsed = !mindmapSpecialDockCollapsed; if (!mindmapSpecialDockCollapsed && rightDockMaximized === 'properties') rightDockMaximized = null"
                   >
-                    {{ ui.editJson }}
-                  </button>
-                  <button
-                    type="button"
-                    class="dock-action"
-                    :title="ui.shellEditTitle"
-                    @click="openShellForSelected"
-                  >
-                    {{ ui.shellEdit }}
+                    {{ locale === 'en' ? 'Mind' : '脑图' }}
                   </button>
                 </div>
-                <p v-if="selectedBlockCanvasHint" class="dock-muted dock-canvas-hint">{{ selectedBlockCanvasHint }}</p>
-                <h3 class="dock-subh">{{ ui.basicProps }}</h3>
-                <dl class="dock-dl dock-dl--props">
-                  <template v-for="(row, i) in selectedBlockDocLines" :key="i">
-                    <dt>{{ row.label }}</dt>
-                    <dd>{{ row.value }}</dd>
-                  </template>
-                </dl>
-                <template v-if="showCodespaceDockCanvasSelection">
-                  <h3 class="dock-subh">{{ ui.codespaceDockSelectionHeading }}</h3>
-                  <p class="dock-muted dock-canvas-hint" :title="ui.codespaceCanvasSelectionTitle">
-                    {{ codespaceDockCanvasSelectionText || ui.codespaceClickCanvas }}
-                  </p>
-                  <dl v-if="codespaceDockCanvasLines.length" class="dock-dl dock-dl--props">
-                    <template v-for="(row, i) in codespaceDockCanvasLines" :key="'csdock-' + i">
-                      <dt>{{ row.label }}</dt>
-                      <dd>{{ row.value }}</dd>
-                    </template>
-                  </dl>
-                </template>
-                <details v-if="selectedBlock.kind === 'mv-view'" class="dock-json-details dock-ref-details">
-                  <summary class="dock-json-summary" :title="ui.modelRefsSummaryHover">{{ ui.modelRefsSummaryTitle }}</summary>
-                  <p class="dock-muted dock-ref-doc">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>
-                </details>
-                <details class="dock-json-details">
-                  <summary class="dock-json-summary" :title="ui.fullJsonSummaryHover">{{ ui.fullJsonSummary }}</summary>
-                  <pre class="dock-json dock-json--nested" tabindex="0">{{ JSON.stringify(selectedBlock.payload, null, 2) }}</pre>
-                </details>
-              </template>
-              <template v-else>
-                <dl class="dock-dl">
-                  <dt>{{ ui.propsPath }}</dt>
-                  <dd>{{ selectedPath }}</dd>
-                  <dt>{{ ui.propsChars }}</dt>
-                  <dd>{{ currentContent.length }}</dd>
-                  <dt>{{ ui.propsFenceCount }}</dt>
-                  <dd>{{ blocks.length }}</dd>
-                  <dt>{{ ui.propsParseWarns }}</dt>
-                  <dd>{{ parseErrors.length }}</dd>
-                </dl>
-                <p class="dock-muted">{{ ui.propsPickBlockHint }}</p>
-              </template>
-            </div>
           </aside>
         </div>
       </template>
@@ -3382,7 +3679,144 @@ onUnmounted(() => {
   background: #dbeafe;
   border-color: #1d4ed8;
 }
+.dock-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+.dock-field span {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+.dock-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.78rem;
+}
+.dock-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
 .dock-dl--props dt:first-child {
+  margin-top: 0;
+}
+.dock-special-panel {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+.dock-special-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dock-special-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dock-special-toggle {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  border-radius: 6px;
+  min-width: 28px;
+  width: auto;
+  height: 22px;
+  line-height: 1;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.dock-area-right {
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  gap: 0;
+}
+.dock-area-left {
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  gap: 0;
+}
+.dock-area-left--buttons-only {
+  width: 48px;
+  min-width: 48px;
+}
+.dock-area-left--buttons-only .dock-button-bar--left {
+  border-right: none;
+  padding-right: 0;
+  margin-right: 0;
+}
+.dock-area-right--buttons-only {
+  width: 48px;
+  min-width: 48px;
+}
+.dock-area-right--buttons-only .dock-button-bar {
+  border-left: none;
+  padding-left: 0;
+  margin-left: 0;
+}
+.dock-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+}
+.dock-button-bar {
+  display: flex;
+  flex: 0 0 36px;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-start;
+  border-left: 1px solid #e2e8f0;
+  padding-left: 6px;
+  margin-left: 2px;
+}
+.dock-button-bar--left {
+  border-left: none;
+  border-right: 1px solid #e2e8f0;
+  padding-left: 0;
+  padding-right: 6px;
+  margin-left: 0;
+  margin-right: 2px;
+}
+.dock-button {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  border-radius: 6px;
+  min-height: 60px;
+  width: 30px;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 4px 0;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+.dock-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.dock-button--active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+.dock-subh--special {
   margin-top: 0;
 }
 .dock-json-details {

@@ -125,6 +125,25 @@
 
 ```mv-view
 {
+  "id": "plan_mindmap",
+  "kind": "mindmap-ui",
+  "title": "实施计划（示例）",
+  "modelRefs": ["sql_demo#order"],
+  "payload": {
+    "format": "mv-mindmap-v0",
+    "nodes": [
+      { "id": "root", "label": "发布计划" },
+      { "id": "p1", "label": "需求确认", "parentId": "root" },
+      { "id": "p2", "label": "开发实现", "parentId": "root" },
+      { "id": "p3", "label": "回归测试", "parentId": "root" },
+      { "id": "p2_1", "label": "画布交互", "parentId": "p2" }
+    ]
+  }
+}
+```
+
+```mv-view
+{
   "id": "order_uml",
   "kind": "uml-diagram",
   "title": "订单领域（示例）",
