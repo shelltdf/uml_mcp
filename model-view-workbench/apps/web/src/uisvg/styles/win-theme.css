@@ -1,0 +1,165 @@
+:root {
+  --win-bg: #f0f0f0;
+  --win-panel: #ffffff;
+  --win-border: #d0d0d0;
+  --win-border-dark: #a0a0a0;
+  --win-menubar: #f0f0f0;
+  --win-toolbar: #f5f5f5;
+  --win-status: #f0f0f0;
+  --win-text: #1a1a1a;
+  --win-hover: #e5f3ff;
+  --win-active: #cce8ff;
+  --font-ui: 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--win-text);
+  background: var(--win-bg);
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+}
+
+.win-button {
+  min-height: 24px;
+  padding: 2px 12px;
+  border: 1px solid var(--win-border-dark);
+  background: linear-gradient(to bottom, #ffffff 0%, #f0f0f0 100%);
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.win-button:hover {
+  border-color: #0078d4;
+}
+
+.win-button:active {
+  background: #e0e0e0;
+}
+
+.win-input {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  border: 1px inset var(--win-border);
+  background: #fff;
+}
+
+/* 深色主题（由 `themePreference` + `prefers-color-scheme` 解析后写入 data-theme） */
+[data-theme='dark'] {
+  color-scheme: dark;
+  --win-bg: #1e1e1e;
+  --win-panel: #252526;
+  --win-border: #3c3c3c;
+  --win-border-dark: #505050;
+  --win-menubar: #2d2d2d;
+  --win-toolbar: #333333;
+  --win-status: #2d2d2d;
+  --win-text: #e8e8e8;
+  --win-hover: #094771;
+  --win-active: #0e639c;
+}
+
+[data-theme='dark'] .win-button {
+  background: linear-gradient(to bottom, #3c3c3c 0%, #2d2d2d 100%);
+  color: var(--win-text);
+  border-color: #555;
+}
+
+[data-theme='dark'] .win-button:hover {
+  border-color: #0078d4;
+}
+
+[data-theme='dark'] .win-button:active {
+  background: #1e1e1e;
+}
+
+[data-theme='dark'] .win-input {
+  background: #1e1e1e;
+  color: var(--win-text);
+  border-color: var(--win-border-dark);
+}
+
+/* 画布设置对话框（Teleport 到 body，随 data-theme） */
+[data-theme='dark'] .csd-dialog {
+  background: #2d2d2d;
+  border-color: #555;
+}
+
+[data-theme='dark'] .csd-caption {
+  background: linear-gradient(to bottom, #3c3c3c, #2d2d2d);
+  border-bottom-color: #555;
+}
+
+[data-theme='dark'] .csd-title {
+  color: var(--win-text);
+}
+
+[data-theme='dark'] .csd-body {
+  background: #333;
+}
+
+[data-theme='dark'] .csd-hint {
+  color: #bbb;
+}
+
+[data-theme='dark'] .csd-lbl {
+  color: #ccc;
+}
+
+[data-theme='dark'] .csd-actions {
+  background: #2d2d2d;
+  border-top-color: #444;
+}
+
+/* 画布右键菜单（CanvasView，fixed 层；随 data-theme） */
+[data-theme='dark'] .canvas-ctx-menu,
+[data-theme='dark'] .canvas-ctx-submenu {
+  background: var(--win-panel);
+  border-color: var(--win-border-dark);
+  color: var(--win-text);
+  box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme='dark'] .canvas-ctx-item:hover,
+[data-theme='dark'] .canvas-ctx-submenu .canvas-ctx-item:hover {
+  background: var(--win-active);
+  color: var(--win-text);
+}
+
+[data-theme='dark'] .canvas-ctx-submenu-wrap:hover .canvas-ctx-item--has-submenu {
+  background: var(--win-active);
+  color: var(--win-text);
+}
+
+[data-theme='dark'] .canvas-ctx-sep {
+  background: var(--win-border);
+}
+
+/* URL 导入对话框（Teleport 到 body） */
+[data-theme='dark'] .url-import-dialog {
+  background: var(--win-panel);
+  border-color: var(--win-border-dark);
+}
+
+[data-theme='dark'] .url-import-caption {
+  color: var(--win-text);
+}
+
+[data-theme='dark'] .url-import-hint {
+  color: #bbb;
+}

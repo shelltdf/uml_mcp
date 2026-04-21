@@ -72,6 +72,10 @@ import MdMarkdownPreview from './components/MdMarkdownPreview.vue';
 import MdWysiwygEditor from './components/MdWysiwygEditor.vue';
 import BlockCanvasPage from './components/BlockCanvasPage.vue';
 import type { MindmapDockCommand, MindmapDockState } from './components/mindmap/MindmapCanvas.vue';
+import LeftDockPanel from './uisvg/components/LeftDockPanel.vue';
+import DataPanel from './uisvg/components/DataPanel.vue';
+import type { UiDesignDockCommand, UiDesignDockState } from './uisvg/uiDesignDockTypes';
+import './uisvg/styles/win-theme.css';
 import type { CodespaceDockContextPayload, CodespaceDockPropLine } from './utils/codespace-dock-context';
 import InsertCodeBlockModal from './components/InsertCodeBlockModal.vue';
 import { buildFenceMarkdownForInsert, type InsertCodeBlockKind } from './utils/code-block-insert';
@@ -140,10 +144,16 @@ interface CanvasTabSpec {
   unsaved?: boolean;
   /** mindmap-ui 专用右侧 Dock 状态 */
   mindmapDockState?: MindmapDockState;
+  /** ui-design：UISVG 左右栏同步状态 */
+  uiDesignDockState?: UiDesignDockState;
 }
 const canvasTabs = ref<CanvasTabSpec[]>([]);
 const mindmapDockCmdSeq = ref(0);
 const mindmapDockCommand = ref<MindmapDockCommand | null>(null);
+const uiDesignDockCmdSeq = ref(0);
+const uiDesignDockCommand = ref<UiDesignDockCommand | null>(null);
+/** ui-design 右侧 DataPanel：用户点 × 收起后再用底栏按钮展开 */
+const uisvgDataDockCollapsed = ref(false);
 /** `'markdown'` = 中间列仅 Markdown 编辑；否则为 `canvasTabs` 中某条 `id` */
 const activeEditorTab = ref<'markdown' | string>('markdown');
 const electronApi = computed(() => (typeof window !== 'undefined' ? window.electronAPI : undefined));
@@ -1734,13 +1744,29 @@ function onMindmapDockState(ctx: MindmapDockState) {
   canvasTabs.value = canvasTabs.value.map((t) => (t.id === tab.id ? { ...t, mindmapDockState: ctx } : t));
 }
 
+function onUiDesignDockState(ctx: UiDesignDockState) {
+  const tab = activeCanvasSession.value;
+  if (!tab) return;
+  canvasTabs.value = canvasTabs.value.map((t) => (t.id === tab.id ? { ...t, uiDesignDockState: ctx } : t));
+}
+
 const showMindmapSpecialDock = computed(() => {
   if (activeEditorTab.value === 'markdown') return false;
   const b = activeCanvasBlock.value;
   return !!(b && b.kind === 'mv-view' && (b.payload as MvViewPayload).kind === 'mindmap-ui');
 });
 
+/** 当前嵌入画布为 mv-view · ui-design：显示 UISVG 左/右 dock */
+const showUiDesignSpecialDock = computed(() => {
+  if (activeEditorTab.value === 'markdown') return false;
+  const b = activeCanvasBlock.value;
+  return !!(b && b.kind === 'mv-view' && (b.payload as MvViewPayload).kind === 'ui-design');
+});
+
+const showUiDesignLeftDock = computed(() => showUiDesignSpecialDock.value);
+
 const activeMindmapDockState = computed(() => activeCanvasSession.value?.mindmapDockState ?? null);
+const activeUiDesignDockState = computed(() => activeCanvasSession.value?.uiDesignDockState ?? null);
 const hasPropertiesDockPanel = computed(() => true);
 const hasMindmapDockPanel = computed(() => showMindmapSpecialDock.value);
 const hasMindmapFormatDockPanel = computed(() => hasMindmapDockPanel.value);
@@ -1748,11 +1774,14 @@ const hasMindmapIconDockPanel = computed(() => hasMindmapDockPanel.value);
 const hasMindmapThemeDockPanel = computed(() => hasMindmapDockPanel.value);
 const propertiesDockVisibleInView = computed(() => {
   if (propertiesDockCollapsed.value) return false;
+  /** ui-design 激活时右侧让给 UISVG DataPanel，避免与通用属性重复占地 */
+  if (showUiDesignSpecialDock.value) return false;
   if (
     rightDockMaximized.value === 'mindmap-format' ||
     rightDockMaximized.value === 'mindmap-icon' ||
     rightDockMaximized.value === 'mindmap-theme'
-  ) return false;
+  )
+    return false;
   return true;
 });
 const mindmapFormatDockVisibleInView = computed(() => {
@@ -1773,16 +1802,33 @@ const mindmapThemeDockVisibleInView = computed(() => {
   if (rightDockMaximized.value === 'mindmap-format' || rightDockMaximized.value === 'mindmap-icon') return false;
   return true;
 });
+
+const hasUisvgDataDockPanel = computed(() => showUiDesignSpecialDock.value);
+
+const uisvgDataDockVisibleInView = computed(
+  () => hasUisvgDataDockPanel.value && !uisvgDataDockCollapsed.value,
+);
+
+watch(showUiDesignSpecialDock, (on) => {
+  if (on) uisvgDataDockCollapsed.value = false;
+});
+
 const showRightDockView = computed(() => {
   return propertiesDockVisibleInView.value
     || mindmapFormatDockVisibleInView.value
     || mindmapIconDockVisibleInView.value
-    || mindmapThemeDockVisibleInView.value;
+    || mindmapThemeDockVisibleInView.value
+    || uisvgDataDockVisibleInView.value;
 });
 
 function sendMindmapDockCommand(action: MindmapDockCommand['action'], payload?: string): void {
   mindmapDockCmdSeq.value += 1;
   mindmapDockCommand.value = { id: mindmapDockCmdSeq.value, action, payload };
+}
+
+function sendUiDesignDockCommand(action: UiDesignDockCommand['action'], payload?: string): void {
+  uiDesignDockCmdSeq.value += 1;
+  uiDesignDockCommand.value = { id: uiDesignDockCmdSeq.value, action, payload };
 }
 
 function toggleRightDockMaximize(target: 'properties' | 'mindmap-format' | 'mindmap-icon' | 'mindmap-theme'): void {
@@ -2013,9 +2059,11 @@ onUnmounted(() => {
     :block-id="canvasBlockId"
     :workspace-files="canvasWorkspaceFiles"
     :mindmap-dock-command="mindmapDockCommand"
+    :ui-design-dock-command="uiDesignDockCommand"
     @saved="onCanvasSavedInPopup"
     @close="onCanvasClosePopup"
     @mindmap-dock-state="onMindmapDockState"
+    @ui-design-dock-state="onUiDesignDockState"
     @dirty-change="onActiveCanvasDirtyChange"
   />
   <div v-else ref="layoutRootRef" class="layout" :class="{ blockOnly }">
@@ -2371,6 +2419,23 @@ onUnmounted(() => {
                 </ul>
                 <p v-else class="dock-muted">{{ ui.dockNoFenceKinds }}</p>
               </section>
+              <section v-if="showUiDesignLeftDock" class="dock-section dock-section--uisvg-left">
+                <h3 class="dock-subh">{{ locale === 'en' ? 'UI design' : 'UI 设计' }}</h3>
+                <p class="dock-muted dock-hint dock-hint--tight">
+                  {{ locale === 'en' ? 'Outline and control library for the active ui-design canvas tab.' : '对应当前 ui-design 画布标签页的大纲与控件库。' }}
+                </p>
+                <div class="dock-uisvg-embed dock-uisvg-embed--left">
+                  <LeftDockPanel
+                    :nodes="activeUiDesignDockState?.outlineNodes ?? []"
+                    :selected-ids="activeUiDesignDockState?.selectedIds ?? []"
+                    @select="sendUiDesignDockCommand('outline-select', $event)"
+                    @frame-in-view="sendUiDesignDockCommand('outline-frame', $event)"
+                    @reparent="sendUiDesignDockCommand('outline-reparent', JSON.stringify($event))"
+                    @add-basic="sendUiDesignDockCommand('add-basic', $event)"
+                    @add-windows="sendUiDesignDockCommand('add-windows', $event)"
+                  />
+                </div>
+              </section>
               <section v-if="dockSecondaryOutline" class="dock-section">
                 <h3 class="dock-subh">{{ dockSecondaryOutline.heading }}</h3>
                 <ul class="dock-outline-list dock-outline-list--dense">
@@ -2545,11 +2610,13 @@ onUnmounted(() => {
                   :block-id="activeCanvasSession.blockId"
                   :workspace-files="workspaceFilesRecord()"
                   :mindmap-dock-command="mindmapDockCommand"
+                  :ui-design-dock-command="uiDesignDockCommand"
                   :key="activeCanvasSession.id"
                   @saved="onEmbeddedCanvasSaved"
                   @close="closeCanvasTab(activeCanvasSession.id)"
                   @codespace-dock-context="onCodespaceDockContext"
                   @mindmap-dock-state="onMindmapDockState"
+                  @ui-design-dock-state="onUiDesignDockState"
                   @dirty-change="onActiveCanvasDirtyChange"
                 />
               </div>
@@ -2667,6 +2734,33 @@ onUnmounted(() => {
                         <p class="dock-muted">{{ ui.propsPickBlockHint }}</p>
                       </template>
                     </template>
+                  </section>
+
+                  <section v-if="uisvgDataDockVisibleInView" class="dock-special-panel dock-special-panel--uisvg">
+                    <div class="dock-special-head">
+                      <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'UISVG' : 'UISVG 数据' }}</h3>
+                      <div class="dock-special-head-actions">
+                        <button
+                          type="button"
+                          class="dock-special-toggle"
+                          :title="locale === 'en' ? 'Close UISVG panel' : '关闭 UISVG 面板'"
+                          :aria-label="locale === 'en' ? 'Close UISVG panel' : '关闭 UISVG 面板'"
+                          @click="uisvgDataDockCollapsed = true"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                    <div class="dock-uisvg-embed dock-uisvg-embed--right">
+                      <DataPanel
+                        :svg-markup="activeUiDesignDockState?.svgMarkup ?? ''"
+                        :selected-id="activeUiDesignDockState?.selectedIds?.[0] ?? null"
+                        @update:svg="sendUiDesignDockCommand('update-svg', $event)"
+                        @update:selected-id="
+                          sendUiDesignDockCommand('update-selected-id', $event ?? '')
+                        "
+                      />
+                    </div>
                   </section>
 
                   <section v-if="mindmapFormatDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
@@ -2920,6 +3014,17 @@ onUnmounted(() => {
                     @click="mindmapThemeDockCollapsed = !mindmapThemeDockCollapsed; if (!mindmapThemeDockCollapsed && rightDockMaximized === 'properties') rightDockMaximized = null"
                   >
                     {{ locale === 'en' ? 'Theme' : '主题' }}
+                  </button>
+                  <button
+                    v-if="hasUisvgDataDockPanel"
+                    type="button"
+                    class="dock-button"
+                    :class="{ 'dock-button--active': !uisvgDataDockCollapsed }"
+                    :title="locale === 'en' ? 'Toggle UISVG data panel' : '切换 UISVG 数据面板'"
+                    :aria-label="locale === 'en' ? 'UISVG' : 'UISVG'"
+                    @click="uisvgDataDockCollapsed = !uisvgDataDockCollapsed"
+                  >
+                    {{ locale === 'en' ? 'UISVG' : 'UISVG' }}
                   </button>
                 </div>
           </aside>
@@ -4318,5 +4423,22 @@ onUnmounted(() => {
 .mvwb-heading-flash {
   border-radius: 4px;
   animation: mvwb-heading-flash-keyframes 1.1s ease-out 1;
+}
+
+.dock-uisvg-embed {
+  min-height: 180px;
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.dock-uisvg-embed--left .left-dock-panel {
+  min-height: 200px;
+}
+
+.dock-uisvg-embed--right .data-panel {
+  min-height: 220px;
 }
 </style>

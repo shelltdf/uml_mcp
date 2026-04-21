@@ -7,6 +7,9 @@ import MermaidClassDiagramCanvas from './mvview/MermaidClassDiagramCanvas.vue';
 import UmlClassDiagramCanvas from './mvview/UmlClassDiagramCanvas.vue';
 import MindmapCanvas from './mindmap/MindmapCanvas.vue';
 import type { MindmapDockCommand, MindmapDockState } from './mindmap/MindmapCanvas.vue';
+import UiDesignCanvas from './UiDesignCanvas.vue';
+import type { UiDesignDockCommand, UiDesignDockState } from './UiDesignCanvas.vue';
+import { normalizeUiDesignPayloadFromFence } from '../uisvg/uiDesignPayload';
 import {
   MV_UML_KIND_DIAGRAM_TYPE,
   parseViewPayloadClassDiagram,
@@ -73,8 +76,9 @@ const props = withDefaults(
     /** 工作区内其它 .md 全文，用于解析 ref: 跨文件 modelRefs（浏览器画布弹窗由主窗口注入） */
     workspaceFiles?: Record<string, string>;
     mindmapDockCommand?: MindmapDockCommand | null;
+    uiDesignDockCommand?: UiDesignDockCommand | null;
   }>(),
-  { embedded: false, workspaceFiles: () => ({}), mindmapDockCommand: null },
+  { embedded: false, workspaceFiles: () => ({}), mindmapDockCommand: null, uiDesignDockCommand: null },
 );
 
 const emit = defineEmits<{
@@ -86,6 +90,8 @@ const emit = defineEmits<{
   (e: 'dirtyChange', dirty: boolean): void;
   /** mindmap-ui 专用右侧 Dock 状态 */
   (e: 'mindmapDockState', ctx: MindmapDockState): void;
+  /** ui-design：左右 dock 所需的画布状态 */
+  (e: 'uiDesignDockState', ctx: UiDesignDockState): void;
 }>();
 
 const block = computed<ParsedFenceBlock | null>(() => {
@@ -182,6 +188,9 @@ watch(
       if (viewDraft.value.kind === 'uml-class' && typeof viewDraft.value.payload === 'string') {
         viewDraft.value.payload = fromViewPayloadText('uml-class', viewDraft.value.payload);
       }
+      if (viewDraft.value.kind === 'ui-design') {
+        viewDraft.value.payload = normalizeUiDesignPayloadFromFence(viewDraft.value.payload);
+      }
       // 用户要求：路径输入框默认保持空字符串，不做 modelRefs 自动反推。
       modelRefsRelPathInput.value = '';
       tryAutoBindSingleModelRefOnViewOpen();
@@ -238,7 +247,7 @@ const viewUsesCoreUmlPayloadMapping = computed(() => {
 });
 
 function viewPayloadPrefersObject(kind: MvViewKind): boolean {
-  return isUmlViewKind(kind) || kind === 'mindmap-ui' || kind === 'ui-design';
+  return isUmlViewKind(kind) || kind === 'mindmap-ui';
 }
 
 function toViewPayloadText(payload: MvViewPayload['payload']): string {
@@ -293,12 +302,16 @@ function onMindmapDockContext(ctx: CodespaceDockContextPayload): void {
 function onMindmapDockState(ctx: MindmapDockState): void {
   emit('mindmapDockState', ctx);
 }
+function onUiDesignDockState(ctx: UiDesignDockState): void {
+  emit('uiDesignDockState', ctx);
+}
 
 const classTabMetaLabel = computed(() => (locale.value === 'en' ? 'Basic Info' : '基本信息'));
 const classTabCanvasLabel = computed(() => (locale.value === 'en' ? 'Class Canvas' : '类图画布'));
 const classTabSourceLabel = computed(() => (locale.value === 'en' ? 'Source' : '源码'));
 const isClassCanvasKind = computed(() => viewDraft.value?.kind === 'mermaid-class' || viewDraft.value?.kind === 'uml-class');
 const isMindmapCanvasKind = computed(() => viewDraft.value?.kind === 'mindmap-ui');
+const isUiDesignCanvasKind = computed(() => viewDraft.value?.kind === 'ui-design');
 
 const modelRefsTargetFileRel = computed(() =>
   resolvePickerTargetFileRel(props.relPath, modelRefsRelPathInput.value),
@@ -1758,6 +1771,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
             :class="{
               'mv-view-shell--class-canvas': isClassCanvasKind && classCanvasPayloadMode === 'canvas',
               'mv-view-shell--mindmap-canvas': isMindmapCanvasKind,
+              'mv-view-shell--ui-design-canvas': isUiDesignCanvasKind,
             }"
           >
           <template v-if="isClassCanvasKind">
@@ -1952,7 +1966,18 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
               />
             </div>
           </template>
-          <label v-if="!isClassCanvasKind && viewDraft.kind !== 'mindmap-ui'" class="field">
+          <template v-else-if="viewDraft.kind === 'ui-design'">
+            <div class="mv-class-canvas-wrap mv-uisvg-canvas-wrap">
+              <UiDesignCanvas
+                :model-value="toViewPayloadText(viewDraft.payload)"
+                :canvas-id="`${blockId}-uisvg`"
+                :dock-command="uiDesignDockCommand"
+                @update:model-value="(v: string) => setViewPayloadText(v)"
+                @ui-design-dock-state="onUiDesignDockState"
+              />
+            </div>
+          </template>
+          <label v-if="!isClassCanvasKind && viewDraft.kind !== 'mindmap-ui' && viewDraft.kind !== 'ui-design'" class="field">
             <span
               >payload（{{
                 isUmlViewKind(viewDraft.kind)
@@ -2265,6 +2290,21 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
   flex-direction: column;
 }
 .canvas-root--embedded .mv-view-shell--mindmap-canvas .mv-class-canvas-wrap :deep(.mmc) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.canvas-root--embedded .mv-view-shell--ui-design-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.canvas-root--embedded .mv-view-shell--ui-design-canvas .mv-class-canvas-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+.canvas-root--embedded .mv-view-shell--ui-design-canvas .mv-class-canvas-wrap :deep(.ui-design-canvas) {
   flex: 1 1 auto;
   min-height: 0;
 }
