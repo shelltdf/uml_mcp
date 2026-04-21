@@ -9,6 +9,9 @@ export interface MindmapNodeData {
   textColor?: string;
   bgColor?: string;
   fontSize?: number;
+  borderStyle?: 'square' | 'rounded' | 'bottom';
+  borderWidth?: number;
+  borderColor?: string;
 }
 
 export interface MindmapEdgeData {
@@ -30,6 +33,9 @@ export interface MindmapPayloadV0 {
     textColor?: string;
     bgColor?: string;
     fontSize?: number;
+    borderStyle?: 'square' | 'rounded' | 'bottom';
+    borderWidth?: number;
+    borderColor?: string;
   }>;
   edges?: Array<{ id?: string; from: string; to: string }>;
   view?: { panX?: number; panY?: number; scale?: number };

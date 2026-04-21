@@ -17,7 +17,12 @@ function normalizeNodes(raw: unknown): MindmapNodeData[] {
     const textColor = typeof no.textColor === 'string' ? no.textColor : undefined;
     const bgColor = typeof no.bgColor === 'string' ? no.bgColor : undefined;
     const fontSize = typeof no.fontSize === 'number' && Number.isFinite(no.fontSize) ? no.fontSize : undefined;
-    out.push({ id, label, parentId, order, collapsed, icon, note, textColor, bgColor, fontSize });
+    const borderStyle = no.borderStyle === 'square' || no.borderStyle === 'rounded' || no.borderStyle === 'bottom'
+      ? no.borderStyle
+      : undefined;
+    const borderWidth = typeof no.borderWidth === 'number' && Number.isFinite(no.borderWidth) ? no.borderWidth : undefined;
+    const borderColor = typeof no.borderColor === 'string' ? no.borderColor : undefined;
+    out.push({ id, label, parentId, order, collapsed, icon, note, textColor, bgColor, fontSize, borderStyle, borderWidth, borderColor });
   }
   if (!out.length) {
     out.push({ id: 'root', label: 'Root', parentId: null, order: 0 });
@@ -114,6 +119,9 @@ export function serializeMindmapPayload(state: MindmapGraphState): string {
       textColor: n.textColor || undefined,
       bgColor: n.bgColor || undefined,
       fontSize: Number.isFinite(n.fontSize ?? NaN) ? n.fontSize : undefined,
+      borderStyle: n.borderStyle || undefined,
+      borderWidth: Number.isFinite(n.borderWidth ?? NaN) ? n.borderWidth : undefined,
+      borderColor: n.borderColor || undefined,
     })),
     edges: state.edges.map((e) => ({ id: e.id, from: e.from, to: e.to })),
     view: { panX: state.panX, panY: state.panY, scale: state.scale },

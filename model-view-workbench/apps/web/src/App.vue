@@ -2726,35 +2726,27 @@ onUnmounted(() => {
                           @change="sendMindmapDockCommand('set-note', ($event.target as HTMLInputElement).value)"
                         />
                       </label>
-                      <label class="dock-field">
-                        <span>Icon</span>
-                        <select
-                          class="dock-input"
-                          :value="activeMindmapDockState?.selectedIcon ?? ''"
-                          :disabled="!activeMindmapDockState?.selectedId"
-                          @change="sendMindmapDockCommand('set-icon', ($event.target as HTMLSelectElement).value)"
+                      <div class="dock-field">
+                        <span>{{ locale === 'en' ? 'Current style' : '当前样式' }}</span>
+                        <div
+                          class="dock-style-preview"
+                          :style="{
+                            color: activeMindmapDockState?.selectedTextColor || '#0f172a',
+                            background: activeMindmapDockState?.selectedBgColor || '#ffffff',
+                            fontSize: `${activeMindmapDockState?.selectedFontSize ?? 13}px`,
+                            borderColor: activeMindmapDockState?.selectedBorderColor || '#94a3b8',
+                            borderWidth: `${activeMindmapDockState?.selectedBorderWidth ?? 1.4}px`,
+                            borderStyle: activeMindmapDockState?.selectedBorderStyle === 'bottom' ? 'none none solid none' : 'solid',
+                            borderRadius: activeMindmapDockState?.selectedBorderStyle === 'square' ? '0px' : '8px',
+                          }"
                         >
-                          <option value="">(none)</option>
-                          <option value="⭐">⭐ Star</option>
-                          <option value="🚩">🚩 Flag</option>
-                          <option value="💡">💡 Bulb</option>
-                          <option value="✅">✅ Check</option>
-                          <option value="⚠️">⚠️ Warn</option>
-                          <option value="🚀">🚀 Rocket</option>
-                        </select>
-                      </label>
-                      <label class="dock-field">
-                        <span>Theme</span>
-                        <select
-                          class="dock-input"
-                          :value="activeMindmapDockState?.theme ?? 'classic'"
-                          @change="sendMindmapDockCommand('set-theme', ($event.target as HTMLSelectElement).value)"
-                        >
-                          <option value="classic">Classic</option>
-                          <option value="night">Night</option>
-                          <option value="forest">Forest</option>
-                        </select>
-                      </label>
+                          {{ activeMindmapDockState?.selectedIcon || '◉' }}
+                          {{ activeMindmapDockState?.selectedLabel || (locale === 'en' ? 'Node preview' : '节点预览') }}
+                        </div>
+                        <small class="dock-muted">
+                          {{ locale === 'en' ? 'Preview updates with current node style.' : '预览会随当前节点样式变化。' }}
+                        </small>
+                      </div>
                       <div class="dock-grid2">
                         <label class="dock-field">
                           <span>Text color</span>
@@ -2774,6 +2766,44 @@ onUnmounted(() => {
                             :value="activeMindmapDockState?.selectedBgColor || '#ffffff'"
                             :disabled="!activeMindmapDockState?.selectedId"
                             @input="sendMindmapDockCommand('set-bg-color', ($event.target as HTMLInputElement).value)"
+                          />
+                        </label>
+                      </div>
+                      <label class="dock-field">
+                        <span>{{ locale === 'en' ? 'Border style' : '边框样式' }}</span>
+                        <select
+                          class="dock-input"
+                          :value="activeMindmapDockState?.selectedBorderStyle ?? 'rounded'"
+                          :disabled="!activeMindmapDockState?.selectedId"
+                          @change="sendMindmapDockCommand('set-border-style', ($event.target as HTMLSelectElement).value)"
+                        >
+                          <option value="square">{{ locale === 'en' ? 'Square' : '直角边' }}</option>
+                          <option value="rounded">{{ locale === 'en' ? 'Rounded' : '圆边' }}</option>
+                          <option value="bottom">{{ locale === 'en' ? 'Bottom only' : '只有下边' }}</option>
+                        </select>
+                      </label>
+                      <div class="dock-grid2">
+                        <label class="dock-field">
+                          <span>{{ locale === 'en' ? 'Border width' : '边框粗细' }}</span>
+                          <input
+                            class="dock-input"
+                            type="range"
+                            min="0"
+                            max="8"
+                            step="0.2"
+                            :value="activeMindmapDockState?.selectedBorderWidth ?? 1.4"
+                            :disabled="!activeMindmapDockState?.selectedId"
+                            @input="sendMindmapDockCommand('set-border-width', ($event.target as HTMLInputElement).value)"
+                          />
+                        </label>
+                        <label class="dock-field">
+                          <span>{{ locale === 'en' ? 'Border color' : '边框颜色' }}</span>
+                          <input
+                            class="dock-input"
+                            type="color"
+                            :value="activeMindmapDockState?.selectedBorderColor || '#94a3b8'"
+                            :disabled="!activeMindmapDockState?.selectedId"
+                            @input="sendMindmapDockCommand('set-border-color', ($event.target as HTMLInputElement).value)"
                           />
                         </label>
                       </div>
@@ -2842,14 +2872,6 @@ onUnmounted(() => {
                           <option value="forest">Forest</option>
                         </select>
                       </label>
-                      <dl class="dock-dl dock-dl--props">
-                        <dt>parentId</dt>
-                        <dd>{{ activeMindmapDockState?.selectedParentId ?? '(root)' }}</dd>
-                        <dt>children</dt>
-                        <dd>{{ activeMindmapDockState?.selectedChildren ?? 0 }}</dd>
-                        <dt>nodes</dt>
-                        <dd>{{ activeMindmapDockState?.totalNodes ?? 0 }}</dd>
-                      </dl>
                     </template>
                   </section>
 
@@ -3823,6 +3845,16 @@ onUnmounted(() => {
   font-weight: 600;
   padding: 0 4px;
   cursor: pointer;
+}
+.dock-style-preview {
+  min-height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  line-height: 1.3;
 }
 .dock-special-panel > :not(.dock-special-head) {
   padding: 8px 10px 10px;
