@@ -13,7 +13,9 @@ function childMap(nodes: MindmapNodeData[]): Map<string | null, MindmapNodeData[
     arr.push(n);
     m.set(key, arr);
   }
-  for (const arr of m.values()) arr.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  for (const arr of m.values()) {
+    arr.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
+  }
   return m;
 }
 

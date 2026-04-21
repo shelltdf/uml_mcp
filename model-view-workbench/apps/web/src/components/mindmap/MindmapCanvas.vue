@@ -70,6 +70,7 @@ const marquee = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(n
 const editNodeId = ref<string | null>(null);
 const editText = ref('');
 const editComposing = ref(false);
+const imeSeed = reactive({ pending: false, key: '' });
 const hoverDropTargetId = ref<string | null>(null);
 const lastSynced = ref('');
 const ctx = reactive({ open: false, x: 0, y: 0, nodeId: '' as string });
@@ -84,9 +85,51 @@ const layoutNodes = computed(() => layoutMindmap(state.nodes));
 const byId = computed(() => new Map(layoutNodes.value.map((n) => [n.id, n] as const)));
 const editingNodeLayout = computed(() => (editNodeId.value ? byId.value.get(editNodeId.value) ?? null : null));
 const zoomPercent = computed(() => `${Math.round(state.scale * 100)}%`);
+const viewportW = ref(1);
+const viewportH = ref(1);
 
 function viewportRect(): DOMRect {
   return viewportRef.value?.getBoundingClientRect() ?? new DOMRect(0, 0, 1, 1);
+}
+function syncViewportSize(): void {
+  const r = viewportRect();
+  viewportW.value = Math.max(1, r.width);
+  viewportH.value = Math.max(1, r.height);
+}
+
+const isCanvasFullscreen = ref(false);
+function syncCanvasFullscreenFlag(): void {
+  const el = viewportRef.value;
+  const now = Boolean(el && document.fullscreenElement === el);
+  const entered = now && !isCanvasFullscreen.value;
+  isCanvasFullscreen.value = now;
+  syncViewportSize();
+  if (entered) void nextTick(() => fitView());
+}
+async function toggleCanvasFullscreen(): Promise<void> {
+  const el = viewportRef.value;
+  if (!el) return;
+  try {
+    if (document.fullscreenElement === el) {
+      await document.exitFullscreen();
+    } else {
+      await el.requestFullscreen();
+    }
+  } catch {
+    /* Fullscreen API may be blocked or unsupported */
+  }
+}
+function isEditableElement(el: Element | null): boolean {
+  if (!el || !(el instanceof HTMLElement)) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable;
+}
+function primeImeInput(): void {
+  if (editNodeId.value) return;
+  void nextTick(() => {
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== editInputRef.value && isEditableElement(active)) return;
+    editInputRef.value?.focus();
+  });
 }
 function worldAt(clientX: number, clientY: number): { x: number; y: number } {
   return pointToWorld(clientX, clientY, viewportRect(), state.panX, state.panY, state.scale);
@@ -95,6 +138,45 @@ function firstSelectedNode(): MindmapNodeData | undefined {
   const id = selectedIds.value[0];
   return id ? state.nodes.find((n) => n.id === id) : undefined;
 }
+/** After structural/view changes, keep the primary selected node inside the viewport (minimal pan). */
+function revealPrimarySelectionIfClipped(): void {
+  const id = selectedIds.value[0];
+  if (!id) return;
+  const n = byId.value.get(id);
+  if (!n) return;
+  const s = state.scale;
+  const rect = viewportRect();
+  const vw = Math.max(1, rect.width);
+  const vh = Math.max(1, rect.height);
+  const m = 28;
+  const b = {
+    x1: state.panX + n.x * s,
+    y1: state.panY + n.y * s,
+    x2: state.panX + (n.x + n.w) * s,
+    y2: state.panY + (n.y + n.h) * s,
+  };
+  const bw = b.x2 - b.x1;
+  const bh = b.y2 - b.y1;
+  let dx = 0;
+  let dy = 0;
+  if (bw <= vw - 2 * m) {
+    if (b.x1 < m) dx = m - b.x1;
+    else if (b.x2 > vw - m) dx = vw - m - b.x2;
+  } else {
+    dx = m - b.x1;
+  }
+  if (bh <= vh - 2 * m) {
+    if (b.y1 < m) dy = m - b.y1;
+    else if (b.y2 > vh - m) dy = vh - m - b.y2;
+  } else {
+    dy = m - b.y1;
+  }
+  if (dx !== 0 || dy !== 0) {
+    state.panX += dx;
+    state.panY += dy;
+  }
+}
+
 function emitDockContext(): void {
   const first = firstSelectedNode();
   const summary = first ? `Mindmap node: ${first.label}` : selectedIds.value.length > 1 ? `Mindmap selection (${selectedIds.value.length})` : 'Mindmap';
@@ -126,6 +208,7 @@ function emitDockContext(): void {
   });
 }
 function pushPayload(): void {
+  revealPrimarySelectionIfClipped();
   const next = serializeMindmapPayload(state);
   lastSynced.value = next;
   emit('update:modelValue', next);
@@ -150,6 +233,7 @@ function createNode(parentId: string | null, label = 'New node'): string {
   const id = `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   const order = state.nodes.filter((n) => n.parentId === parentId).length;
   state.nodes.push({ id, label, parentId, order });
+  normalizeSiblingOrder(parentId);
   return id;
 }
 function beginInlineEdit(id: string, opts?: { selectAll?: boolean }): void {
@@ -162,6 +246,17 @@ function beginInlineEdit(id: string, opts?: { selectAll?: boolean }): void {
     if (opts?.selectAll !== false) editInputRef.value?.select();
   });
 }
+function clearImeSeed(): void {
+  imeSeed.pending = false;
+  imeSeed.key = '';
+}
+function onEditorCompositionStart(): void {
+  editComposing.value = true;
+}
+function onEditorCompositionEnd(): void {
+  editComposing.value = false;
+  clearImeSeed();
+}
 function confirmInlineEdit(): void {
   if (editComposing.value) return;
   const id = editNodeId.value;
@@ -169,16 +264,27 @@ function confirmInlineEdit(): void {
   const n = state.nodes.find((x) => x.id === id);
   if (n) n.label = (editText.value || '').trim() || 'Untitled';
   editNodeId.value = null;
+  clearImeSeed();
   pushPayload();
 }
-function confirmInlineEditAndAddSibling(): void {
-  if (editComposing.value) return;
-  const id = editNodeId.value;
-  confirmInlineEdit();
-  if (id) addSibling(id);
+/** Overlay input keeps focus for IME; Enter must be handled here when not editing. */
+function onEditorEnterKey(e: KeyboardEvent): void {
+  if (e.isComposing || editComposing.value) return;
+  if (editNodeId.value) {
+    e.preventDefault();
+    e.stopPropagation();
+    confirmInlineEdit();
+    return;
+  }
+  const first = selectedIds.value[0] ?? null;
+  if (!first) return;
+  e.preventDefault();
+  e.stopPropagation();
+  addSibling(first);
 }
 function cancelInlineEdit(): void {
   editNodeId.value = null;
+  clearImeSeed();
 }
 function deleteSelected(): void {
   const del = new Set(selectedIds.value);
@@ -206,14 +312,30 @@ function addChild(parentId: string | null): void {
 }
 function addSibling(sourceId: string | null): void {
   const source = sourceId ? state.nodes.find((n) => n.id === sourceId) : undefined;
-  const id = createNode(source?.parentId ?? null, 'New sibling');
+  const parentId = source?.parentId ?? null;
+  const sorted = state.nodes
+    .filter((n) => n.parentId === parentId)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
+  let insertIdx = sorted.length;
+  if (source) {
+    const si = sorted.findIndex((s) => s.id === source.id);
+    insertIdx = si >= 0 ? si + 1 : sorted.length;
+  }
+  const id = `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  state.nodes.push({ id, label: 'New sibling', parentId, order: 0 });
+  const ids = sorted.map((n) => n.id);
+  ids.splice(insertIdx, 0, id);
+  ids.forEach((nid, idx) => {
+    const n = state.nodes.find((x) => x.id === nid);
+    if (n) n.order = idx;
+  });
   selectedIds.value = [id];
   pushPayload();
 }
 function normalizeSiblingOrder(parentId: string | null): void {
   const sibs = state.nodes
     .filter((n) => n.parentId === parentId)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
   sibs.forEach((n, idx) => { n.order = idx; });
 }
 function moveNodeUp(id: string): void {
@@ -221,7 +343,7 @@ function moveNodeUp(id: string): void {
   if (!node) return;
   const sibs = state.nodes
     .filter((n) => n.parentId === node.parentId)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
   const i = sibs.findIndex((n) => n.id === id);
   if (i <= 0) return;
   const prev = sibs[i - 1];
@@ -236,7 +358,7 @@ function moveNodeDown(id: string): void {
   if (!node) return;
   const sibs = state.nodes
     .filter((n) => n.parentId === node.parentId)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
   const i = sibs.findIndex((n) => n.id === id);
   if (i < 0 || i >= sibs.length - 1) return;
   const next = sibs[i + 1];
@@ -264,7 +386,7 @@ function demoteNode(id: string): void {
   if (!node) return;
   const sibs = state.nodes
     .filter((n) => n.parentId === node.parentId)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
   const i = sibs.findIndex((n) => n.id === id);
   if (i <= 0) return;
   const prevSibling = sibs[i - 1];
@@ -291,7 +413,7 @@ function collectSubtree(id: string): MindmapNodeData[] {
     out.push({ ...n });
     const kids = state.nodes
       .filter((x) => x.parentId === cur)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id))
       .map((x) => x.id);
     queue.push(...kids);
   }
@@ -313,20 +435,15 @@ function cloneSubtreeInto(parentId: string | null, payload: ClipboardPayload): s
       order: state.nodes.filter((x) => x.parentId === nextParent).length,
     });
   }
+  const touchedParents = new Set<string | null>();
+  for (const n of all) {
+    const nextParent = n.id === payload.root.id ? parentId : (n.parentId ? map.get(n.parentId) ?? null : null);
+    touchedParents.add(nextParent);
+  }
+  for (const p of touchedParents) normalizeSiblingOrder(p);
   return rootCloneId;
 }
 
-function nodeCenter(id: string): { x: number; y: number } | null {
-  const n = byId.value.get(id);
-  return n ? { x: n.x + n.w / 2, y: n.y + n.h / 2 } : null;
-}
-function ensureNodeVisible(id: string): void {
-  const c = nodeCenter(id);
-  if (!c) return;
-  const rect = viewportRect();
-  state.panX = rect.width / 2 - c.x * state.scale;
-  state.panY = rect.height / 2 - c.y * state.scale;
-}
 function isDescendant(targetId: string, possibleAncestorId: string): boolean {
   let cur = state.nodes.find((n) => n.id === targetId)?.parentId ?? null;
   const guard = new Set<string>();
@@ -344,10 +461,14 @@ function beginNodeDrag(e: PointerEvent, id: string): void {
   const additive = e.ctrlKey || e.metaKey;
   if (additive) {
     selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter((x) => x !== id) : [...selectedIds.value, id];
+    revealPrimarySelectionIfClipped();
     emitDockContext();
+    primeImeInput();
     return;
   }
   if (!selectedIds.value.includes(id)) selectedIds.value = [id];
+  revealPrimarySelectionIfClipped();
+  primeImeInput();
   const hit = byId.value.get(id);
   if (!hit) return;
   const w = worldAt(e.clientX, e.clientY);
@@ -402,6 +523,7 @@ function endNodeDrag(e: PointerEvent): void {
     if (src) {
       src.parentId = dropTargetId;
       src.order = state.nodes.filter((n) => n.parentId === dropTargetId).length;
+      normalizeSiblingOrder(dropTargetId);
     }
   }
   dragNodeId.value = null;
@@ -478,6 +600,7 @@ function onBackgroundPointerDown(e: PointerEvent): void {
   marquee.value = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
   if (!(e.ctrlKey || e.metaKey)) selectedIds.value = [];
   emitDockContext();
+  primeImeInput();
 }
 function onViewportPointerMove(e: PointerEvent): void {
   if (panning.value) {
@@ -499,6 +622,7 @@ function onViewportPointerUp(): void {
   if (!marquee.value) return;
   selectedIds.value = idsInMarquee(layoutNodes.value, marquee.value.x0, marquee.value.y0, marquee.value.x1, marquee.value.y1);
   marquee.value = null;
+  pushPayload();
   emitDockContext();
 }
 function onWheel(e: WheelEvent): void {
@@ -506,11 +630,13 @@ function onWheel(e: WheelEvent): void {
   state.scale = z.scale;
   state.panX = z.panX;
   state.panY = z.panY;
+  revealPrimarySelectionIfClipped();
 }
 
 function openContextMenu(e: MouseEvent, nodeId: string | null): void {
   e.preventDefault();
   if (nodeId && !selectedIds.value.includes(nodeId)) selectedIds.value = [nodeId];
+  revealPrimarySelectionIfClipped();
   emitDockContext();
   ctx.open = true;
   ctx.x = e.clientX;
@@ -523,7 +649,12 @@ function deleteFromContext(): void { if (ctx.nodeId && !selectedIds.value.includ
 function editFromContext(): void { const id = ctx.nodeId || selectedIds.value[0]; if (id) beginInlineEdit(id); ctx.open = false; }
 
 function onKeyDown(e: KeyboardEvent): void {
+  if (e.defaultPrevented) return;
   const target = e.target as HTMLElement | null;
+  // Inline editor handles Enter/Escape/composition via its own listeners; if the event
+  // bubbles here after confirmInlineEdit(), `editing` is already false and Enter
+  // would incorrectly add a second sibling.
+  if (target === editInputRef.value) return;
   const isEditableTarget = !!target && (
     target.tagName === 'INPUT'
     || target.tagName === 'TEXTAREA'
@@ -538,11 +669,6 @@ function onKeyDown(e: KeyboardEvent): void {
     if (e.isComposing || editComposing.value) return;
     const inputFocused = document.activeElement === editInputRef.value;
     if (inputFocused) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        confirmInlineEditAndAddSibling();
-        return;
-      }
       if (e.key === 'Escape') {
         e.preventDefault();
         cancelInlineEdit();
@@ -575,6 +701,8 @@ function onKeyDown(e: KeyboardEvent): void {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
     e.preventDefault();
     selectedIds.value = state.nodes.map((n) => n.id);
+    revealPrimarySelectionIfClipped();
+    pushPayload();
     return emitDockContext();
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
@@ -620,9 +748,18 @@ function onKeyDown(e: KeyboardEvent): void {
     && !e.altKey
     && (e.key === 'Process' || (e.key.length === 1 && !/\s/.test(e.key)))
   ) {
-    if (e.key !== 'Process') e.preventDefault();
+    const alphaSeed = /^[a-zA-Z]$/.test(e.key);
+    const fromInlineInput = target === editInputRef.value;
+    if (e.key !== 'Process' && !alphaSeed) e.preventDefault();
+    imeSeed.pending = alphaSeed || e.key === 'Process';
+    imeSeed.key = alphaSeed ? e.key.toLowerCase() : '';
     beginInlineEdit(first, { selectAll: false });
-    editText.value = e.key === 'Process' ? '' : e.key;
+    // If key comes from the always-focused inline input, never overwrite text;
+    // keep IME/native pipeline untouched.
+    if (!fromInlineInput) {
+      // For alphabet seed keys, let IME consume the first key.
+      editText.value = (e.key === 'Process' || alphaSeed) ? '' : e.key;
+    }
     return;
   }
   if (!first) return;
@@ -632,28 +769,29 @@ function onKeyDown(e: KeyboardEvent): void {
     e.preventDefault();
     if (current.parentId) {
       selectedIds.value = [current.parentId];
-      ensureNodeVisible(current.parentId);
     }
   } else if (e.key === 'ArrowDown') {
     e.preventDefault();
     const firstChild = state.nodes
       .filter((n) => n.parentId === current.id)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0];
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id))[0];
     if (firstChild) {
       selectedIds.value = [firstChild.id];
-      ensureNodeVisible(firstChild.id);
     }
   } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     e.preventDefault();
     const sibs = state.nodes
       .filter((n) => n.parentId === current.parentId)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
     const i = sibs.findIndex((n) => n.id === current.id);
     const next = e.key === 'ArrowLeft' ? sibs[i - 1] : sibs[i + 1];
     if (next) {
       selectedIds.value = [next.id];
-      ensureNodeVisible(next.id);
     }
+  }
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    revealPrimarySelectionIfClipped();
+    pushPayload();
   }
   emitDockContext();
 }
@@ -709,10 +847,16 @@ onMounted(() => {
   };
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('pointerdown', closeCtx);
+  window.addEventListener('resize', syncViewportSize);
+  document.addEventListener('fullscreenchange', syncCanvasFullscreenFlag);
   onUnmounted(() => {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('pointerdown', closeCtx);
+    window.removeEventListener('resize', syncViewportSize);
+    document.removeEventListener('fullscreenchange', syncCanvasFullscreenFlag);
   });
+  primeImeInput();
+  syncViewportSize();
   nextTick(() => fitView());
 });
 </script>
@@ -757,32 +901,89 @@ onMounted(() => {
         </g>
         <rect v-if="marqueeRect" :x="marqueeRect.x" :y="marqueeRect.y" :width="marqueeRect.w" :height="marqueeRect.h" fill="rgba(37,99,235,0.12)" stroke="#2563eb" stroke-dasharray="4 3" />
       </g>
+      <g class="mmc-ui" :transform="`translate(10, ${Math.max(10, viewportH - 34)})`">
+        <g class="mmc-tool-btn" transform="translate(0,0)" @click="fitView">
+          <rect width="35" height="25" rx="6" />
+          <text x="17.5" y="16" text-anchor="middle">Fit</text>
+        </g>
+        <g class="mmc-tool-btn" transform="translate(41,0)" @click="originView">
+          <rect width="56" height="25" rx="6" />
+          <text x="28" y="16" text-anchor="middle">Origin</text>
+        </g>
+        <g class="mmc-tool-btn" transform="translate(103,0)" @click="resetZoom">
+          <rect width="55" height="25" rx="6" />
+          <text x="27.5" y="16" text-anchor="middle">Reset</text>
+        </g>
+        <g class="mmc-tool-btn" transform="translate(164,0)" @click="zoomByStep(-0.1)">
+          <rect width="24" height="25" rx="6" />
+          <text x="12" y="16" text-anchor="middle">-</text>
+        </g>
+        <g class="mmc-tool-btn" transform="translate(194,0)" @dblclick="resetZoom">
+          <rect width="53" height="25" rx="6" />
+          <text x="26.5" y="16" text-anchor="middle">{{ zoomPercent }}</text>
+        </g>
+        <g class="mmc-tool-btn" transform="translate(253,0)" @click="zoomByStep(0.1)">
+          <rect width="28" height="25" rx="6" />
+          <text x="14" y="16" text-anchor="middle">+</text>
+        </g>
+      </g>
+      <g class="mmc-ui mmc-ui-tr" :transform="`translate(${Math.max(8, viewportW - 8 - 36)}, 8)`">
+        <g class="mmc-tool-btn mmc-tool-btn--fs" @click.stop="toggleCanvasFullscreen">
+          <title>{{ isCanvasFullscreen ? '退出全屏' : '画布全屏' }}</title>
+          <rect width="36" height="26" rx="6" />
+          <g
+            v-if="!isCanvasFullscreen"
+            class="mmc-fs-icon"
+            transform="translate(6,1)"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="21" y1="3" x2="14" y2="10" />
+            <polyline points="9 21 3 21 3 15" />
+            <line x1="3" y1="21" x2="10" y2="14" />
+            <polyline points="15 21 21 21 21 15" />
+            <line x1="21" y1="15" x2="14" y2="22" />
+            <polyline points="9 3 3 3 3 9" />
+            <line x1="3" y1="9" x2="10" y2="2" />
+          </g>
+          <g
+            v-else
+            class="mmc-fs-icon"
+            transform="translate(6,1)"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="4 14 10 14 10 20" />
+            <polyline points="20 10 14 10 14 4" />
+            <polyline points="20 14 14 14 14 20" />
+            <polyline points="4 10 10 10 10 4" />
+          </g>
+        </g>
+      </g>
     </svg>
     <input
-      v-if="editingNodeLayout"
       ref="editInputRef"
       v-model="editText"
-      class="mmc-editor-overlay"
-      :style="{
+      :class="['mmc-editor-overlay', { 'mmc-editor-overlay--hidden': !editingNodeLayout }]"
+      :style="editingNodeLayout ? {
         left: `${state.panX + state.scale * (editingNodeLayout.x + 8)}px`,
         top: `${state.panY + state.scale * (editingNodeLayout.y + 6)}px`,
         width: `${Math.max(80, state.scale * (editingNodeLayout.w - 16))}px`,
-      }"
+      } : undefined"
       autofocus
-      @compositionstart="editComposing = true"
-      @compositionend="editComposing = false"
-      @keydown.enter.prevent="confirmInlineEditAndAddSibling"
-      @keydown.esc.prevent="cancelInlineEdit"
-      @blur="confirmInlineEdit"
+      @compositionstart="onEditorCompositionStart"
+      @compositionend="onEditorCompositionEnd"
+      @keydown.enter="onEditorEnterKey"
+      @keydown.esc.prevent.stop="cancelInlineEdit"
+      @blur="editNodeId ? confirmInlineEdit() : undefined"
     />
-    <div class="mmc-tools">
-      <button type="button" @click="fitView">Fit</button>
-      <button type="button" @click="originView">Origin</button>
-      <button type="button" @click="resetZoom">Reset</button>
-      <button type="button" @click="zoomByStep(-0.1)">-</button>
-      <button type="button" @dblclick="resetZoom">{{ zoomPercent }}</button>
-      <button type="button" @click="zoomByStep(0.1)">+</button>
-    </div>
     <div v-if="ctx.open" class="mmc-ctx" :style="{ left: `${ctx.x}px`, top: `${ctx.y}px` }" @pointerdown.stop @contextmenu.prevent>
       <button type="button" @click="addChildFromContext">Add child</button>
       <button type="button" @click="addSiblingFromContext">Add sibling</button>
@@ -796,8 +997,20 @@ onMounted(() => {
 
 <style scoped>
 .mmc { position: relative; flex: 1; min-height: 0; background: #f8fafc; overflow: hidden; cursor: default; }
+.mmc:fullscreen {
+  width: 100%;
+  height: 100%;
+  background: #f8fafc;
+}
 .mmc-svg { width: 100%; height: 100%; display: block; }
 .mmc-node-label { user-select: none; pointer-events: none; }
+.mmc-ui { pointer-events: auto; }
+.mmc-tool-btn { cursor: pointer; }
+.mmc-tool-btn rect { fill: #fff; stroke: #cbd5e1; stroke-width: 1; }
+.mmc-tool-btn text { fill: #334155; font-size: 12px; font-weight: 600; user-select: none; pointer-events: none; }
+.mmc-tool-btn:hover rect { fill: #eff6ff; stroke: #93c5fd; }
+.mmc-tool-btn--fs .mmc-fs-icon { color: #334155; pointer-events: none; }
+.mmc-tool-btn--fs:hover .mmc-fs-icon { color: #2563eb; }
 .mmc-editor-overlay {
   position: absolute;
   z-index: 12;
@@ -808,8 +1021,14 @@ onMounted(() => {
   font-size: 13px;
   background: #fff;
 }
-.mmc-tools { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; }
-.mmc-tools button { border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+.mmc-editor-overlay--hidden {
+  left: -10000px !important;
+  top: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0;
+  pointer-events: none;
+}
 .mmc-ctx { position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 132px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18); padding: 4px; }
 .mmc-ctx button { text-align: left; background: transparent; border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer; }
 .mmc-ctx button:hover:not(:disabled) { background: #eff6ff; }
