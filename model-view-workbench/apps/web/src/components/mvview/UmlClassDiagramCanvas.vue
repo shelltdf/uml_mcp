@@ -1201,7 +1201,6 @@ function onSvgClassPointerDown(e: PointerEvent, classId: string): void {
   if (e.button !== 0 || inheritDrag.value) return;
   e.stopPropagation();
   selectedEdgeId.value = null;
-  const wasSelected = selectedIds.value.includes(classId);
   const additive = e.ctrlKey || e.metaKey || e.shiftKey;
   if (additive) {
     if (selectedIds.value.includes(classId)) {
@@ -1216,8 +1215,6 @@ function onSvgClassPointerDown(e: PointerEvent, classId: string): void {
     selectedIds.value = [classId];
   }
   ctx.open = false;
-  // 防误触：第一次点击仅选中，不进入拖拽；需二次按住拖动才移动。
-  if (!wasSelected) return;
   const pos = positions[classId];
   if (!pos) return;
   const w = clientToWorld(e.clientX, e.clientY);
