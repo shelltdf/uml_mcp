@@ -112,6 +112,7 @@ export type ShellChromeMessages = {
   ctxInsert: string;
   ctxInsertNoDocTitle: string;
   ctxInsertPreviewTitle: string;
+  ctxPreviewReadonlyHint: string;
   ctxInsertTitle: string;
   logNeedDoc: string;
   logNeedRichOrSource: string;
@@ -325,6 +326,7 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     ctxInsert: '插入代码块…',
     ctxInsertNoDocTitle: '请先打开或新建文档 — 无全局快捷键',
     ctxInsertPreviewTitle: '预览模式下不可用：请先切换到富文本或原始文本 — 无全局快捷键',
+    ctxPreviewReadonlyHint: '当前是只读预览；交互编辑请切换到「富文本 / 原始文本」或使用右侧代码块画布。',
     ctxInsertTitle: '选择代码块类型并插入 mv-view / mv-model* 围栏 — 无全局快捷键',
     logNeedDoc: '请先打开或新建一个 Markdown 文档',
     logNeedRichOrSource: '插入代码块请先将 Markdown 区切换到「富文本」或「原始文本」',
@@ -527,6 +529,7 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     ctxInsert: 'Insert fence block…',
     ctxInsertNoDocTitle: 'Open or create a document first — no global shortcut',
     ctxInsertPreviewTitle: 'Not in preview: switch to Rich or Source — no global shortcut',
+    ctxPreviewReadonlyHint: 'Preview is read-only; switch to Rich/Source or use the block canvas for interactive editing.',
     ctxInsertTitle: 'Pick a fence type (mv-view / mv-model*) — no global shortcut',
     logNeedDoc: 'Open or create a Markdown document first',
     logNeedRichOrSource: 'Switch Markdown to Rich or Source to insert a fence block',

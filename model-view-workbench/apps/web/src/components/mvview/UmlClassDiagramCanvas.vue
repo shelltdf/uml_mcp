@@ -14,6 +14,7 @@ import {
 import { useAppLocale } from '../../composables/useAppLocale';
 import { classDiagramCanvasMessages } from '../../i18n/class-diagram-canvas-messages';
 import type { CodespaceClassTreeItem } from '../../utils/class-canvas-codespace-bridge';
+import { UmlCanvasInteractionService } from '../../application/services/UmlCanvasInteractionService';
 
 const props = defineProps<{
   modelValue: string;
@@ -110,6 +111,33 @@ const edgeCtx = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
 const edgeEditor = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
 const associationAnchorByEdge = reactive<Record<string, { sectionIndex: number; lineIndex: number }>>({});
 const edgeRenderById = reactive<Record<string, 'straight' | 'orthogonal' | 'curve'>>({});
+const interactionService = new UmlCanvasInteractionService();
+
+function ensureClassPosition(classId: string): { x: number; y: number } {
+  const p = positions[classId];
+  if (p) return p;
+  const fallback = { x: 0, y: 0 };
+  positions[classId] = fallback;
+  return fallback;
+}
+function openClassMenuAt(classId: string, clientX: number, clientY: number): void {
+  edgeCtx.open = false;
+  addCtx.open = false;
+  selectedIds.value = [classId];
+  ctx.open = true;
+  ctx.x = clientX;
+  ctx.y = clientY;
+  ctx.classId = classId;
+}
+
+function openBackgroundMenuAt(clientX: number, clientY: number): void {
+  edgeCtx.open = false;
+  ctx.open = false;
+  addCtx.open = true;
+  customClassName.value = '';
+  addCtx.x = clientX;
+  addCtx.y = clientY;
+}
 
 function loadFromPayload(payload: string): void {
   const raw = (payload ?? '').trim();
@@ -244,8 +272,7 @@ function onMarqueePointerUp(e: PointerEvent): void {
   }
   const hits: string[] = [];
   for (const c of state.classes) {
-    const p = positions[c.id];
-    if (!p) continue;
+    const p = ensureClassPosition(c.id);
     const { w: cw, h: ch } = classBoxSize(c);
     const ix0 = p.x;
     const iy0 = p.y;
@@ -740,12 +767,7 @@ function worldTransform(): Record<string, string> {
 }
 
 function clientToWorld(clientX: number, clientY: number): { x: number; y: number } {
-  const el = viewportRef.value;
-  if (!el) return { x: 0, y: 0 };
-  const rect = el.getBoundingClientRect();
-  const sx = clientX - rect.left;
-  const sy = clientY - rect.top;
-  return { x: (sx - panX.value) / scale.value, y: (sy - panY.value) / scale.value };
+  return interactionService.clientToWorld(clientX, clientY, viewportRef.value, panX.value, panY.value, scale.value);
 }
 
 function onWheel(e: WheelEvent): void {
@@ -977,19 +999,12 @@ function autoLayoutClasses(): void {
 }
 
 function classIdAtWorldPoint(wx: number, wy: number): string | null {
-  for (const c of state.classes) {
-    const p = positions[c.id];
-    if (!p) continue;
-    const { w, h } = classBoxSize(c);
-    if (wx >= p.x && wx <= p.x + w && wy >= p.y && wy <= p.y + h) return c.id;
-  }
-  return null;
+  return interactionService.classIdAtWorldPoint(wx, wy, state.classes, positions, classBoxSize);
 }
 
 function classIdAtLeftHandlePoint(wx: number, wy: number): string | null {
   for (const c of state.classes) {
-    const p = positions[c.id];
-    if (!p) continue;
+    const p = ensureClassPosition(c.id);
     // Left triangle around points: (-16,18) (0,10) (0,26)
     const x0 = p.x - 18;
     const x1 = p.x + 2;
@@ -1002,8 +1017,7 @@ function classIdAtLeftHandlePoint(wx: number, wy: number): string | null {
 
 function classIdAtRightHandlePoint(wx: number, wy: number): string | null {
   for (const c of state.classes) {
-    const p = positions[c.id];
-    if (!p) continue;
+    const p = ensureClassPosition(c.id);
     const rows = rightHandleRows(c);
     for (const h of rows) {
       const cy = p.y + previewSectionLineY(c, h.sectionIndex, h.lineIndex) - 4;
@@ -1023,8 +1037,7 @@ function startInheritDrag(e: PointerEvent, childId: string, anchor: 'top' | 'lef
   e.preventDefault();
   selectedInheritHandleClassId.value = childId;
   selectedEdgeId.value = null;
-  const p = positions[childId];
-  if (!p) return;
+  const p = ensureClassPosition(childId);
   const child = state.classes.find((x) => x.id === childId);
   if (!child) return;
   const s = classBoxSize(child);
@@ -1044,9 +1057,9 @@ function startAssociationDrag(
 ): void {
   e.stopPropagation();
   e.preventDefault();
-  const p = positions[fromId];
+  const p = ensureClassPosition(fromId);
   const c = state.classes.find((x) => x.id === fromId);
-  if (!p || !c) return;
+  if (!c) return;
   selectedInheritHandleClassId.value = null;
   selectedEdgeId.value = null;
   associationDrag.value = { fromId, sectionIndex, lineIndex, anchor };
@@ -1215,8 +1228,7 @@ function onSvgClassPointerDown(e: PointerEvent, classId: string): void {
     selectedIds.value = [classId];
   }
   ctx.open = false;
-  const pos = positions[classId];
-  if (!pos) return;
+  const pos = ensureClassPosition(classId);
   const w = clientToWorld(e.clientX, e.clientY);
   const snapshots: Record<string, { x: number; y: number }> = {};
   for (const id of selectedIds.value) {
@@ -1264,24 +1276,13 @@ function onSvgClassPointerUp(e: PointerEvent, classId: string): void {
 function onClassContextMenu(e: MouseEvent, classId: string): void {
   e.preventDefault();
   e.stopPropagation();
-  edgeCtx.open = false;
-  addCtx.open = false;
-  selectedIds.value = [classId];
-  ctx.open = true;
-  ctx.x = e.clientX;
-  ctx.y = e.clientY;
-  ctx.classId = classId;
+  openClassMenuAt(classId, e.clientX, e.clientY);
 }
 
 function onBackgroundContextMenu(e: MouseEvent): void {
   e.preventDefault();
   e.stopPropagation();
-  edgeCtx.open = false;
-  ctx.open = false;
-  addCtx.open = true;
-  customClassName.value = '';
-  addCtx.x = e.clientX;
-  addCtx.y = e.clientY;
+  openBackgroundMenuAt(e.clientX, e.clientY);
 }
 
 type EdgePathItem = {
@@ -1520,6 +1521,7 @@ function deleteClass(classId: string): void {
           xmlns="http://www.w3.org/2000/svg"
           :width="WORLD_SIZE"
           :height="WORLD_SIZE"
+          style="pointer-events: all"
           @contextmenu.prevent
         >
           <defs>
@@ -1561,6 +1563,7 @@ function deleteClass(classId: string): void {
             :width="WORLD_SIZE"
             :height="WORLD_SIZE"
             fill="transparent"
+            style="pointer-events: all"
             @pointerdown="onSvgBackgroundPointerDown"
             @contextmenu="onBackgroundContextMenu"
           />
@@ -1569,6 +1572,7 @@ function deleteClass(classId: string): void {
             v-for="(c, idx) in state.classes"
             :key="c.id"
             :transform="`translate(${positions[c.id]?.x ?? 0}, ${positions[c.id]?.y ?? 0})`"
+            style="pointer-events: all"
             @pointerdown="onSvgClassPointerDown($event, c.id)"
             @pointermove="onSvgClassPointerMove($event, c.id)"
             @pointerup="onSvgClassPointerUp($event, c.id)"
@@ -1595,7 +1599,11 @@ function deleteClass(classId: string): void {
               :stroke="isClassSelected(c.id) ? '#2563eb' : classBodyStroke(c, idx)"
               :stroke-width="isClassSelected(c.id) ? 3 : 2"
               rx="4"
-              style="pointer-events: visiblePainted"
+              style="pointer-events: all"
+              @pointerdown="onSvgClassPointerDown($event, c.id)"
+              @pointermove="onSvgClassPointerMove($event, c.id)"
+              @pointerup="onSvgClassPointerUp($event, c.id)"
+              @contextmenu="onClassContextMenu($event, c.id)"
             />
             <g v-if="classOutOfBoundModel(c)">
               <circle cx="236" cy="12" r="8" fill="#dc2626" />

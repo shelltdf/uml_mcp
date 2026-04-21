@@ -2521,6 +2521,10 @@ onUnmounted(() => {
         @click.stop
         @contextmenu.prevent
       >
+        <div v-if="mdPaneMode === 'preview'" class="ctx-note" role="note">
+          {{ ui.ctxPreviewReadonlyHint }}
+        </div>
+        <div v-if="mdPaneMode === 'preview'" class="ctx-sep" role="separator" aria-hidden="true" />
         <button
           type="button"
           class="ctx-item"
@@ -3617,6 +3621,12 @@ onUnmounted(() => {
   margin: 4px 8px;
   background: #e2e8f0;
   border: none;
+}
+.md-ctx-menu .ctx-note {
+  padding: 8px 14px 6px;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: #475569;
 }
 .muted {
   color: #888;

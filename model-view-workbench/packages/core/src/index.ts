@@ -67,6 +67,12 @@ export { MV_PLANTUML_VIEW_KINDS, isPlantUmlViewKind } from './types.js';
 
 export { parseMarkdownBlocks, replaceBlockInnerById, getBlockFenceSlice, findMvModelSqlTable } from './parse/blocks.js';
 export { parseRefUri, normalizeRelPath, resolveRefPath, detectRefCycle } from './refs/resolve.js';
+export { UmlDiagramTypePolicy } from './domain/uml/UmlDiagramTypePolicy.js';
+export { UmlViewPayloadValidator } from './application/services/UmlViewPayloadValidator.js';
+export type { IModelRefResolver, IUmlKindMapper, IViewPayloadCodec } from './application/contracts/ViewContracts.js';
+export { JsonViewPayloadCodec } from './infrastructure/codecs/JsonViewPayloadCodec.js';
+export { CoreModelRefResolver } from './infrastructure/refs/CoreModelRefResolver.js';
+export { MarkdownBlockParser } from './infrastructure/parsers/MarkdownBlockParser.js';
 
 export type {
   ClassDef,

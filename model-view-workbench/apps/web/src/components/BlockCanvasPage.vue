@@ -186,9 +186,16 @@ watch(
     } else if (b.kind === 'mv-view') {
       viewDraft.value = JSON.parse(JSON.stringify(b.payload)) as MvViewPayload;
       if (!Array.isArray(viewDraft.value.modelRefs)) viewDraft.value.modelRefs = [];
-      if (typeof viewDraft.value.payload !== 'string') viewDraft.value.payload = '';
+      if (
+        viewDraft.value.payload !== undefined &&
+        typeof viewDraft.value.payload !== 'string' &&
+        (typeof viewDraft.value.payload !== 'object' || viewDraft.value.payload === null || Array.isArray(viewDraft.value.payload))
+      ) {
+        viewDraft.value.payload = '';
+      }
       // 用户要求：路径输入框默认保持空字符串，不做 modelRefs 自动反推。
       modelRefsRelPathInput.value = '';
+      tryAutoBindSingleModelRefOnViewOpen();
     } else if (b.kind === 'mv-map') {
       mapJsonText.value = JSON.stringify(b.payload as MvMapPayload, null, 2);
     }
@@ -321,6 +328,45 @@ function toggleModelRefCandidate(c: ModelRefCandidate) {
   const canon = canonicalModelRef(c);
   // 该区域按单选处理：只保留当前选中的一个引用，避免旧模板/历史引用残留。
   v.modelRefs = [canon];
+}
+
+function tryAutoBindSingleModelRefOnViewOpen(): void {
+  const v = viewDraft.value;
+  const b = block.value;
+  if (!v || !b || b.kind !== 'mv-view') return;
+  const parsed = parseMarkdownBlocks(props.markdown);
+  const modelBlocks = parsed.blocks.filter((x) =>
+    x.kind === 'mv-model-sql' ||
+    x.kind === 'mv-model-kv' ||
+    x.kind === 'mv-model-struct' ||
+    x.kind === 'mv-model-codespace' ||
+    x.kind === 'mv-model-interface',
+  );
+  if (modelBlocks.length !== 1) return;
+  const only = modelBlocks[0]!;
+  let tableId: string | undefined;
+  if (only.kind === 'mv-model-sql') {
+    const p = only.payload as MvModelSqlPayload;
+    tableId = p.tables[0]?.id;
+  }
+  const target = buildModelRefString(
+    normalizeRelPath(props.relPath.replace(/\\/g, '/')),
+    normalizeRelPath(props.relPath.replace(/\\/g, '/')),
+    only.payload.id,
+    tableId,
+  );
+  // 已是唯一有效绑定则不重复触发。
+  if (v.modelRefs.length === 1 && v.modelRefs[0] === target) return;
+  // 有多个历史引用时保留人工确认。
+  if (v.modelRefs.length > 1) return;
+  v.modelRefs = [target];
+  let next = replaceBlockInnerById(props.markdown, props.blockId, JSON.stringify(v, null, 2));
+  if (!next) return;
+  if (isMermaidViewKind(v.kind)) {
+    next = upsertTrailingMermaidMirror(next, props.blockId, toViewPayloadText(v.payload));
+  }
+  emit('saved', { markdown: next, relPath: props.relPath });
+  window.alert(locale.value === 'en' ? `Auto-bound modelRefs: ${target}` : `已自动绑定 modelRefs：${target}`);
 }
 
 function clearModelRefsPathInput() {

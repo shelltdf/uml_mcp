@@ -51,6 +51,13 @@
 | `vscode-extension` | VS Code/Cursor 扩展（加载 `media/app` 静态资源） |
 | `examples/` | **本仓库自带**示例与测试用工作区（见 [`examples/README.md`](examples/README.md)）；与仓库根其它 `examples/` 无耦合 |
 
+## OOP 分层（进行中）
+
+- `Domain`：领域策略与值对象（示例：`packages/core/src/domain/uml/UmlDiagramTypePolicy.ts`）。
+- `Application`：用例/服务与契约接口（示例：`packages/core/src/application/services/UmlViewPayloadValidator.ts`）。
+- `Infrastructure`：解析器/编解码/引用解析适配（示例：`packages/core/src/infrastructure/**`）。
+- `Presentation`：Vue 组件只负责渲染与事件转发，交互规则逐步迁移到服务对象（示例：`apps/web/src/application/services/UmlCanvasInteractionService.ts`）。
+
 ## 命令
 
 ```bash

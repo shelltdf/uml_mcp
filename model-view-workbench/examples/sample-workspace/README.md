@@ -8,3 +8,5 @@
 - [`PAYLOAD_RULES.md`](PAYLOAD_RULES.md)：payload 书写规范（核心 JSON / 文本扩展 / 插件片段）。
 
 入口文件：[`models.md`](models.md)。
+
+当前仓库正在推进 OOP 分层重构（Domain / Application / Infrastructure / Presentation），样例文件保持兼容，不受目录重构影响。

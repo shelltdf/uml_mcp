@@ -14,9 +14,11 @@ import type {
   ParsedMermaidMirrorFence,
 } from '../types.js';
 import { MV_UML_KIND_DIAGRAM_TYPE, MV_VIEW_KINDS, isMermaidViewKind } from '../types.js';
+import { UmlViewPayloadValidator } from '../application/services/UmlViewPayloadValidator.js';
 
 const FENCE =
   /^```(mv-model-sql|mv-model-kv|mv-model-struct|mv-model-codespace|mv-model-interface|mv-view|mv-map)\s*$/m;
+const umlViewPayloadValidator = new UmlViewPayloadValidator();
 
 function lineNumberAt(source: string, offset: number): number {
   let n = 1;
@@ -1040,77 +1042,6 @@ function isMvViewKind(k: unknown): k is MvViewKind {
   return typeof k === 'string' && (MV_VIEW_KINDS as readonly string[]).includes(k);
 }
 
-function validateUmlViewPayloadObject(
-  kind: MvViewKind,
-  payload: Record<string, unknown>,
-): { ok: true } | { ok: false; message: string } {
-  const expectedDiagramType = MV_UML_KIND_DIAGRAM_TYPE[kind];
-  if (!expectedDiagramType) return { ok: true };
-  const o = payload;
-  if (o.schema !== 'mvwb-uml/v1') {
-    return { ok: false, message: `mv-view: ${kind} payload.schema must be "mvwb-uml/v1"` };
-  }
-  if (o.diagramType !== expectedDiagramType) {
-    return { ok: false, message: `mv-view: ${kind} payload.diagramType must be "${expectedDiagramType}"` };
-  }
-  if (kind === 'uml-class' && 'classes' in o && o.classes !== undefined) {
-    if (!Array.isArray(o.classes)) {
-      return { ok: false, message: 'mv-view: uml-class payload.classes must be an array when present' };
-    }
-    for (let i = 0; i < o.classes.length; i++) {
-      const c = o.classes[i];
-      const p = `mv-view: uml-class payload.classes[${i}]`;
-      if (!c || typeof c !== 'object' || Array.isArray(c)) return { ok: false, message: `${p} must be an object` };
-      const co = c as Record<string, unknown>;
-      if (typeof co.id !== 'string' || !co.id.trim()) return { ok: false, message: `${p}.id must be a non-empty string` };
-      if (typeof co.name !== 'string' || !co.name.trim()) return { ok: false, message: `${p}.name must be a non-empty string` };
-    }
-  }
-  if (kind === 'uml-class' && 'relations' in o && o.relations !== undefined) {
-    if (!Array.isArray(o.relations)) {
-      return { ok: false, message: 'mv-view: uml-class payload.relations must be an array when present' };
-    }
-    for (let i = 0; i < o.relations.length; i++) {
-      const r = o.relations[i];
-      const p = `mv-view: uml-class payload.relations[${i}]`;
-      if (!r || typeof r !== 'object' || Array.isArray(r)) return { ok: false, message: `${p} must be an object` };
-      const ro = r as Record<string, unknown>;
-      if (typeof ro.id !== 'string' || !ro.id.trim()) return { ok: false, message: `${p}.id must be a non-empty string` };
-      if (typeof ro.from !== 'string' || !ro.from.trim()) return { ok: false, message: `${p}.from must be a non-empty string` };
-      if (typeof ro.to !== 'string' || !ro.to.trim()) return { ok: false, message: `${p}.to must be a non-empty string` };
-      if ('kind' in ro && ro.kind !== undefined) {
-        if (typeof ro.kind !== 'string' || !new Set(['inherit', 'association', 'dependency']).has(ro.kind)) {
-          return { ok: false, message: `${p}.kind must be one of: inherit, association, dependency` };
-        }
-      }
-    }
-  }
-  return { ok: true };
-}
-
-function validateUmlViewPayload(kind: MvViewKind, payload: unknown): { ok: true } | { ok: false; message: string } {
-  if (payload === undefined || payload === null) return { ok: true };
-  if (typeof payload === 'string') {
-    const s = payload.trim();
-    if (!s) return { ok: true };
-    let obj: unknown;
-    try {
-      obj = JSON.parse(s);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return { ok: false, message: `mv-view: ${kind} payload must be valid JSON (${msg})` };
-    }
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-      return { ok: false, message: `mv-view: ${kind} payload must be a JSON object` };
-    }
-    return validateUmlViewPayloadObject(kind, obj as Record<string, unknown>);
-  }
-  if (typeof payload !== 'object' || Array.isArray(payload)) {
-    return { ok: false, message: `mv-view: ${kind} payload must be a JSON object or JSON string` };
-  }
-  return validateUmlViewPayloadObject(kind, payload as Record<string, unknown>);
-}
-
 function validateMvView(obj: Record<string, unknown>): { ok: true; view: MvViewPayload } | { ok: false; message: string } {
   if (typeof obj.id !== 'string' || !obj.id.trim()) {
     return { ok: false, message: 'mv-view: id must be a non-empty string' };
@@ -1136,7 +1067,7 @@ function validateMvView(obj: Record<string, unknown>): { ok: true; view: MvViewP
     return { ok: false, message: 'mv-view: payload must be a string or JSON object when present' };
   }
   if (typeof obj.kind === 'string' && obj.kind in MV_UML_KIND_DIAGRAM_TYPE) {
-    const up = validateUmlViewPayload(obj.kind as MvViewKind, obj.payload);
+    const up = umlViewPayloadValidator.validate(obj.kind as MvViewKind, obj.payload);
     if (!up.ok) return up;
   }
   return { ok: true, view: obj as unknown as MvViewPayload };
