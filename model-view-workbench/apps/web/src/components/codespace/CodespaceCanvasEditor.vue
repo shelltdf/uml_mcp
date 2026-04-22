@@ -60,6 +60,15 @@ const varFloatCtx = computed(() => (floatPick.value?.t === 'var' ? floatPick.val
 const fnFloatCtx = computed(() => (floatPick.value?.t === 'fn' ? floatPick.value : null));
 const macroFloatCtx = computed(() => (floatPick.value?.t === 'macro' ? floatPick.value : null));
 
+function ensureUniqueName(preferred: string, usedNames: string[]): string {
+  const base = preferred.trim() || 'Item';
+  const used = new Set(usedNames.map((n) => n.trim().toLowerCase()).filter(Boolean));
+  if (!used.has(base.toLowerCase())) return base;
+  let i = 2;
+  while (used.has(`${base}_${i}`.toLowerCase())) i++;
+  return `${base}_${i}`;
+}
+
 function patch(updater: (d: MvModelCodespacePayload) => void) {
   const d = JSON.parse(JSON.stringify(props.modelValue)) as MvModelCodespacePayload;
   updater(d);
@@ -130,9 +139,13 @@ watch(
 
 function addModule() {
   patch((d) => {
+    const name = ensureUniqueName(
+      csCanvasMsg.value.newModuleName,
+      d.modules.map((m) => m.name ?? ''),
+    );
     d.modules.push({
       id: newCodespaceUniqueId('mod', d),
-      name: csCanvasMsg.value.newModuleName,
+      name,
     });
   });
 }
@@ -186,9 +199,16 @@ function cancelDeleteNs() {
 
 function addTopLevelNs(mi: number) {
   patch((d) => {
+    const mod = d.modules[mi];
+    if (!mod) return;
+    const siblings = mod.namespaces ?? [];
+    const name = ensureUniqueName(
+      csCanvasMsg.value.newNsName,
+      siblings.map((n) => n.name ?? ''),
+    );
     insertNamespaceChild(d, mi, [], {
       id: newCodespaceUniqueId('ns', d),
-      name: csCanvasMsg.value.newNsName,
+      name,
       namespaces: [],
     });
     rebuildPathIdsForModule(d, mi);
@@ -197,9 +217,16 @@ function addTopLevelNs(mi: number) {
 
 function addChildNs(mi: number, parentPath: number[]) {
   patch((d) => {
+    const parent = getNamespaceAtPath(d, mi, parentPath);
+    if (!parent) return;
+    const siblings = parent.namespaces ?? [];
+    const name = ensureUniqueName(
+      csCanvasMsg.value.newChildNsName,
+      siblings.map((n) => n.name ?? ''),
+    );
     insertNamespaceChild(d, mi, parentPath, {
       id: newCodespaceUniqueId('ns', d),
-      name: csCanvasMsg.value.newChildNsName,
+      name,
       namespaces: [],
     });
     rebuildPathIdsForModule(d, mi);
@@ -211,9 +238,13 @@ function addClass(mi: number, path: number[]) {
     const n = getNamespaceAtPath(d, mi, path);
     if (!n) return;
     if (!n.classes) n.classes = [];
+    const name = ensureUniqueName(
+      csCanvasMsg.value.newClassName,
+      n.classes.map((c) => c.name ?? ''),
+    );
     n.classes.push({
       id: newCodespaceUniqueId('cls', d),
-      name: csCanvasMsg.value.newClassName,
+      name,
       kind: 'class',
     });
     rebuildPathIdsForModule(d, mi);
@@ -337,6 +368,7 @@ function patchMetaRoot(root: string) {
       :mi="classFloatCtx.mi"
       :path="classFloatCtx.path"
       :ci="classFloatCtx.ci"
+      :class-path="classFloatCtx.classPath"
       :run-patch="patch"
       @close="closeFloat"
     />

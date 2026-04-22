@@ -25,10 +25,18 @@ const layout = computed(() =>
   layoutCodespaceSvg(props.modelValue, makeCodespaceLayoutLabels(csMsg.value)),
 );
 
+const contentOffset = computed(() => {
+  const b = layout.value.bounds;
+  return {
+    x: b.minX < 24 ? 24 - b.minX : 0,
+    y: b.minY < 24 ? 24 - b.minY : 0,
+  };
+});
+
 const worldMetrics = computed(() => {
   const b = layout.value.bounds;
-  const w = Math.max(480, b.maxX + 80);
-  const h = Math.max(320, b.maxY + 80);
+  const w = Math.max(480, b.maxX + contentOffset.value.x + 80);
+  const h = Math.max(320, b.maxY + contentOffset.value.y + 80);
   return { w, h };
 });
 
@@ -39,10 +47,20 @@ const worldDivStyle = computed(() => ({
   transformOrigin: '0 0' as const,
 }));
 
+const viewportBgStyle = computed(() => {
+  const s = Math.max(8, Math.round(24 * vp.scale.value));
+  const px = Math.round(vp.panX.value);
+  const py = Math.round(vp.panY.value);
+  return {
+    backgroundSize: `${s}px ${s}px`,
+    backgroundPosition: `${px}px ${py}px`,
+  };
+});
+
 function pickKey(p: CodespaceSvgPick): string {
   if (p.t === 'module') return `m-${p.mi}`;
   if (p.t === 'ns') return `ns-${p.mi}-${p.path.join('.')}`;
-  if (p.t === 'class') return `c-${p.mi}-${p.path.join('.')}-${p.ci}`;
+  if (p.t === 'class') return `c-${p.mi}-${p.path.join('.')}-${p.ci}-${(p.classPath ?? []).join('.')}`;
   if (p.t === 'var') return `v-${p.mi}-${p.path.join('.')}-${p.vi}`;
   if (p.t === 'fn') return `f-${p.mi}-${p.path.join('.')}-${p.fi}`;
   return `mac-${p.mi}-${p.path.join('.')}-${p.maci}`;
@@ -51,6 +69,10 @@ function pickKey(p: CodespaceSvgPick): string {
 /** SVG `id` 合法字符（path 含 `.` 等） */
 function clipIdFor(p: CodespaceSvgPick): string {
   return `cp-${pickKey(p).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+function clipIdForIndex(i: number): string {
+  return `cp-i-${i}`;
 }
 
 function isSelected(p: CodespaceSvgPick): boolean {
@@ -149,6 +171,7 @@ onUnmounted(() => {
     <div
       ref="viewportRef"
       class="cs-svg-viewport"
+      :style="viewportBgStyle"
       @wheel="vp.onWheel"
       @pointerdown="vp.onPointerDown"
       @pointermove="vp.onPointerMove"
@@ -165,12 +188,11 @@ onUnmounted(() => {
           :viewBox="`0 0 ${worldMetrics.w} ${worldMetrics.h}`"
           :aria-label="csMsg.svgAriaModuleTree"
         >
-          <rect :width="worldMetrics.w" :height="worldMetrics.h" fill="#fafafa" />
           <defs>
-            <clipPath v-for="n in layout.nodes" :key="'clipdef-' + pickKey(n.pick)" :id="clipIdFor(n.pick)">
+            <clipPath v-for="(n, ni) in layout.nodes" :key="'clipdef-' + ni" :id="clipIdForIndex(ni)">
               <rect
-                :x="n.x + 1"
-                :y="n.y + 1"
+                :x="n.x + contentOffset.x + 1"
+                :y="n.y + contentOffset.y + 1"
                 :width="Math.max(0, n.w - 2)"
                 :height="Math.max(0, n.h - 2)"
                 rx="2"
@@ -183,6 +205,7 @@ onUnmounted(() => {
               v-for="(e, ei) in layout.edges"
               :key="'e-' + ei"
               :d="e.d"
+              :transform="`translate(${contentOffset.x}, ${contentOffset.y})`"
               class="cs-svg-edge"
               fill="none"
               stroke="#64748b"
@@ -192,10 +215,10 @@ onUnmounted(() => {
               pointer-events="none"
             />
           </g>
-          <g v-for="n in layout.nodes" :key="'r-' + pickKey(n.pick)" class="cs-svg-nodeg cs-svg-nodeg-rect">
+          <g v-for="(n, ni) in layout.nodes" :key="'r-' + ni" class="cs-svg-nodeg cs-svg-nodeg-rect">
             <rect
-              :x="n.x"
-              :y="n.y"
+              :x="n.x + contentOffset.x"
+              :y="n.y + contentOffset.y"
               :width="n.w"
               :height="n.h"
               :rx="3"
@@ -212,15 +235,15 @@ onUnmounted(() => {
               @keydown.enter.prevent="emit('openDefinition', n.pick)"
             />
           </g>
-          <g v-for="n in layout.nodes" :key="'t-' + pickKey(n.pick)" class="cs-svg-nodeg cs-svg-nodeg-txt">
+          <g v-for="(n, ni) in layout.nodes" :key="'t-' + ni" class="cs-svg-nodeg cs-svg-nodeg-txt">
             <text
-              :x="n.x + 6"
-              :y="n.y + n.h / 2"
+              :x="n.x + contentOffset.x + 6"
+              :y="n.y + contentOffset.y + n.h / 2"
               class="cs-svg-txt"
               dominant-baseline="middle"
               text-anchor="start"
               pointer-events="none"
-              :clip-path="`url(#${clipIdFor(n.pick)})`"
+              :clip-path="`url(#${clipIdForIndex(ni)})`"
               :font-size="n.pick.t === 'module' ? 10.5 : 11"
               fill="#0f172a"
             >
@@ -292,6 +315,10 @@ onUnmounted(() => {
   min-height: 220px;
   overflow: hidden;
   cursor: default;
+  background-color: #f8fafc;
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.22) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.22) 1px, transparent 1px);
 }
 .cs-svg-world {
   position: relative;

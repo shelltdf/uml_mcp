@@ -1,4 +1,5 @@
 import type {
+  MvCodespaceClassifier,
   MvCodespaceNamespaceNode,
   MvModelCodespaceModule,
   MvModelCodespacePayload,
@@ -8,7 +9,7 @@ import type {
 export type CodespaceSvgPick =
   | { t: 'module'; mi: number }
   | { t: 'ns'; mi: number; path: number[] }
-  | { t: 'class'; mi: number; path: number[]; ci: number }
+  | { t: 'class'; mi: number; path: number[]; ci: number; classPath?: number[] }
   | { t: 'var'; mi: number; path: number[]; vi: number }
   | { t: 'fn'; mi: number; path: number[]; fi: number }
   | { t: 'macro'; mi: number; path: number[]; maci: number };
@@ -176,6 +177,29 @@ function pushCurvedLREdge(
   edges.push({ d });
 }
 
+function pushCurvedAnyDirEdge(
+  edges: CodespaceLayoutEdge[],
+  bounds: CodespaceLayoutResult['bounds'],
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+): void {
+  if (Math.hypot(tx - sx, ty - sy) < 0.25) return;
+  const dir = tx >= sx ? 1 : -1;
+  const gap = Math.max(8, Math.abs(tx - sx));
+  const arm = Math.max(8, Math.min(42, gap * 0.44));
+  const c1x = sx + dir * arm;
+  const c2x = tx - dir * arm;
+  const c1y = sy;
+  const c2y = ty;
+  extendPoint(bounds, sx, sy);
+  extendPoint(bounds, c1x, c1y);
+  extendPoint(bounds, c2x, c2y);
+  extendPoint(bounds, tx, ty);
+  edges.push({ d: `M ${sx} ${sy} C ${c1x} ${c1y} ${c2x} ${c2y} ${tx} ${ty}` });
+}
+
 /** 从左到右树：子树外包宽高（与 `layoutNsTreeLR` 一致；同级叶与子 NS 头共一列宽 `col1w`） */
 function measureLrSubtree(ns: MvCodespaceNamespaceNode, lbl: CodespaceLayoutLabelFns): { w: number; h: number } {
   const nsW = nsBlockW(ns.name, lbl);
@@ -271,10 +295,46 @@ function layoutNsTreeLR(
   const sy0 = pr.y;
 
   type RowPick = CodespaceSvgPick;
-  const rowItems: { pick: RowPick; label: string }[] = [];
-  (ns.classes ?? []).forEach((c, ci) => {
-    rowItems.push({ pick: { t: 'class', mi, path, ci }, label: lbl.classRow(c.name) });
-  });
+  const rowItems: {
+    pick: RowPick;
+    label: string;
+    skipNsEdge?: boolean;
+    indent?: number;
+    classKey?: string;
+    classParentKey?: string;
+  }[] = [];
+  const collectClasses = (
+    classes: MvCodespaceClassifier[] | undefined,
+    rootCi: number,
+    ci: number,
+    classPath: number[],
+    indent: number,
+    parentKey?: string,
+  ) => {
+    const c = classes?.[ci];
+    if (!c) return;
+    const k = `class:${c.id || `${path.join('.')}:${ci}:${indent}`}`;
+    rowItems.push({
+      pick: {
+        t: 'class',
+        mi,
+        path,
+        ci: rootCi,
+        classPath: classPath.length ? classPath : undefined,
+      },
+      label: lbl.classRow(c.name),
+      skipNsEdge: indent > 0 || (c.bases?.length ?? 0) > 0,
+      indent,
+      classKey: k,
+      classParentKey: parentKey,
+    });
+    for (let i = 0; i < (c.classes?.length ?? 0); i++) {
+      collectClasses(c.classes, rootCi, i, [...classPath, i], indent + 1, k);
+    }
+  };
+  for (let ci = 0; ci < (ns.classes?.length ?? 0); ci++) {
+    collectClasses(ns.classes, ci, ci, [], 0);
+  }
   (ns.variables ?? []).forEach((v, vi) => {
     rowItems.push({ pick: { t: 'var', mi, path, vi }, label: lbl.varRow(v.name) });
   });
@@ -287,7 +347,7 @@ function layoutNsTreeLR(
 
   const children = ns.namespaces ?? [];
   let col1w = 0;
-  for (const it of rowItems) col1w = Math.max(col1w, labelCellW(it.label));
+  for (const it of rowItems) col1w = Math.max(col1w, labelCellW(it.label) + (it.indent ?? 0) * 18);
   for (const ch of children) col1w = Math.max(col1w, nsBlockW(ch.name, lbl));
   if (rowItems.length || children.length) col1w = Math.max(MIN_NS_COL_W, col1w);
 
@@ -314,9 +374,11 @@ function layoutNsTreeLR(
   const busXs = busXsInCorridor(sx0, x1, Math.max(1, nEdges));
   let edgeIx = 0;
 
+  const classRectByKey = new Map<string, Rect>();
   for (let i = 0; i < rowItems.length; i++) {
     const it = rowItems[i]!;
-    const r: Rect = { x: x1, y: yc, w: col1w, h: ROW_H };
+    const ind = it.indent ?? 0;
+    const r: Rect = { x: x1 + ind * 18, y: yc, w: col1w - ind * 18, h: ROW_H };
     out.push({
       pick: it.pick,
       label: it.label,
@@ -325,20 +387,40 @@ function layoutNsTreeLR(
       w: r.w,
       h: r.h,
     });
+    if (it.classKey) classRectByKey.set(it.classKey, r);
     extendBounds(bounds, r.x, r.y, r.w, r.h);
-    const pl = leftMid(r);
-    pushCurvedLREdge(
-      edges,
-      bounds,
-      sx0,
-      sy0,
-      pl.x + EDGE_INSET,
-      pl.y,
-      busXs[edgeIx] ?? busXs[0]!,
-    );
+    if (!it.skipNsEdge) {
+      const pl = leftMid(r);
+      pushCurvedLREdge(
+        edges,
+        bounds,
+        sx0,
+        sy0,
+        pl.x + EDGE_INSET,
+        pl.y,
+        busXs[edgeIx] ?? busXs[0]!,
+      );
+    }
     edgeIx += 1;
     yc += ROW_H;
     if (i < rowItems.length - 1) yc += ROW_GAP;
+  }
+  for (const it of rowItems) {
+    if (!it.classKey || !it.classParentKey) continue;
+    const child = classRectByKey.get(it.classKey);
+    const parent = classRectByKey.get(it.classParentKey);
+    if (!child || !parent) continue;
+    const pr = rightMid(parent);
+    const cl = leftMid(child);
+    pushCurvedLREdge(
+      edges,
+      bounds,
+      pr.x - EDGE_INSET,
+      pr.y,
+      cl.x + EDGE_INSET,
+      cl.y,
+      (pr.x + cl.x) / 2,
+    );
   }
   if (nL && children.length) yc += ROW_GAP;
 
@@ -444,6 +526,98 @@ function layoutModuleStrip(
   return { w: totalW, h: totalH };
 }
 
+function getNamespaceAtPath(
+  payload: MvModelCodespacePayload,
+  mi: number,
+  path: number[],
+): MvCodespaceNamespaceNode | null {
+  const mod = payload.modules?.[mi];
+  if (!mod) return null;
+  let nodes = mod.namespaces ?? [];
+  let cur: MvCodespaceNamespaceNode | undefined;
+  for (const idx of path) {
+    cur = nodes[idx];
+    if (!cur) return null;
+    nodes = cur.namespaces ?? [];
+  }
+  return cur ?? null;
+}
+
+function getClassAtPick(
+  payload: MvModelCodespacePayload,
+  pick: Extract<CodespaceSvgPick, { t: 'class' }>,
+): MvCodespaceClassifier | null {
+  const ns = getNamespaceAtPath(payload, pick.mi, pick.path);
+  let cur = ns?.classes?.[pick.ci];
+  for (const idx of pick.classPath ?? []) {
+    cur = cur?.classes?.[idx];
+  }
+  return cur ?? null;
+}
+
+function appendClassInheritanceEdges(
+  payload: MvModelCodespacePayload,
+  nodes: CodespaceLayoutNode[],
+  edges: CodespaceLayoutEdge[],
+  bounds: CodespaceLayoutResult['bounds'],
+): void {
+  const classNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class');
+  const nodeByClassId = new Map<string, CodespaceLayoutNode>();
+  for (const n of classNodes) {
+    const c = getClassAtPick(payload, n.pick);
+    if (c?.id) nodeByClassId.set(c.id, n);
+  }
+  for (const childNode of classNodes) {
+    const child = getClassAtPick(payload, childNode.pick);
+    if (!child) continue;
+    for (const b of child.bases ?? []) {
+      const parentNode = nodeByClassId.get(b.targetId);
+      if (!parentNode) continue;
+      const p = rightMid({ x: parentNode.x, y: parentNode.y, w: parentNode.w, h: parentNode.h });
+      const c = leftMid({ x: childNode.x, y: childNode.y, w: childNode.w, h: childNode.h });
+      pushCurvedAnyDirEdge(
+        edges,
+        bounds,
+        p.x - EDGE_INSET,
+        p.y,
+        c.x + EDGE_INSET,
+        c.y,
+      );
+    }
+  }
+}
+
+function enforceDerivedClassesOnRight(
+  payload: MvModelCodespacePayload,
+  nodes: CodespaceLayoutNode[],
+): void {
+  const classNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class');
+  const nodeByClassId = new Map<string, CodespaceLayoutNode>();
+  for (const n of classNodes) {
+    const c = getClassAtPick(payload, n.pick);
+    if (c?.id) nodeByClassId.set(c.id, n);
+  }
+  const gap = 34;
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    for (const childNode of classNodes) {
+      const child = getClassAtPick(payload, childNode.pick);
+      if (!child) continue;
+      let minX = childNode.x;
+      for (const b of child.bases ?? []) {
+        const parentNode = nodeByClassId.get(b.targetId);
+        if (!parentNode) continue;
+        minX = Math.max(minX, parentNode.x + parentNode.w + gap);
+      }
+      if (minX > childNode.x) {
+        childNode.x = minX;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
 /** 将 codespace payload 排版为平面节点 + 树状贝塞尔连线（世界坐标） */
 export function layoutCodespaceSvg(
   payload: MvModelCodespacePayload,
@@ -465,6 +639,8 @@ export function layoutCodespaceSvg(
     maxW = Math.max(maxW, w);
     cursorY += h + MODULE_GAP;
   });
+  enforceDerivedClassesOnRight(payload, nodesOut);
+  appendClassInheritanceEdges(payload, nodesOut, edgesOut, bounds);
   bounds.maxX = Math.max(bounds.maxX, PAD + maxW + PAD);
   bounds.maxY = Math.max(bounds.maxY, cursorY - MODULE_GAP + PAD);
 

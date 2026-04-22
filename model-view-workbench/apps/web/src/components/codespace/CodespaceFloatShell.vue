@@ -163,13 +163,13 @@ function toggleMaximize(): void {
   max-width: 960px;
 }
 .cff-wrap .field span {
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   color: #64748b;
 }
 .cff-wrap .wide {
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: 1px solid #cbd5e1;
-  border-radius: 4px;
+  border-radius: 6px;
   font: inherit;
 }
 .cff-wrap input[readonly] {
@@ -182,7 +182,7 @@ function toggleMaximize(): void {
   box-sizing: border-box;
   padding: 8px 10px;
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   line-height: 1.4;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
@@ -193,22 +193,17 @@ function toggleMaximize(): void {
   background: none;
   color: #b91c1c;
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   text-decoration: underline;
 }
 .cff-wrap .add-row {
   margin-top: 8px;
-  padding: 5px 10px;
-  font-size: 0.8rem;
+  padding: 7px 12px;
+  font-size: 0.84rem;
   cursor: pointer;
   border-radius: 4px;
   border: 1px solid #64748b;
   background: #fff;
-}
-.cff-wrap .cs-subh {
-  margin: 10px 0 4px;
-  font-size: 0.78rem;
-  color: #475569;
 }
 .cff-wrap .cs-actions {
   display: flex;
@@ -220,72 +215,11 @@ function toggleMaximize(): void {
 .cff-wrap .cs-danger {
   color: #b91c1c;
 }
-.cff-wrap .cs-rowline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 6px;
-  font-size: 0.78rem;
-}
-.cff-wrap .cs-base-row {
-  align-items: flex-start;
-}
-.cff-wrap .cs-base-main {
-  flex: 1 1 220px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.cff-wrap .cs-base-field {
-  margin-bottom: 0;
-}
-.cff-wrap .cs-base-ref {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 0.72rem;
-  color: #475569;
-  line-height: 1.35;
-}
-.cff-wrap .cs-base-ref--warn {
-  color: #b45309;
-}
-.cff-wrap .cs-base-ref-name {
-  font-weight: 600;
-}
-.cff-wrap .cs-base-ref-id {
-  font-size: 0.68rem;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: #f1f5f9;
-}
-.cff-wrap .cs-base-ref--warn .cs-base-ref-id {
-  background: #ffedd5;
-}
-.cff-wrap .cs-base-rel {
-  flex: 0 0 auto;
-}
 .cff-wrap .cs-field-hint {
   margin: 4px 0 0;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   line-height: 1.4;
   color: #64748b;
-}
-.cff-wrap .cs-inline-pair {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-.cff-wrap .cs-inline-pair .field {
-  flex: 1 1 auto;
-  margin-bottom: 8px;
-}
-.cff-wrap .cs-inline-pair .cs-check {
-  flex: 0 0 auto;
-  margin-bottom: 8px;
 }
 .cff-wrap .cs-check {
   display: flex;
@@ -295,13 +229,13 @@ function toggleMaximize(): void {
 .cff-wrap .cs-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   margin-bottom: 8px;
 }
 .cff-wrap .cs-table th,
 .cff-wrap .cs-table td {
   border: 1px solid #e2e8f0;
-  padding: 4px;
+  padding: 6px;
   vertical-align: middle;
 }
 .cff-wrap .cs-td-center {

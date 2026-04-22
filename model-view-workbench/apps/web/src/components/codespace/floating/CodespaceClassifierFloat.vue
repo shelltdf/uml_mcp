@@ -7,6 +7,7 @@ import type {
   MvCodespaceClassMethod,
   MvCodespaceClassifier,
   MvCodespaceClassifierBase,
+  MvCodespaceNamespaceNode,
   MvCodespaceMethodKind,
   MvCodespaceMethodParam,
   MvCodespaceMethodParamPassMode,
@@ -55,6 +56,7 @@ type SpecialMethodTemplate = {
   label: string;
   method: Omit<MvCodespaceClassMethod, 'name' | 'notes'> & { name: string };
 };
+type ClassifierTabKey = 'basic' | 'bases' | 'members' | 'properties' | 'methods' | 'enums';
 
 const SPECIAL_METHOD_TEMPLATES: readonly SpecialMethodTemplate[] = [
   { id: 'ctor-default', category: '构造/析构', label: '默认构造函数', method: { name: 'constructor', methodKind: 'constructor', type: 'void', params: [] } },
@@ -86,6 +88,7 @@ const props = defineProps<{
   mi: number;
   path: number[];
   ci: number;
+  classPath?: number[];
   runPatch: (fn: (d: MvModelCodespacePayload) => void) => void;
   diagramAssocTargetsByClassId?: Record<string, string[]>;
 }>();
@@ -94,10 +97,67 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const selectedClass = computed((): MvCodespaceClassifier | null =>
-  getNamespaceAtPath(props.modelValue, props.mi, props.path)?.classes?.[props.ci] ?? null,
-);
+function resolveSelectedClass(payload: MvModelCodespacePayload): MvCodespaceClassifier | null {
+  let c = getNamespaceAtPath(payload, props.mi, props.path)?.classes?.[props.ci];
+  for (const idx of props.classPath ?? []) c = c?.classes?.[idx];
+  return c ?? null;
+}
+
+const selectedClass = computed((): MvCodespaceClassifier | null => resolveSelectedClass(props.modelValue));
 const selectedNamespace = computed(() => getNamespaceAtPath(props.modelValue, props.mi, props.path));
+const currentClassParentKey = computed(() => {
+  const cp = props.classPath ?? [];
+  if (!cp.length) return `ns:${props.path.join('.')}`;
+  return `cls:${props.path.join('.')}|${props.ci}|${cp.slice(0, -1).join('.')}`;
+});
+const classParentOptions = computed(() => {
+  const out: Array<{ key: string; label: string }> = [];
+  const mod = props.modelValue.modules?.[props.mi];
+  const self = selectedClass.value;
+  const selfId = self?.id;
+  const descendantIds = new Set<string>();
+  const collectDescendantIds = (c: MvCodespaceClassifier | undefined) => {
+    for (const cc of c?.classes ?? []) {
+      if (cc.id) descendantIds.add(cc.id);
+      collectDescendantIds(cc);
+    }
+  };
+  collectDescendantIds(self ?? undefined);
+  const walkClasses = (
+    classes: MvCodespaceClassifier[] | undefined,
+    prefix: string,
+    nsPath: number[],
+    rootCi: number,
+    classPath: number[],
+  ) => {
+    if (!classes) return;
+    for (let i = 0; i < classes.length; i++) {
+      const c = classes[i]!;
+      const p = [...classPath, i];
+      const key = `cls:${nsPath.join('.')}|${rootCi}|${p.join('.')}`;
+      if (c.id !== selfId && !descendantIds.has(c.id)) out.push({ key, label: `Class · ${prefix}${c.name}` });
+      walkClasses(c.classes, `${prefix}${c.name}::`, nsPath, rootCi, p);
+    }
+  };
+  const walkNs = (nodes: MvCodespaceNamespaceNode[] | undefined, path: number[], chain: string) => {
+    if (!nodes) return;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i]!;
+      const p = [...path, i];
+      out.push({ key: `ns:${p.join('.')}`, label: `NS · ${chain}${n.name}` });
+      for (let ci = 0; ci < (n.classes?.length ?? 0); ci++) {
+        const c = n.classes![ci]!;
+        if (c.id !== selfId && !descendantIds.has(c.id)) {
+          out.push({ key: `cls:${p.join('.')}|${ci}|`, label: `Class · ${chain}${n.name}::${c.name}` });
+        }
+        walkClasses(c.classes, `${chain}${n.name}::${c.name}::`, p, ci, []);
+      }
+      walkNs(n.namespaces, p, `${chain}${n.name}::`);
+    }
+  };
+  walkNs(mod?.namespaces, [], '');
+  return out;
+});
 
 const classifierOptions = computed(() => collectClassifierIds(props.modelValue));
 const fieldRows = computed(() =>
@@ -109,6 +169,7 @@ const methodRows = computed(() => (selectedClass.value?.methods ?? []).map((mem,
 const enumRows = computed(() => (selectedClass.value?.enums ?? []).map((mem, idx) => ({ mem, idx })));
 const propertyRows = computed(() => selectedClass.value?.properties ?? []);
 const specialMethodPickerOpen = ref(false);
+const activeTab = ref<ClassifierTabKey>('basic');
 const specialMethodTemplateGroups = computed(() => {
   const groups = new Map<string, SpecialMethodTemplate[]>();
   for (const t of SPECIAL_METHOD_TEMPLATES) {
@@ -256,13 +317,75 @@ function onPropertyAssocClassifierChange(pi: number, ev: Event) {
   patchProperty(pi, part);
 }
 function classTemplateParamsStr(): string {
-  const c = getNamespaceAtPath(props.modelValue, props.mi, props.path)?.classes?.[props.ci];
+  const c = resolveSelectedClass(props.modelValue);
   return (c?.templateParams ?? []).join(', ');
+}
+
+function withSelectedClassMutable(
+  d: MvModelCodespacePayload,
+  fn: (c: MvCodespaceClassifier) => void,
+) {
+  const c = resolveSelectedClass(d);
+  if (!c) return;
+  fn(c);
+}
+
+function removeSelectedClassMutable(d: MvModelCodespacePayload): void {
+  const ns = getNamespaceAtPath(d, props.mi, props.path);
+  if (!ns) return;
+  const cp = props.classPath ?? [];
+  if (!cp.length) {
+    ns.classes?.splice(props.ci, 1);
+    return;
+  }
+  let parent = ns.classes?.[props.ci];
+  for (let i = 0; i < cp.length - 1; i++) parent = parent?.classes?.[cp[i]];
+  const last = cp[cp.length - 1];
+  parent?.classes?.splice(last, 1);
+}
+
+function moveClassParent(targetKey: string): void {
+  if (!selectedClass.value) return;
+  if (targetKey === currentClassParentKey.value) return;
+  props.runPatch((d) => {
+    const moved = resolveSelectedClass(d);
+    if (!moved) return;
+    // 先从原父容器移除
+    removeSelectedClassMutable(d);
+    if (targetKey.startsWith('ns:')) {
+      const nsKey = targetKey.slice(3);
+      const nsPath = nsKey ? nsKey.split('.').map((x) => Number(x)) : [];
+      const ns = getNamespaceAtPath(d, props.mi, nsPath);
+      if (!ns) return;
+      if (!ns.classes) ns.classes = [];
+      ns.classes.push(moved);
+    } else if (targetKey.startsWith('cls:')) {
+      const body = targetKey.slice(4);
+      const [nsKey, rootCiRaw, classPathRaw] = body.split('|');
+      const nsPath = nsKey ? nsKey.split('.').map((x) => Number(x)) : [];
+      const rootCi = Number(rootCiRaw ?? '0');
+      const classPath = (classPathRaw ?? '')
+        .split('.')
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .map((x) => Number(x));
+      let parent = getNamespaceAtPath(d, props.mi, nsPath)?.classes?.[rootCi];
+      for (const idx of classPath) parent = parent?.classes?.[idx];
+      if (!parent) return;
+      if (!parent.classes) parent.classes = [];
+      parent.classes.push(moved);
+    }
+    rebuildPathIdsForModule(d, props.mi);
+  });
+  emit('close');
 }
 
 function patchClassField(key: keyof MvCodespaceClassifier, value: unknown) {
   props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    let c: MvCodespaceClassifier | null = null;
+    withSelectedClassMutable(d, (x) => {
+      c = x;
+    });
     if (!c) return;
     if (key === 'kind') {
       const s = typeof value === 'string' ? value : '';
@@ -367,7 +490,10 @@ function buildMethodSignature(mem: MvCodespaceClassMethod): string {
 
 function setClassTemplateParams(raw: string) {
   props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    let c: MvCodespaceClassifier | null = null;
+    withSelectedClassMutable(d, (x) => {
+      c = x;
+    });
     if (!c) return;
     const parts = raw
       .split(/[,，\n\r]+/)
@@ -379,7 +505,10 @@ function setClassTemplateParams(raw: string) {
 
 function addBase() {
   props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    let c: MvCodespaceClassifier | null = null;
+    withSelectedClassMutable(d, (x) => {
+      c = x;
+    });
     if (!c) return;
     if (!c.bases) c.bases = [];
     const ids = collectClassifierIds(d);
@@ -388,9 +517,46 @@ function addBase() {
   });
 }
 
+function ensureUniqueClassName(
+  classes: MvCodespaceClassifier[],
+  preferred: string,
+): string {
+  const base = (preferred || 'Class').trim() || 'Class';
+  const used = new Set(classes.map((c) => (c.name ?? '').trim().toLowerCase()).filter(Boolean));
+  if (!used.has(base.toLowerCase())) return base;
+  let i = 2;
+  while (used.has(`${base}_${i}`.toLowerCase())) i++;
+  return `${base}_${i}`;
+}
+
+function normalizeEnglishIdentifier(raw: string, fallback: string): string {
+  const t = (raw || '').trim();
+  const cleaned = t.replace(/[^A-Za-z0-9_]/g, '_');
+  const startOk = /^[A-Za-z_]/.test(cleaned);
+  const base = (startOk ? cleaned : `_${cleaned}`).replace(/_+/g, '_').replace(/^_+$/, '');
+  const out = base.trim() || fallback;
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(out) ? out : fallback;
+}
+
+function addSubclass() {
+  props.runPatch((d) => {
+    const parent = resolveSelectedClass(d);
+    if (!parent) return;
+    if (!parent.classes) parent.classes = [];
+    const preferred = normalizeEnglishIdentifier(`${parent.name || 'Class'}Child`, 'ClassChild');
+    const childName = ensureUniqueClassName(parent.classes, preferred);
+    const childId = slug([...props.path.map((x) => String(x)), childName].join('/'));
+    parent.classes.push({
+      id: childId,
+      name: childName,
+      kind: 'class',
+    });
+  });
+}
+
 function patchBase(bi: number, part: Partial<MvCodespaceClassifierBase>) {
   props.runPatch((d) => {
-    const b = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.bases?.[bi];
+    const b = resolveSelectedClass(d)?.bases?.[bi];
     if (!b) return;
     Object.assign(b, part);
   });
@@ -398,13 +564,13 @@ function patchBase(bi: number, part: Partial<MvCodespaceClassifierBase>) {
 
 function removeBase(bi: number) {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.bases?.splice(bi, 1);
+    resolveSelectedClass(d)?.bases?.splice(bi, 1);
   });
 }
 
 function addMember() {
   props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    const c = resolveSelectedClass(d);
     if (!c) return;
     if (!c.members) c.members = [];
     const name = ensureUniqueClassifierItemName(c, csMsg.value.newMemberName);
@@ -414,7 +580,7 @@ function addMember() {
 
 function addProperty() {
   props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    const c = resolveSelectedClass(d);
     if (!c) return;
     if (!c.properties) c.properties = [];
     const name = ensureUniquePropertyName(c.properties, 'property');
@@ -464,7 +630,7 @@ function memberTypeKnown(v: string | undefined): boolean {
 
 function addMethodMember() {
   props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    const c = resolveSelectedClass(d);
     if (!c) return;
     if (!c.methods) c.methods = [];
     const name = ensureUniqueClassifierItemName(c, 'method');
@@ -474,7 +640,7 @@ function addMethodMember() {
 
 function addSpecialMethodFromTemplate(t: SpecialMethodTemplate) {
   props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    const c = resolveSelectedClass(d);
     if (!c) return;
     if (!c.methods) c.methods = [];
     const name = ensureUniqueClassifierItemName(c, t.method.name);
@@ -492,7 +658,7 @@ function addSpecialMethodFromTemplate(t: SpecialMethodTemplate) {
 
 function addEnumMember() {
   props.runPatch((d) => {
-    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    const c = resolveSelectedClass(d);
     if (!c) return;
     if (!c.enums) c.enums = [];
     const name = ensureUniqueClassifierItemName(c, 'ENUM');
@@ -502,7 +668,7 @@ function addEnumMember() {
 
 function patchProperty(pi: number, part: Partial<MvCodespaceProperty>) {
   props.runPatch((d) => {
-    const prop = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.properties?.[pi];
+    const prop = resolveSelectedClass(d)?.properties?.[pi];
     if (!prop) return;
     Object.assign(prop, part);
   });
@@ -523,13 +689,13 @@ function enableAssocTypeForCurrentRows(): void {
 
 function removeProperty(pi: number) {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.properties?.splice(pi, 1);
+    resolveSelectedClass(d)?.properties?.splice(pi, 1);
   });
 }
 
 function patchFieldMember(miIdx: number, part: Partial<MvCodespaceClassMember>) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.members?.[miIdx];
+    const mem = resolveSelectedClass(d)?.members?.[miIdx];
     if (!mem) return;
     Object.assign(mem, part);
     normalizeFieldMember(mem);
@@ -538,7 +704,7 @@ function patchFieldMember(miIdx: number, part: Partial<MvCodespaceClassMember>) 
 
 function patchMethodMember(miIdx: number, part: Partial<MvCodespaceClassMethod>) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.[miIdx];
+    const mem = resolveSelectedClass(d)?.methods?.[miIdx];
     if (!mem) return;
     Object.assign(mem, part);
     normalizeMethodMember(mem);
@@ -555,7 +721,7 @@ function methodIsTemplateLocked(mem: MvCodespaceClassMethod): boolean {
 
 function addMethodParam(miIdx: number) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.[miIdx];
+    const mem = resolveSelectedClass(d)?.methods?.[miIdx];
     if (!mem) return;
     if (methodIsTemplateLocked(mem)) return;
     if (!mem.params) mem.params = [];
@@ -570,7 +736,7 @@ function patchMethodParam(
   part: Partial<MvCodespaceMethodParam>,
 ) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.[miIdx];
+    const mem = resolveSelectedClass(d)?.methods?.[miIdx];
     if (!mem) return;
     if (methodIsTemplateLocked(mem)) return;
     if (!mem.params) mem.params = [];
@@ -584,7 +750,7 @@ function patchMethodParam(
 
 function removeMethodParam(miIdx: number, pi: number) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.[miIdx];
+    const mem = resolveSelectedClass(d)?.methods?.[miIdx];
     if (!mem) return;
     if (methodIsTemplateLocked(mem)) return;
     mem.params?.splice(pi, 1);
@@ -594,7 +760,7 @@ function removeMethodParam(miIdx: number, pi: number) {
 
 function patchEnumMember(miIdx: number, part: Partial<MvCodespaceClassEnum>) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.enums?.[miIdx];
+    const mem = resolveSelectedClass(d)?.enums?.[miIdx];
     if (!mem) return;
     if ('value' in part) {
       const v = String(part.value ?? '').trim();
@@ -608,25 +774,25 @@ function patchEnumMember(miIdx: number, part: Partial<MvCodespaceClassEnum>) {
 
 function removeFieldMember(miIdx: number) {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.members?.splice(miIdx, 1);
+    resolveSelectedClass(d)?.members?.splice(miIdx, 1);
   });
 }
 
 function removeMethodMember(miIdx: number) {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.splice(miIdx, 1);
+    resolveSelectedClass(d)?.methods?.splice(miIdx, 1);
   });
 }
 
 function removeEnumMember(miIdx: number) {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.enums?.splice(miIdx, 1);
+    resolveSelectedClass(d)?.enums?.splice(miIdx, 1);
   });
 }
 
 function removeClass() {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.splice(props.ci, 1);
+    removeSelectedClassMutable(d);
   });
   emit('close');
 }
@@ -653,6 +819,16 @@ watch(associatedTypeCandidates, (next, prev) => {
     if (t) patchMethodMember(r.idx, { type: t });
   }
 }, { immediate: true });
+
+watch(
+  () => props.open,
+  (next) => {
+    if (!next) {
+      specialMethodPickerOpen.value = false;
+      activeTab.value = 'basic';
+    }
+  },
+);
 </script>
 
 <template>
@@ -663,132 +839,164 @@ watch(associatedTypeCandidates, (next, prev) => {
     @close="emit('close')"
   >
     <template v-if="selectedClass">
-      <label class="field">
-        <span>id</span>
-        <input
-          type="text"
-          class="wide"
-          :value="selectedClass.id"
-          :title="csMsg.flClsIdTitle"
-          readonly
-        />
-        <p class="cs-field-hint">{{ csMsg.flClsIdReadonlyHint }}</p>
-      </label>
-      <label class="field">
-        <span>name</span>
-        <input
-          type="text"
-          class="wide"
-          :value="selectedClass.name"
-          :title="csMsg.flClsNameTitle"
-          @input="patchClassField('name', ($event.target as HTMLInputElement).value)"
-        />
-      </label>
-      <div class="cs-inline-pair">
+      <div class="cde-float-tabs">
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'basic' }" @click="activeTab = 'basic'">基础信息</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'bases' }" @click="activeTab = 'bases'">继承关系</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'members' }" @click="activeTab = 'members'">成员</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'properties' }" @click="activeTab = 'properties'">属性</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'methods' }" @click="activeTab = 'methods'">方法</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'enums' }" @click="activeTab = 'enums'">枚举</button>
+      </div>
+
+      <section v-if="activeTab === 'basic'" class="cde-section-card">
+        <h4 class="cde-section-title">基础信息</h4>
         <label class="field">
-          <span>kind</span>
+          <span>parentContainer</span>
           <select
             class="wide"
-            :title="csMsg.flClsKindTitle"
-            :value="selectedClass.kind ?? 'class'"
-            @change="patchClassField('kind', ($event.target as HTMLSelectElement).value || undefined)"
+            :value="currentClassParentKey"
+            title="Move this class under another namespace or class"
+            @change="moveClassParent(($event.target as HTMLSelectElement).value)"
           >
-            <option v-for="k in CLASSIFIER_KINDS" :key="k" :value="k">{{ k }}</option>
+            <option v-for="opt in classParentOptions" :key="'pc-' + opt.key" :value="opt.key">
+              {{ opt.label }}
+            </option>
           </select>
         </label>
-        <label class="field cs-check">
-          <input
-            type="checkbox"
-            :checked="selectedClass.abstract === true"
-            :title="csMsg.flClsAbstractTitle"
-            @change="patchClassField('abstract', ($event.target as HTMLInputElement).checked)"
-          />
-          <span>abstract</span>
+        <label class="field">
+          <span>id</span>
+          <input type="text" class="wide" :value="selectedClass.id" :title="csMsg.flClsIdTitle" readonly />
+          <p class="cs-field-hint">{{ csMsg.flClsIdReadonlyHint }}</p>
         </label>
-      </div>
-      <label class="field">
-        <span>stereotype</span>
-        <input
-          type="text"
-          class="wide"
-          :value="selectedClass.stereotype ?? ''"
-          :placeholder="csMsg.flClsStereotypePlaceholder"
-          :title="csMsg.flClsStereotypeTitle"
-          @input="patchClassField('stereotype', ($event.target as HTMLInputElement).value)"
-        />
-      </label>
-      <label class="field">
-        <span>{{ csMsg.flClsTemplateParamsLabel }}</span>
-        <textarea
-          class="payload-ta"
-          rows="3"
-          spellcheck="false"
-          :value="classTemplateParamsStr()"
-          :placeholder="csMsg.flClsTemplateParamsPlaceholder"
-          :title="csMsg.flClsTemplateParamsTitle"
-          @input="setClassTemplateParams(($event.target as HTMLTextAreaElement).value)"
-        />
-      </label>
-      <label class="field">
-        <span>notes</span>
-        <textarea
-          class="payload-ta"
-          rows="6"
-          :value="selectedClass.notes ?? ''"
-          :placeholder="csMsg.flClsNotesPlaceholder"
-          :title="csMsg.flClsNotesTitle"
-          @input="patchClassField('notes', ($event.target as HTMLTextAreaElement).value)"
-        />
-      </label>
-
-      <h5 class="cs-subh">{{ csMsg.flClsBasesHeading }}</h5>
-      <div v-for="(b, bi) in selectedClass.bases ?? []" :key="'cbase-' + bi + '-' + b.targetId" class="cs-rowline cs-base-row">
-        <div class="cs-base-main">
-          <label class="field cs-base-field">
-            <span>{{ csMsg.flClsBaseTypeLabel }}</span>
-            <select
-              class="wide"
-              :title="csMsg.flClsTargetIdTitle"
-              :value="b.targetId"
-              @change="patchBase(bi, { targetId: ($event.target as HTMLSelectElement).value })"
-            >
-              <option v-if="!classifierIdSet.has(b.targetId)" :value="b.targetId">
-                {{ csMsg.flClsBaseInvalidTargetPrefix }} {{ b.targetId }}
-              </option>
-              <option v-for="opt in baseTargetPickOptions" :key="'bopt-' + opt.id" :value="opt.id">{{ opt.label }}</option>
+        <label class="field">
+          <span>name</span>
+          <input type="text" class="wide" :value="selectedClass.name" :title="csMsg.flClsNameTitle" @input="patchClassField('name', ($event.target as HTMLInputElement).value)" />
+        </label>
+        <div class="cs-inline-pair">
+          <label class="field">
+            <span>kind</span>
+            <select class="wide" :title="csMsg.flClsKindTitle" :value="selectedClass.kind ?? 'class'" @change="patchClassField('kind', ($event.target as HTMLSelectElement).value || undefined)">
+              <option v-for="k in CLASSIFIER_KINDS" :key="k" :value="k">{{ k }}</option>
             </select>
           </label>
-          <div
-            class="cs-base-ref"
-            :class="{ 'cs-base-ref--warn': !classifierIdSet.has(b.targetId) }"
-            :title="csMsg.flClsBaseRefCaption"
-          >
-            <span class="cs-base-ref-name">{{ classifierNameById.get(b.targetId) ?? '—' }}</span>
-            <code class="cs-base-ref-id">{{ b.targetId }}</code>
-          </div>
+          <label class="field cs-check">
+            <input type="checkbox" :checked="selectedClass.abstract === true" :title="csMsg.flClsAbstractTitle" @change="patchClassField('abstract', ($event.target as HTMLInputElement).checked)" />
+            <span>abstract</span>
+          </label>
         </div>
-        <select
-          class="cs-base-rel"
-          :title="csMsg.flClsRelationTitle"
-          :value="b.relation"
-          @change="
-            patchBase(bi, {
-              relation: ($event.target as HTMLSelectElement).value as MvCodespaceClassifierBase['relation'],
-            })
-          "
-        >
-          <option v-for="r in BASE_REL" :key="r" :value="r">{{ r }}</option>
-        </select>
-        <button type="button" class="link-btn" :title="csMsg.flClsDelShortTitle" @click="removeBase(bi)">
-          {{ csMsg.flClsDelShortLabel }}
-        </button>
-      </div>
-      <button type="button" class="add-row" :title="csMsg.flClsAddBaseTitle" @click="addBase">
-        {{ csMsg.flClsAddBaseLabel }}
-      </button>
+        <label class="field">
+          <span>stereotype</span>
+          <input type="text" class="wide" :value="selectedClass.stereotype ?? ''" :placeholder="csMsg.flClsStereotypePlaceholder" :title="csMsg.flClsStereotypeTitle" @input="patchClassField('stereotype', ($event.target as HTMLInputElement).value)" />
+        </label>
+        <label class="field">
+          <span>{{ csMsg.flClsTemplateParamsLabel }}</span>
+          <textarea class="payload-ta" rows="3" spellcheck="false" :value="classTemplateParamsStr()" :placeholder="csMsg.flClsTemplateParamsPlaceholder" :title="csMsg.flClsTemplateParamsTitle" @input="setClassTemplateParams(($event.target as HTMLTextAreaElement).value)" />
+        </label>
+        <label class="field">
+          <span>notes</span>
+          <textarea class="payload-ta" rows="6" :value="selectedClass.notes ?? ''" :placeholder="csMsg.flClsNotesPlaceholder" :title="csMsg.flClsNotesTitle" @input="patchClassField('notes', ($event.target as HTMLTextAreaElement).value)" />
+        </label>
+      </section>
 
-      <h5 class="cs-subh">{{ csMsg.flClsMembersHeading }}</h5>
-      <table class="cs-table">
+      <section v-if="activeTab === 'bases'" class="cde-section-card">
+        <h4 class="cde-section-title">{{ csMsg.flClsBasesHeading }}</h4>
+        <div v-for="(b, bi) in selectedClass.bases ?? []" :key="'cbase-' + bi + '-' + b.targetId" class="cs-rowline cs-base-row">
+          <div class="cs-base-main">
+            <label class="field cs-base-field">
+              <span>{{ csMsg.flClsBaseTypeLabel }}</span>
+              <select class="wide" :title="csMsg.flClsTargetIdTitle" :value="b.targetId" @change="patchBase(bi, { targetId: ($event.target as HTMLSelectElement).value })">
+                <option v-if="!classifierIdSet.has(b.targetId)" :value="b.targetId">
+                  {{ csMsg.flClsBaseInvalidTargetPrefix }} {{ b.targetId }}
+                </option>
+                <option v-for="opt in baseTargetPickOptions" :key="'bopt-' + opt.id" :value="opt.id">{{ opt.label }}</option>
+              </select>
+            </label>
+            <div class="cs-base-ref" :class="{ 'cs-base-ref--warn': !classifierIdSet.has(b.targetId) }" :title="csMsg.flClsBaseRefCaption">
+              <span class="cs-base-ref-name">{{ classifierNameById.get(b.targetId) ?? '—' }}</span>
+              <code class="cs-base-ref-id">{{ b.targetId }}</code>
+            </div>
+          </div>
+          <select class="cs-base-rel" :title="csMsg.flClsRelationTitle" :value="b.relation" @change="patchBase(bi, { relation: ($event.target as HTMLSelectElement).value as MvCodespaceClassifierBase['relation'] })">
+            <option v-for="r in BASE_REL" :key="r" :value="r">{{ r }}</option>
+          </select>
+          <button type="button" class="link-btn" :title="csMsg.flClsDelShortTitle" @click="removeBase(bi)">
+            {{ csMsg.flClsDelShortLabel }}
+          </button>
+        </div>
+        <div class="cs-actions">
+          <button type="button" class="add-row" :title="csMsg.flClsAddBaseTitle" @click="addBase">
+            {{ csMsg.flClsAddBaseLabel }}
+          </button>
+          <button type="button" class="add-row" title="新增当前类内部的嵌套类" @click="addSubclass">
+            ＋ 内部类
+          </button>
+        </div>
+      </section>
+
+      <section v-if="activeTab === 'members'" class="cde-section-card">
+        <h4 class="cde-section-title">{{ csMsg.flClsMembersHeading }}</h4>
+        <table class="cs-table">
+          <thead>
+            <tr>
+              <th>name</th>
+              <th>visibility</th>
+              <th>type</th>
+              <th>assocCls</th>
+              <th>assocType</th>
+              <th>static</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="{ mem, idx } in fieldRows" :key="'all-' + idx">
+              <td>
+                <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchFieldMember(idx, { name: ($event.target as HTMLInputElement).value })" />
+              </td>
+              <td>
+                <select :value="mem.visibility ?? 'public'" :title="csMsg.flClsMemberVisTitle" @change="patchFieldMember(idx, { visibility: ($event.target as HTMLSelectElement).value })">
+                  <option v-for="v in MEMBER_VIS_OPTIONS" :key="'mv-' + v" :value="v">{{ v }}</option>
+                </select>
+              </td>
+              <td>
+                <select :value="mem.type ?? 'int'" :title="csMsg.flClsMemberTypeSigTitle" :disabled="mem.typeFromAssociation === true" @change="patchFieldMember(idx, { type: ($event.target as HTMLSelectElement).value })">
+                  <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'mt-' + t" :value="t">{{ t }}</option>
+                  <option v-if="mem.type && !memberTypeKnown(mem.type)" :value="mem.type">
+                    {{ mem.type }}
+                  </option>
+                </select>
+              </td>
+              <td>
+                <select class="wide" :value="mem.associatedClassifierId ?? ''" title="与该成员关联的类型端 Classifier（可与类图中不同邻居分别对应）" @change="onFieldMemberAssocClassifierChange(idx, $event)">
+                  <option value="">—</option>
+                  <option v-for="cid in classifierOptions" :key="'macf-' + cid" :value="cid">
+                    {{ classifierNameById.get(cid) ?? cid }}
+                  </option>
+                </select>
+              </td>
+              <td class="cs-td-center">
+                <input type="checkbox" :checked="mem.typeFromAssociation === true" title="Read-only: controlled by association links" disabled />
+              </td>
+              <td class="cs-td-center">
+                <input type="checkbox" :checked="mem.static === true" :title="csMsg.flClsMemberStaticTitle" @change="patchFieldMember(idx, { static: ($event.target as HTMLInputElement).checked })" />
+              </td>
+              <td>
+                <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeFieldMember(idx)">
+                  {{ csMsg.flClsRemoveMemberLabel }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="cs-actions">
+          <button type="button" class="add-row" :title="csMsg.flClsAddMemberTitle" @click="addMember">
+            {{ csMsg.flClsAddMemberLabel }}
+          </button>
+        </div>
+      </section>
+
+      <section v-if="activeTab === 'properties'" class="cde-section-card">
+        <h4 class="cde-section-title">{{ csMsg.flClsFieldsHeading }}</h4>
+        <table class="cs-table">
         <thead>
           <tr>
             <th>name</th>
@@ -998,12 +1206,17 @@ watch(associatedTypeCandidates, (next, prev) => {
             </td>
           </tr>
         </tbody>
-      </table>
-      <button type="button" class="add-row" :title="csMsg.flClsAddFieldTitle" @click="addProperty">
-        {{ csMsg.flClsAddFieldLabel }}
-      </button>
-      <h5 class="cs-subh">{{ csMsg.flClsMethodsHeading }}</h5>
-      <table class="cs-table">
+        </table>
+        <div class="cs-actions">
+          <button type="button" class="add-row" :title="csMsg.flClsAddFieldTitle" @click="addProperty">
+            {{ csMsg.flClsAddFieldLabel }}
+          </button>
+        </div>
+      </section>
+
+      <section v-if="activeTab === 'methods'" class="cde-section-card">
+        <h4 class="cde-section-title">{{ csMsg.flClsMethodsHeading }}</h4>
+        <table class="cs-table">
         <thead>
           <tr>
             <th>name</th>
@@ -1096,13 +1309,17 @@ watch(associatedTypeCandidates, (next, prev) => {
             </td>
           </tr>
         </tbody>
-      </table>
-      <button type="button" class="add-row" :title="csMsg.flClsAddMethodTitle" @click="addMethodMember">
-        {{ csMsg.flClsAddMethodLabel }}
-      </button>
-      <button type="button" class="add-row" title="添加特殊方法模板" @click="specialMethodPickerOpen = true">
-        ＋ 特殊方法
-      </button>
+        </table>
+        <div class="cs-actions">
+          <button type="button" class="add-row" :title="csMsg.flClsAddMethodTitle" @click="addMethodMember">
+            {{ csMsg.flClsAddMethodLabel }}
+          </button>
+          <button type="button" class="add-row" title="添加特殊方法模板" @click="specialMethodPickerOpen = true">
+            ＋ 特殊方法
+          </button>
+        </div>
+      </section>
+
       <dialog v-if="specialMethodPickerOpen" open class="cs-special-method-dialog">
         <div class="cs-special-picker">
           <div class="cs-special-picker__header">
@@ -1120,42 +1337,44 @@ watch(associatedTypeCandidates, (next, prev) => {
         </div>
       </dialog>
 
-      <h5 class="cs-subh">{{ csMsg.flClsEnumLiteralsHeading }}</h5>
-      <table class="cs-table">
-        <thead>
-          <tr>
-            <th>group</th>
-            <th>name</th>
-            <th>value</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="{ mem, idx } in enumRows" :key="'en-' + idx">
-            <td>
-              <input :value="mem.enumGroup ?? ''" placeholder="EnumType" title="enum group" @input="patchEnumMember(idx, { enumGroup: ($event.target as HTMLInputElement).value })" />
-            </td>
-            <td>
-              <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchEnumMember(idx, { name: ($event.target as HTMLInputElement).value })" />
-            </td>
-            <td>
-              <input :value="mem.value ?? mem.type ?? ''" :title="csMsg.flClsMemberTypeSigTitle" @input="patchEnumMember(idx, { value: ($event.target as HTMLInputElement).value })" />
-            </td>
-            <td>
-              <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeEnumMember(idx)">
-                {{ csMsg.flClsRemoveMemberLabel }}
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="cs-actions">
-        <button type="button" class="add-row" :title="csMsg.flClsAddEnumLiteralTitle" @click="addEnumMember">
-          {{ csMsg.flClsAddEnumLiteralLabel }}
-        </button>
-      </div>
+      <section v-if="activeTab === 'enums'" class="cde-section-card">
+        <h4 class="cde-section-title">{{ csMsg.flClsEnumLiteralsHeading }}</h4>
+        <table class="cs-table">
+          <thead>
+            <tr>
+              <th>group</th>
+              <th>name</th>
+              <th>value</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="{ mem, idx } in enumRows" :key="'en-' + idx">
+              <td>
+                <input :value="mem.enumGroup ?? ''" placeholder="EnumType" title="enum group" @input="patchEnumMember(idx, { enumGroup: ($event.target as HTMLInputElement).value })" />
+              </td>
+              <td>
+                <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchEnumMember(idx, { name: ($event.target as HTMLInputElement).value })" />
+              </td>
+              <td>
+                <input :value="mem.value ?? mem.type ?? ''" :title="csMsg.flClsMemberTypeSigTitle" @input="patchEnumMember(idx, { value: ($event.target as HTMLInputElement).value })" />
+              </td>
+              <td>
+                <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeEnumMember(idx)">
+                  {{ csMsg.flClsRemoveMemberLabel }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="cs-actions">
+          <button type="button" class="add-row" :title="csMsg.flClsAddEnumLiteralTitle" @click="addEnumMember">
+            {{ csMsg.flClsAddEnumLiteralLabel }}
+          </button>
+        </div>
+      </section>
 
-      <div class="cs-actions">
+      <div class="cs-actions cde-float-final-actions">
         <button type="button" class="link-btn cs-danger" :title="csMsg.flClsRemoveClassTitle" @click="removeClass">
           {{ csMsg.flClsRemoveClassLabel }}
         </button>
@@ -1163,3 +1382,139 @@ watch(associatedTypeCandidates, (next, prev) => {
     </template>
   </CodespaceFloatShell>
 </template>
+
+<style scoped>
+.cde-float-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.cde-tab-btn {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cde-tab-btn--active {
+  background: #0f172a;
+  color: #fff;
+  border-color: #0f172a;
+}
+.cde-section-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.cde-section-title {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.cde-float-final-actions {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+  margin-top: 10px;
+}
+.cs-special-method-dialog {
+  width: min(680px, 92vw);
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0;
+}
+.cs-special-picker {
+  padding: 12px;
+}
+.cs-special-picker__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.cs-special-picker__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0 4px;
+}
+.cs-inline-pair {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.cs-inline-pair .field {
+  flex: 1 1 auto;
+}
+.cs-inline-pair .cs-check {
+  flex: 0 0 auto;
+  margin-bottom: 10px;
+}
+.cs-rowline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.cs-base-row {
+  align-items: flex-start;
+}
+.cs-base-main {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cs-base-field {
+  margin-bottom: 0;
+}
+.cs-base-ref {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #475569;
+  line-height: 1.35;
+}
+.cs-base-ref--warn {
+  color: #b45309;
+}
+.cs-base-ref-name {
+  font-weight: 600;
+}
+.cs-base-ref-id {
+  font-size: 0.74rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #f1f5f9;
+}
+.cs-base-ref--warn .cs-base-ref-id {
+  background: #ffedd5;
+}
+.cs-base-rel {
+  flex: 0 0 auto;
+}
+.cs-param-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cs-param-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 1fr auto auto;
+  gap: 6px;
+  align-items: center;
+}
+.cs-param-const {
+  margin-bottom: 0;
+}
+</style>

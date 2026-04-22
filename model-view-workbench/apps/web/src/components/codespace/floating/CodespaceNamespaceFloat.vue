@@ -28,6 +28,39 @@ const emit = defineEmits<{
 const ns = computed((): MvCodespaceNamespaceNode | null =>
   getNamespaceAtPath(props.modelValue, props.mi, props.path),
 );
+const parentPathKey = computed(() => props.path.slice(0, -1).join('.'));
+const parentNsOptions = computed(() => {
+  const mod = props.modelValue.modules?.[props.mi];
+  const out: Array<{ key: string; label: string; path: number[] }> = [
+    { key: '', label: '(module root)', path: [] },
+  ];
+  const selfPath = props.path;
+  const isDescendantPath = (candidate: number[]): boolean => {
+    if (candidate.length < selfPath.length) return false;
+    for (let i = 0; i < selfPath.length; i++) {
+      if (candidate[i] !== selfPath[i]) return false;
+    }
+    return true;
+  };
+  const walk = (nodes: MvCodespaceNamespaceNode[] | undefined, base: number[]) => {
+    if (!nodes) return;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i]!;
+      const p = [...base, i];
+      // 不能迁移到自身或后代下，避免循环。
+      if (!isDescendantPath(p)) {
+        out.push({
+          key: p.join('.'),
+          label: p.map((x) => String(x)).join('/') + ` · ${n.name}`,
+          path: p,
+        });
+      }
+      walk(n.namespaces, p);
+    }
+  };
+  walk(mod?.namespaces, []);
+  return out;
+});
 const ENGLISH_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const nameError = ref('');
 
@@ -53,6 +86,35 @@ function onNsNameInput(value: string) {
   }
   nameError.value = '';
   patchNsField('name', value);
+}
+
+function moveNamespaceParent(targetKey: string): void {
+  if (targetKey === parentPathKey.value) return;
+  const target = parentNsOptions.value.find((o) => o.key === targetKey);
+  if (!target) return;
+  props.runPatch((d) => {
+    const mod = d.modules?.[props.mi];
+    if (!mod?.namespaces) return;
+    const oldParentPath = props.path.slice(0, -1);
+    const oldIdx = props.path[props.path.length - 1];
+    let oldSiblings: MvCodespaceNamespaceNode[] | undefined;
+    if (!oldParentPath.length) oldSiblings = mod.namespaces;
+    else oldSiblings = getNamespaceAtPath(d, props.mi, oldParentPath)?.namespaces;
+    if (!oldSiblings || oldIdx === undefined) return;
+    const [moved] = oldSiblings.splice(oldIdx, 1);
+    if (!moved) return;
+    if (!target.path.length) {
+      if (!mod.namespaces) mod.namespaces = [];
+      mod.namespaces.push(moved);
+    } else {
+      const parent = getNamespaceAtPath(d, props.mi, target.path);
+      if (!parent) return;
+      if (!parent.namespaces) parent.namespaces = [];
+      parent.namespaces.push(moved);
+    }
+    rebuildPathIdsForModule(d, props.mi);
+  });
+  emit('close');
 }
 </script>
 
@@ -93,6 +155,19 @@ function onNsNameInput(value: string) {
           :title="cs.flNsNotesTitle"
           @input="patchNsField('notes', ($event.target as HTMLInputElement).value)"
         />
+      </label>
+      <label class="field">
+        <span>parentNamespace</span>
+        <select
+          class="wide"
+          :value="parentPathKey"
+          title="Move this namespace under another namespace or module root"
+          @change="moveNamespaceParent(($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="opt in parentNsOptions" :key="'pns-' + opt.key" :value="opt.key">
+            {{ opt.label }}
+          </option>
+        </select>
       </label>
       <div class="cs-actions">
         <button type="button" class="add-row" :title="cs.flNsAddChildNsTitle" @click="emit('addChildNs', props.mi, props.path)">

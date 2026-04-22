@@ -36,6 +36,16 @@ function basesSummary(bases: MvCodespaceClassifierBase[] | undefined, M: Codespa
   return bases.map((b) => `${b.relation}→${b.targetId}`).join(M.dockBasesJoin);
 }
 
+function resolveClassBySelection(
+  payload: MvModelCodespacePayload,
+  s: Extract<CsDockSelection, { t: 'class' }>,
+): MvCodespaceClassifier | undefined {
+  const ns = getNamespaceAtPath(payload, s.mi, s.path);
+  let c = ns?.classes?.[s.ci];
+  for (const idx of s.classPath ?? []) c = c?.classes?.[idx];
+  return c;
+}
+
 /** 从模块根沿 path 拼面包屑（模块名 › NS › …） */
 function namespaceBreadcrumb(
   payload: MvModelCodespacePayload,
@@ -67,7 +77,7 @@ function formatSummary(s: CsDockSelection, p: MvModelCodespacePayload, M: Codesp
     return n ? M.formatNsLabel(n.name) : M.dockSummaryNsBare;
   }
   if (s.t === 'class') {
-    const c = getNamespaceAtPath(p, s.mi, s.path)?.classes?.[s.ci];
+    const c = resolveClassBySelection(p, s);
     return c ? M.formatClassLabel(c.name) : M.dockSummaryClassBare;
   }
   if (s.t === 'var') {
@@ -141,7 +151,7 @@ function formatLines(s: CsDockSelection, p: MvModelCodespacePayload, M: Codespac
   }
 
   if (s.t === 'class') {
-    const c: MvCodespaceClassifier | undefined = ns.classes?.[s.ci];
+    const c: MvCodespaceClassifier | undefined = resolveClassBySelection(p, s);
     push(M.dockNodeType, M.dockClassifierNode);
     push(M.dockHierarchy, namespaceBreadcrumb(p, s.mi, s.path, M));
     if (!c) {

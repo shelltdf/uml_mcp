@@ -200,6 +200,8 @@ export interface MvCodespaceClassifier {
   methods?: MvCodespaceClassMethod[];
   /** 枚举字面量（复数键） */
   enums?: MvCodespaceClassEnum[];
+  /** 内部类（Nested Class） */
+  classes?: MvCodespaceClassifier[];
 }
 
 export interface MvCodespaceVariable {
