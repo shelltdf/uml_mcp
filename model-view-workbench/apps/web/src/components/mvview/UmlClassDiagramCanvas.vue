@@ -5,6 +5,7 @@ import {
   type ClassDiagramState,
   type ClassPositions,
   type ClassDiagramEdgeVisibility,
+  type ClassLink,
   buildClassDiagramViewPayload,
   classDiagramHeaderHeight,
   diagramBounds,
@@ -309,57 +310,168 @@ function pushPayload(): void {
   emit('update:modelValue', next);
 }
 
-const umlDiagramDebugSnapshot = computed(() => ({
-  timestamp: new Date().toISOString(),
-  canvasId: props.canvasId,
-  propsSummary: {
-    modelSourceValid: props.modelSourceValid,
-    observeCodespaceOnly: props.observeCodespaceOnly ?? false,
-    codespaceClassesCount: props.codespaceClasses?.length ?? 0,
-    modelRefsCount: props.modelRefs?.length ?? 0,
-    codespaceResolveMarkdownLen: props.codespaceResolveMarkdown?.length ?? 0,
-  },
-  viewport: {
-    scale: scale.value,
-    panX: panX.value,
-    panY: panY.value,
-    zoomPercent: Math.round(scale.value * 100),
-  },
-  world: { WORLD_HALF, WORLD_SIZE },
-  layoutBeautyMode: layoutBeautyMode.value,
-  diagramBounds: diagramBounds(state, positions, folded),
-  edgeVisibility: { inherit: edgeVisibility.inherit, association: edgeVisibility.association },
-  selection: [...selectedIds.value],
-  selectedEdgeId: selectedEdgeId.value,
-  classes: state.classes.map((c) => ({ id: c.id, name: c.name })),
-  links: state.links.map((l) => ({
-    id: l.id,
-    kind: l.kind,
-    from: l.from,
-    to: l.to,
-    fromSlotSection: l.fromSlotSection,
-    fromSlotName: l.fromSlotName,
-    fromMult: l.fromMult,
-    toMult: l.toMult,
-  })),
-  positions: { ...positions },
-  folded: { ...folded },
-  emitPayloadJson: buildClassDiagramViewPayload(
-    lastSynced.value,
-    state,
-    positions,
-    { ...folded },
-    { inherit: edgeVisibility.inherit, association: edgeVisibility.association },
-  ),
-}));
+function roundCoord(n: number, digits = 2): number {
+  const p = 10 ** digits;
+  return Math.round(n * p) / p;
+}
+
+function roundBoundsRect(b: { minX: number; minY: number; maxX: number; maxY: number }) {
+  return {
+    minX: roundCoord(b.minX),
+    minY: roundCoord(b.minY),
+    maxX: roundCoord(b.maxX),
+    maxY: roundCoord(b.maxY),
+  };
+}
+
+/** 调试导出：压缩 SVG path `d` 中的数字位数，几何与画布一致（仅舍入展示） */
+function roundSvgPathDForDebug(d: string, digits = 2): string {
+  return d.replace(/[-+]?(?:\d*\.\d+|\d+(?:\.\d+)?)(?:[eE][-+]?\d+)?/g, (tok) => {
+    const v = parseFloat(tok);
+    if (Number.isNaN(v)) return tok;
+    const r = roundCoord(v, digits);
+    return Math.abs(r - Math.round(r)) < 1e-8 ? String(Math.round(r)) : String(r);
+  });
+}
+
+/**
+ * 调试专用：把 relations 翻译成「类名 + 语义」，避免只看 id 时连线糊涂。
+ * - inherit：`子类 ⊂ 父类`（与 payload from→to 一致：from 子 to 父）
+ */
+function relationsSummaryForDebug(classes: ClassDef[], links: ClassLink[]) {
+  const nameOf = (id: string) => {
+    const c = classes.find((x) => x.id === id);
+    const n = (c?.name ?? '').trim();
+    return n || id;
+  };
+
+  const countsByKind: Record<string, number> = {};
+  for (const l of links) {
+    countsByKind[l.kind] = (countsByKind[l.kind] ?? 0) + 1;
+  }
+
+  const edges = links.map((l) => {
+    const fn = nameOf(l.from);
+    const tn = nameOf(l.to);
+    const slot =
+      l.kind === 'association' && l.fromSlotSection && (l.fromSlotName ?? '').trim()
+        ? `${l.fromSlotSection}.${(l.fromSlotName ?? '').trim()}`
+        : undefined;
+    const mult =
+      l.fromMult || l.toMult
+        ? [l.fromMult ?? '∗', l.toMult ?? '∗'].join(' .. ')
+        : undefined;
+
+    let line: string;
+    if (l.kind === 'inherit') {
+      line = `${fn} ⊂ ${tn}`;
+    } else if (l.kind === 'dependency') {
+      line = mult ? `${fn} ⇢ ${tn}  (${mult})` : `${fn} ⇢ ${tn}`;
+    } else if (l.kind === 'association') {
+      const mid = slot ? `via ${slot}` : 'association';
+      line = mult ? `${fn} —[${mid}]→ ${tn}  (${mult})` : `${fn} —[${mid}]→ ${tn}`;
+    } else {
+      line = `${fn} → ${tn} (${l.kind})`;
+    }
+
+    return {
+      id: l.id,
+      kind: l.kind,
+      line,
+      fromId: l.from,
+      toId: l.to,
+      fromName: fn,
+      toName: tn,
+      slot,
+      fromMult: l.fromMult,
+      toMult: l.toMult,
+    };
+  });
+
+  const outboundByFromName: Record<string, string[]> = {};
+  for (const l of links) {
+    const fromN = nameOf(l.from);
+    const toN = nameOf(l.to);
+    if (!outboundByFromName[fromN]) outboundByFromName[fromN] = [];
+    outboundByFromName[fromN]!.push(`${l.kind}→${toN}`);
+  }
+
+  /** 同名类多处时，`outboundByFromName` 会产生歧义；此项按 diagram class id 聚合 */
+  const outboundByFromId: Record<string, string[]> = {};
+  for (const l of links) {
+    if (!outboundByFromId[l.from]) outboundByFromId[l.from] = [];
+    outboundByFromId[l.from]!.push(`${l.kind}→${l.to}`);
+  }
+
+  return {
+    countsByKind,
+    edges,
+    outboundByFromName,
+    outboundByFromId,
+    linesOnly: edges.map((e) => e.line),
+  };
+}
+
+/** 调试导出用：去掉空数组、坐标取整、空 folded 省略，减少剪贴板噪音 */
+function compactPayloadForDebug(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const o = raw as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...o };
+
+  if (Array.isArray(next.classes)) {
+    next.classes = (next.classes as Record<string, unknown>[]).map((c) => {
+      const out: Record<string, unknown> = { ...c };
+      for (const k of ['attrs', 'meth', 'properties', 'enumLiterals'] as const) {
+        const v = out[k];
+        if (Array.isArray(v) && v.length === 0) delete out[k];
+      }
+      return out;
+    });
+  }
+
+  const layout = next.layout;
+  if (layout && typeof layout === 'object' && !Array.isArray(layout)) {
+    const lay: Record<string, unknown> = { ...(layout as Record<string, unknown>) };
+    const pos = lay.positions as Record<string, { x: number; y: number }> | undefined;
+    if (pos && typeof pos === 'object') {
+      const pos2: Record<string, { x: number; y: number }> = {};
+      for (const [k, v] of Object.entries(pos)) {
+        pos2[k] = { x: roundCoord(v.x), y: roundCoord(v.y) };
+      }
+      lay.positions = pos2;
+    }
+    const fd = lay.folded as Record<string, boolean> | undefined;
+    if (fd && typeof fd === 'object' && !Array.isArray(fd) && Object.keys(fd).length === 0) {
+      delete lay.folded;
+    }
+    next.layout = lay;
+  }
+
+  return next;
+}
+
+const copyDebugFeedback = ref<{ kind: 'ok' | 'err'; text: string } | null>(null);
+let copyDebugFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showCopyDebugFeedback(kind: 'ok' | 'err', text: string): void {
+  if (copyDebugFeedbackTimer) {
+    clearTimeout(copyDebugFeedbackTimer);
+    copyDebugFeedbackTimer = null;
+  }
+  copyDebugFeedback.value = { kind, text };
+  copyDebugFeedbackTimer = setTimeout(() => {
+    copyDebugFeedback.value = null;
+    copyDebugFeedbackTimer = null;
+  }, 2000);
+}
 
 async function copyUmlDiagramDebugInfo() {
-  const text = JSON.stringify(umlDiagramDebugSnapshot.value, null, 2);
   try {
+    const text = JSON.stringify(umlDiagramDebugSnapshot.value, null, 2);
     await navigator.clipboard.writeText(text);
-    window.alert(cd.value.cdeCopyDrawingInfoOk);
+    showCopyDebugFeedback('ok', cd.value.cdeCopyDrawingInfoToastOk);
   } catch {
-    window.alert(cd.value.cdeCopyDrawingInfoFail);
+    showCopyDebugFeedback('err', cd.value.cdeCopyDrawingInfoToastFail);
   }
 }
 
@@ -1096,6 +1208,10 @@ onMounted(() => {
   window.addEventListener('pointerup', onGlobalPointerUp);
 });
 onUnmounted(() => {
+  if (copyDebugFeedbackTimer) {
+    clearTimeout(copyDebugFeedbackTimer);
+    copyDebugFeedbackTimer = null;
+  }
   window.removeEventListener('click', onWindowClick);
   window.removeEventListener('pointermove', onGlobalPointerMove);
   window.removeEventListener('pointerup', onGlobalPointerUp);
@@ -2456,6 +2572,100 @@ const edgePaths = computed((): EdgePathItem[] => {
   return out;
 });
 
+/**
+ * 须在 `edgePaths` 之后定义：导出与画布一致的类框包围盒（世界坐标 px）及各边 SVG path `d`
+ * （直线 / 正交折线 / 三次贝塞尔），便于对照裁切、碰撞与路由问题。
+ */
+const umlDiagramDebugSnapshot = computed(() => {
+  const payloadStr = buildClassDiagramViewPayload(
+    lastSynced.value,
+    state,
+    positions,
+    { ...folded },
+    { inherit: edgeVisibility.inherit, association: edgeVisibility.association },
+  );
+  let payload: unknown;
+  try {
+    payload = compactPayloadForDebug(JSON.parse(payloadStr) as unknown);
+  } catch {
+    payload = { _parseError: true as const };
+  }
+
+  const nodeBounds: Array<{
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }> = [];
+  for (const c of state.classes) {
+    const p = positions[c.id];
+    if (!p) continue;
+    const s = classBoxSize(c);
+    nodeBounds.push({
+      id: c.id,
+      name: (c.name ?? '').trim() || c.id,
+      x: roundCoord(p.x),
+      y: roundCoord(p.y),
+      w: s.w,
+      h: roundCoord(s.h),
+    });
+  }
+
+  const edgeSvgPaths = edgePaths.value.map((ep) => ({
+    id: ep.id,
+    kind: ep.kind,
+    /** 与画布 path 同指令；坐标舍入便于阅读（DOM 仍为全精度浮点） */
+    d: roundSvgPathDForDebug(ep.d),
+    dash: ep.dash,
+    multLabelLeft:
+      ep.lx != null && ep.ly != null ? { x: roundCoord(ep.lx), y: roundCoord(ep.ly) } : undefined,
+    multLabelRight:
+      ep.rx != null && ep.ry != null ? { x: roundCoord(ep.rx), y: roundCoord(ep.ry) } : undefined,
+  }));
+
+  const edgeRenderModeByEdgeId: Record<string, string> = {};
+  for (const l of state.links) {
+    edgeRenderModeByEdgeId[l.id] =
+      edgeRenderById[l.id] ?? (l.kind === 'dependency' ? 'orthogonal' : 'straight');
+  }
+
+  return {
+    meta: {
+      timestamp: new Date().toISOString(),
+      canvasId: props.canvasId,
+    },
+    propsSummary: {
+      modelSourceValid: props.modelSourceValid,
+      observeCodespaceOnly: props.observeCodespaceOnly ?? false,
+      codespaceClassesCount: props.codespaceClasses?.length ?? 0,
+      modelRefsCount: props.modelRefs?.length ?? 0,
+      codespaceResolveMarkdownLen: props.codespaceResolveMarkdown?.length ?? 0,
+    },
+    view: {
+      scale: Math.round(scale.value * 10000) / 10000,
+      panX: Math.round(panX.value * 100) / 100,
+      panY: Math.round(panY.value * 100) / 100,
+      zoomPercent: Math.round(scale.value * 100),
+      layoutBeautyMode: layoutBeautyMode.value,
+      diagramBounds: roundBoundsRect(diagramBounds(state, positions, folded)),
+      selection: [...selectedIds.value],
+      selectedEdgeId: selectedEdgeId.value,
+    },
+    relationsSummary: relationsSummaryForDebug(state.classes, state.links),
+    renderGeometry: {
+      coords: 'svg-world-px-top-left',
+      note:
+        'nodeBounds / path d / 标签锚点数值已四舍五入便于阅读；DOM 中 path 仍为全精度。d 与画布几何一致。',
+      nodeBounds,
+      edgeSvgPaths,
+      edgeRenderModeByEdgeId,
+    },
+    payload,
+  };
+});
+
 function escapeXml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -3190,6 +3400,16 @@ function deleteClass(classId: string): void {
         >
           {{ cd.cdeCopyDrawingInfo }}
         </button>
+        <span
+          v-if="copyDebugFeedback"
+          class="cde-debug-actions__toast"
+          :class="
+            copyDebugFeedback.kind === 'ok' ? 'cde-debug-actions__toast--ok' : 'cde-debug-actions__toast--err'
+          "
+          role="status"
+        >
+          {{ copyDebugFeedback.text }}
+        </span>
       </div>
 
       <div
@@ -3681,28 +3901,48 @@ function deleteClass(classId: string): void {
   background: var(--editor-bg, #fff);
 }
 
-/* 与 Codespace SVG 画布「Copy drawing info」一致：右下角调试复制 */
+/* 右下角调试：短按钮 + 非阻塞 toast，避免 alert 遮挡 */
 .cde-debug-actions {
   position: absolute;
   right: 10px;
   bottom: 10px;
   z-index: 7;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: min(240px, 42vw);
   pointer-events: auto;
 }
 .cde-debug-actions__btn {
+  flex: 0 0 auto;
   padding: 4px 8px;
   border: 1px solid #94a3b8;
   border-radius: 4px;
   background: color-mix(in srgb, var(--panel-bg, #fafafa) 94%, transparent);
   cursor: pointer;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 .cde-debug-actions__btn:hover {
   background: color-mix(in srgb, var(--editor-bg, #fff) 88%, #f1f5f9);
+}
+.cde-debug-actions__toast {
+  font-size: 0.68rem;
+  line-height: 1.2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.cde-debug-actions__toast--ok {
+  color: #15803d;
+  background: rgba(22, 163, 74, 0.12);
+}
+.cde-debug-actions__toast--err {
+  color: #b91c1c;
+  background: rgba(220, 38, 38, 0.1);
 }
 
 .cde-ctx {

@@ -457,6 +457,7 @@ function patchMetaRoot(root: string) {
 
     <CodespaceModuleSvgCanvas
       class="cs-svg-wrap"
+      :compact="compactLayout"
       :model-value="modelValue"
       :selected="canvasSelection"
       @select="onCanvasSelect"
@@ -720,29 +721,6 @@ function patchMetaRoot(root: string) {
 }
 .cs-editor--compact :deep(.cs-svg-viewport) {
   min-height: 0;
-}
-.cs-editor--compact :deep(.cs-svg-keys) {
-  top: 4px;
-  left: 4px;
-  max-width: min(240px, 50vw);
-  padding: 2px 6px;
-  font-size: 0.66rem;
-}
-.cs-editor--compact :deep(.cs-svg-keys-pre) {
-  margin-top: 4px;
-  font-size: 10px;
-}
-.cs-editor--compact :deep(.cs-svg-hud) {
-  left: 4px;
-  bottom: 4px;
-  gap: 4px;
-  padding: 4px 6px;
-  font-size: 0.7rem;
-  border-radius: 4px;
-}
-.cs-editor--compact :deep(.cs-svg-hud-btn) {
-  padding: 2px 6px;
-  font-size: 0.7rem;
 }
 .cs-editor--compact .cs-advanced {
   margin-top: 2px;

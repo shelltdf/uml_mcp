@@ -72,6 +72,8 @@ export interface CodespaceCanvasMessages {
   svgKeysTitle: string;
   svgKeysBody: string;
   svgAriaModuleTree: string;
+  /** 外层画布壳（div）：含快捷键/工具条/视口 HUD，不等同于单一 svg */
+  svgCanvasRegionAria: string;
   svgHudAria: string;
   svgZoomOutTitle: string;
   svgZoomPctTitle: string;
@@ -82,6 +84,11 @@ export interface CodespaceCanvasMessages {
   svgOriginLabel: string;
   svgResetTitle: string;
   svgResetLabel: string;
+  /** 重新跑布局算法并适应视口（与 Fit 区别：强制重算布局缓存） */
+  svgRelayoutTitle: string;
+  svgRelayoutLabel: string;
+  /** 左侧浮动工具条（与 UML 类图画布 `cde-canvas-toolbar` 语义对齐） */
+  svgCanvasToolbarAria: string;
   svgCtxAddModuleTitle: string;
   svgCtxAddModuleLabel: string;
   floatMaximizeTitle: string;
@@ -288,6 +295,8 @@ Click: select node
 Double-click: open definition panel
 Right-click: canvas menu (add module, etc.)`,
   svgAriaModuleTree: 'Codespace module tree',
+  svgCanvasRegionAria:
+    'Codespace model canvas — shortcuts, diagram tools, zoom controls, and the module tree diagram',
   svgHudAria: 'Viewport zoom',
   svgZoomOutTitle: 'Zoom out — no global shortcut',
   svgZoomPctTitle: 'Current zoom — no global shortcut',
@@ -298,6 +307,9 @@ Right-click: canvas menu (add module, etc.)`,
   svgOriginLabel: 'Origin',
   svgResetTitle: 'Reset 100% (anchor at viewport center) — no global shortcut',
   svgResetLabel: 'Reset',
+  svgRelayoutTitle: 'Relayout module tree from model and fit view — no global shortcut',
+  svgRelayoutLabel: 'Relayout',
+  svgCanvasToolbarAria: 'Diagram tools',
   svgCtxAddModuleTitle: 'Add module — no global shortcut',
   svgCtxAddModuleLabel: '＋ Add module',
   floatMaximizeTitle: 'Maximize window — no global shortcut',
@@ -464,6 +476,7 @@ const codespaceCanvasZhOverrides: Partial<CodespaceCanvasMessages> = {
 双击：打开定义悬浮窗
 右键：画布菜单（添加模块等）`,
   svgAriaModuleTree: '代码空间模块树',
+  svgCanvasRegionAria: '代码空间模型画布：快捷键、图示工具、缩放控制与模块树图',
   svgHudAria: '视口缩放',
   svgZoomOutTitle: '缩小 — 无全局快捷键',
   svgZoomPctTitle: '当前缩放 — 无全局快捷键',
@@ -474,6 +487,9 @@ const codespaceCanvasZhOverrides: Partial<CodespaceCanvasMessages> = {
   svgOriginLabel: '原点',
   svgResetTitle: '还原 100%（以视口中心为锚）— 无全局快捷键',
   svgResetLabel: '还原',
+  svgRelayoutTitle: '按当前模型重新计算树状布局并适应视口 — 无全局快捷键',
+  svgRelayoutLabel: '重新排版',
+  svgCanvasToolbarAria: '画布工具',
   svgCtxAddModuleTitle: '添加模块 — 无全局快捷键',
   svgCtxAddModuleLabel: '＋ Add module',
   floatMaximizeTitle: '窗口最大化 — 无全局快捷键',

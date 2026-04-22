@@ -1,7 +1,7 @@
 import { computed, ref, type Ref } from 'vue';
 
-/** 与 CSS transform `translate(panX, panY) scale(scale)`、`transform-origin: 0 0` 一致：屏幕坐标 ≈ 世界坐标 * scale + pan */
-export function useCanvasViewport(viewportRef: Ref<HTMLElement | null>) {
+/** 与 CSS/SVG transform `translate(panX, panY) scale(scale)`、`transform-origin: 0 0` 一致：屏幕坐标 ≈ 世界坐标 * scale + pan */
+export function useCanvasViewport(viewportRef: Ref<Element | null>) {
   const scale = ref(1);
   const panX = ref(0);
   const panY = ref(0);

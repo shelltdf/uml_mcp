@@ -51,12 +51,15 @@ export interface CodespaceLayoutLabelFns {
 
 const PAD = 10;
 const ROW_H = 20;
-/** 行与行之间留白，供连线水平母线在矩形外通过 */
+/**
+ * 同级节点竖向间距（成员行之间、子命名空间栈之间、模块内根 NS 栈、`enforceSiblingNamespaceSeparation` 等统一使用）。
+ */
 const ROW_GAP = 8;
 const CELL_GAP = 3;
+/** 模块与模块之间的竖向间距（大块分区，可略大于同级 ROW_GAP） */
 const MODULE_GAP = 12;
-/** 根 NS 竖向堆叠之间的间距（px） */
-const NS_COL_GAP = 5;
+/** 命名空间块右侧与子命名空间递归列之间的水平空隙（仅参与宽度测量，非竖向兄弟距） */
+const LR_NS_CHILDSubtree_PAD = 5;
 /**
  * 模块竖条右缘到内容区起点（首列根 NS 左缘）的水平距（px）。
  * 须明显大于 `EDGE_INSET`，否则 `busXsInCorridor(sxMod, …)` 廊道过窄、多根连线堆叠。
@@ -180,29 +183,6 @@ function pushCurvedLREdge(
   edges.push({ d, kind: 'tree' });
 }
 
-function pushCurvedAnyDirEdge(
-  edges: CodespaceLayoutEdge[],
-  bounds: CodespaceLayoutResult['bounds'],
-  sx: number,
-  sy: number,
-  tx: number,
-  ty: number,
-): void {
-  if (Math.hypot(tx - sx, ty - sy) < 0.25) return;
-  const dir = tx >= sx ? 1 : -1;
-  const gap = Math.max(8, Math.abs(tx - sx));
-  const arm = Math.max(8, Math.min(42, gap * 0.44));
-  const c1x = sx + dir * arm;
-  const c2x = tx - dir * arm;
-  const c1y = sy;
-  const c2y = ty;
-  extendPoint(bounds, sx, sy);
-  extendPoint(bounds, c1x, c1y);
-  extendPoint(bounds, c2x, c2y);
-  extendPoint(bounds, tx, ty);
-  edges.push({ d: `M ${sx} ${sy} C ${c1x} ${c1y} ${c2x} ${c2y} ${tx} ${ty}`, kind: 'inheritance' });
-}
-
 function pushOrthContainmentEdge(
   edges: CodespaceLayoutEdge[],
   bounds: CodespaceLayoutResult['bounds'],
@@ -307,7 +287,7 @@ function measureLrSubtree(ns: MvCodespaceNamespaceNode, lbl: CodespaceLayoutLabe
   if (nL && children.length) stackH += ROW_GAP;
   stackH += sumChildH;
 
-  const rightExtra = children.length > 0 ? NS_COL_GAP + maxChildW : 0;
+  const rightExtra = children.length > 0 ? LR_NS_CHILDSubtree_PAD + maxChildW : 0;
   const W = nsW + LR_NS_TO_SIBLING + col1w + rightExtra;
   const H = Math.max(ROW_H, stackH);
 
@@ -331,7 +311,8 @@ function rightMid(r: Rect): { x: number; y: number } {
 }
 
 /**
- * 从左到右树：NS 在左；**同级**叶（类/变量/函数/宏）与子 NS 根在 **同一竖列**（等宽 `col1w`）自上而下；
+ * 从左到右树：NS 在左；同级叶与子 NS 根在 **同一竖列**（等宽 `col1w`）。
+ * 占行高的成员（`!floating`）按序 **半数在 NS 标题之上、半数在之下**，标题大致处于同级内容的垂直中部（floating 行仍贴附其前一条占行记录，如类内枚举）。
  * 各子命名空间整棵子树在该列右侧接续向右递归。
  */
 function layoutNsTreeLR(
@@ -347,22 +328,6 @@ function layoutNsTreeLR(
 ): { w: number; h: number; nsHeader: Rect } {
   const { w: W, h: H } = measureLrSubtree(ns, lbl);
   const nsW = nsBlockW(ns.name, lbl);
-  // 脑图式：父节点顶对齐，子内容按时间线向下展开，不做整块居中。
-  const ny = y0;
-  const nsHeader: Rect = { x: x0, y: ny, w: nsW, h: ROW_H };
-  out.push({
-    pick: { t: 'ns', mi, path },
-    label: lbl.nsHeader(ns.name),
-    x: nsHeader.x,
-    y: nsHeader.y,
-    w: nsHeader.w,
-    h: nsHeader.h,
-  });
-  extendBounds(bounds, nsHeader.x, nsHeader.y, nsHeader.w, nsHeader.h);
-
-  const pr = rightMid(nsHeader);
-  const sx0 = pr.x - EDGE_INSET;
-  const sy0 = pr.y;
 
   type RowPick = CodespaceSvgPick;
   const rowItems: {
@@ -462,6 +427,35 @@ function layoutNsTreeLR(
   if (rowItems.length || children.length) col1w = Math.max(MIN_NS_COL_W, col1w);
 
   const nL = rowItems.length;
+  /** 占垂直槽位的行（floating 仅占其锚点同行的几何位置） */
+  const nfIndices = rowItems.map((it, i) => (!it.floating ? i : -1)).filter((v): v is number => v >= 0);
+  const nAbove = Math.floor(nfIndices.length / 2);
+  const aboveH =
+    nAbove > 0 ? nAbove * ROW_H + (nAbove - 1) * ROW_GAP : 0;
+  let ny: number;
+  if (nfIndices.length === 0) {
+    ny = y0;
+  } else if (nAbove === 0) {
+    ny = y0;
+  } else {
+    ny = y0 + aboveH + ROW_GAP;
+  }
+
+  const nsHeader: Rect = { x: x0, y: ny, w: nsW, h: ROW_H };
+  out.push({
+    pick: { t: 'ns', mi, path },
+    label: lbl.nsHeader(ns.name),
+    x: nsHeader.x,
+    y: nsHeader.y,
+    w: nsHeader.w,
+    h: nsHeader.h,
+  });
+  extendBounds(bounds, nsHeader.x, nsHeader.y, nsHeader.w, nsHeader.h);
+
+  const pr = rightMid(nsHeader);
+  const sx0 = pr.x - EDGE_INSET;
+  const sy0 = pr.y;
+
   let leafColH = 0;
   if (nL) leafColH = nL * ROW_H + (nL - 1) * ROW_GAP;
 
@@ -474,8 +468,17 @@ function layoutNsTreeLR(
   stackH += sumChildH;
 
   const x1 = x0 + nsW + LR_NS_TO_SIBLING;
-  // 脑图式：从标题下方直接开始排子内容，避免“中心回摆”导致穿插与遮挡。
-  let yc = ny + ROW_H + ROW_GAP;
+
+  const yForIndex: number[] = new Array(rowItems.length).fill(NaN);
+  for (let k = 0; k < nfIndices.length; k++) {
+    const i = nfIndices[k]!;
+    if (k < nAbove) {
+      yForIndex[i] = y0 + k * (ROW_H + ROW_GAP);
+    } else {
+      const bi = k - nAbove;
+      yForIndex[i] = ny + ROW_H + ROW_GAP + bi * (ROW_H + ROW_GAP);
+    }
+  }
 
   const childOrder = children
     .map((child, origI) => ({ child, origI, span: measureLrSubtree(child, lbl).w }))
@@ -485,10 +488,21 @@ function layoutNsTreeLR(
   const busXs = busXsInCorridor(sx0, x1, Math.max(1, nEdges));
   let edgeIx = 0;
 
+  let lastNf = -1;
+  let maxRowBottom = ny + ROW_H;
+  const fallbackY = ny + ROW_H + ROW_GAP;
+
   for (let i = 0; i < rowItems.length; i++) {
     const it = rowItems[i]!;
     const ind = it.indent ?? 0;
-    const r: Rect = { x: x1 + ind * 18, y: yc, w: col1w - ind * 18, h: ROW_H };
+    let rowY: number;
+    if (!it.floating) {
+      rowY = yForIndex[i]!;
+      lastNf = i;
+    } else {
+      rowY = lastNf >= 0 ? yForIndex[lastNf]! : fallbackY;
+    }
+    const r: Rect = { x: x1 + ind * 18, y: rowY, w: col1w - ind * 18, h: ROW_H };
     out.push({
       pick: it.pick,
       label: it.label,
@@ -498,6 +512,7 @@ function layoutNsTreeLR(
       h: r.h,
     });
     extendBounds(bounds, r.x, r.y, r.w, r.h);
+    maxRowBottom = Math.max(maxRowBottom, rowY + ROW_H);
     if (!it.skipNsEdge) {
       const pl = leftMid(r);
       pushCurvedLREdge(
@@ -511,11 +526,9 @@ function layoutNsTreeLR(
       );
     }
     edgeIx += 1;
-    if (!it.floating) {
-      yc += ROW_H;
-      if (i < rowItems.length - 1) yc += ROW_GAP;
-    }
   }
+
+  let yc = maxRowBottom;
   if (nL && children.length) yc += ROW_GAP;
 
   childOrder.forEach(({ child, origI }, idx) => {
@@ -590,9 +603,9 @@ function layoutModuleStrip(
     const { w: cw, h: ch, nsHeader } = layoutNsTreeLR(ns, mi, [origI], innerX, yCur, segment, bounds, edges, lbl);
     rootHeaders.push(nsHeader);
     innerMaxW = Math.max(innerMaxW, cw);
-    yCur += ch + NS_COL_GAP;
+    yCur += ch + ROW_GAP;
   });
-  yCur -= NS_COL_GAP;
+  yCur -= ROW_GAP;
 
   const innerW = innerMaxW;
   const totalH = yCur - innerY;
@@ -658,38 +671,6 @@ function getClassAtPick(
     cur = cur?.classes?.[idx];
   }
   return cur ?? null;
-}
-
-function appendClassInheritanceEdges(
-  payload: MvModelCodespacePayload,
-  nodes: CodespaceLayoutNode[],
-  edges: CodespaceLayoutEdge[],
-  bounds: CodespaceLayoutResult['bounds'],
-): void {
-  const classNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class');
-  const nodeByClassId = new Map<string, CodespaceLayoutNode>();
-  for (const n of classNodes) {
-    const c = getClassAtPick(payload, n.pick);
-    if (c?.id) nodeByClassId.set(c.id, n);
-  }
-  for (const childNode of classNodes) {
-    const child = getClassAtPick(payload, childNode.pick);
-    if (!child) continue;
-    for (const b of child.bases ?? []) {
-      const parentNode = nodeByClassId.get(b.targetId);
-      if (!parentNode) continue;
-      const p = rightMid({ x: parentNode.x, y: parentNode.y, w: parentNode.w, h: parentNode.h });
-      const c = leftMid({ x: childNode.x, y: childNode.y, w: childNode.w, h: childNode.h });
-      pushCurvedAnyDirEdge(
-        edges,
-        bounds,
-        p.x - EDGE_INSET,
-        p.y,
-        c.x + EDGE_INSET,
-        c.y,
-      );
-    }
-  }
 }
 
 function resolveClassNodeOverlaps(nodes: CodespaceLayoutNode[]): void {
@@ -763,13 +744,19 @@ function enforceNestedClassClusterLayout(nodes: CodespaceLayoutNode[]): void {
   const shiftX = 22;
   const rowGap = 8;
   const clusterGap = 10;
+  /** 类簇底边：须含右侧嵌套类与「类上枚举」（enumMap），否则低估高度，下一顶层类不会被 minTop 顶开，后面 resolveNodeOverlaps 再硬推会产生大块竖向空白。 */
   const measureClusterBottom = (root: CodespaceLayoutNode): number => {
     let bottom = root.y + root.h;
     const walk = (parent: CodespaceLayoutNode) => {
-      const kids = childMap.get(classPickKey(parent.pick as Extract<CodespaceSvgPick, { t: 'class' }>)) ?? [];
+      const pKey = classPickKey(parent.pick as Extract<CodespaceSvgPick, { t: 'class' }>);
+      const kids = childMap.get(pKey) ?? [];
+      const enumKids = enumMap.get(pKey) ?? [];
       for (const k of kids) {
         bottom = Math.max(bottom, k.y + k.h);
         walk(k);
+      }
+      for (const e of enumKids) {
+        bottom = Math.max(bottom, e.y + e.h);
       }
     };
     walk(root);
@@ -893,6 +880,37 @@ function pathStartsWith(path: number[], prefix: number[]): boolean {
   return true;
 }
 
+function pathsEqual(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/**
+ * 某命名空间下「内容列」的竖向外包（不含该 NS 自身标题行；含成员行、子 NS 整棵子树、类内嵌套节点等）。
+ * 用于将父 NS 标题在竖向上对齐到子内容整体中心。
+ */
+function boundsOfNamespaceContent(
+  nodes: CodespaceLayoutNode[],
+  mi: number,
+  nsPath: number[],
+): { minY: number; maxY: number } | null {
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let any = false;
+  for (const n of nodes) {
+    if (n.pick.t === 'module') continue;
+    if (n.pick.mi !== mi) continue;
+    const p = n.pick.path;
+    if (p.length < nsPath.length) continue;
+    if (!nsPath.every((v, i) => p[i] === v)) continue;
+    if (n.pick.t === 'ns' && pathsEqual(p, nsPath)) continue;
+    any = true;
+    minY = Math.min(minY, n.y);
+    maxY = Math.max(maxY, n.y + n.h);
+  }
+  if (!any || !Number.isFinite(minY) || !Number.isFinite(maxY)) return null;
+  return { minY, maxY };
+}
+
 function shiftSubtree(nodes: CodespaceLayoutNode[], mi: number, nsPath: number[], dy: number): void {
   if (Math.abs(dy) < 0.01) return;
   for (const n of nodes) {
@@ -931,7 +949,7 @@ function enforceSiblingNamespaceSeparation(nodes: CodespaceLayoutNode[]): void {
     let prevBottom = Number.NEGATIVE_INFINITY;
     for (const n of ordered) {
       const b = subtreeBounds(nodes, n.pick.mi, n.pick.path);
-      const desiredTop = prevBottom === Number.NEGATIVE_INFINITY ? b.minY : prevBottom + NS_COL_GAP;
+      const desiredTop = prevBottom === Number.NEGATIVE_INFINITY ? b.minY : prevBottom + ROW_GAP;
       if (b.minY < desiredTop) {
         const dy = desiredTop - b.minY;
         shiftSubtree(nodes, n.pick.mi, n.pick.path, dy);
@@ -945,42 +963,22 @@ function enforceSiblingNamespaceSeparation(nodes: CodespaceLayoutNode[]): void {
   }
 }
 
+/**
+ * 将各 NS 标题行的竖向位置对齐到「该命名空间内容列」外包矩形的垂直中心。
+ * 只改 NS 节点自身的 `y`，不移动成员/子树（连线在后续按最终坐标重绘）。
+ * 内容外包含子命名空间整棵子树与类簇，避免仅用直接子一行框导致标题偏上/偏下。
+ */
 function centerParentsOnChildren(nodes: CodespaceLayoutNode[]): void {
-  const nsNodes = nodes
-    .filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'ns' }> } => n.pick.t === 'ns')
-    .sort((a, b) => b.pick.path.length - a.pick.path.length);
-
-  const isSamePath = (a: number[], b: number[]) =>
-    a.length === b.length && a.every((v, i) => v === b[i]);
-
-  for (const ns of nsNodes) {
-    const p = ns.pick.path;
-    const directChildren = nodes.filter((n) => {
-      if (n.pick.t === 'module') return false;
-      if (n.pick.mi !== ns.pick.mi) return false;
-      if (n.pick.t === 'ns') {
-        return n.pick.path.length === p.length + 1 && isSamePath(n.pick.path.slice(0, p.length), p);
-      }
-      if (!isSamePath(n.pick.path, p)) return false;
-      if (n.pick.t === 'class') return (n.pick.classPath?.length ?? 0) === 0;
-      if (n.pick.t === 'enum') return n.pick.ci === undefined;
-      return n.pick.t === 'var' || n.pick.t === 'fn' || n.pick.t === 'macro';
-    });
-    if (!directChildren.length) continue;
-    const minY = Math.min(...directChildren.map((n) => n.y));
-    const maxY = Math.max(...directChildren.map((n) => n.y + n.h));
-    const targetY = (minY + maxY - ns.h) / 2;
-    ns.y = targetY;
-  }
-
-  const modNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'module' }> } => n.pick.t === 'module');
-  for (const mod of modNodes) {
-    const roots = nsNodes.filter((n) => n.pick.mi === mod.pick.mi && n.pick.path.length === 1);
-    if (!roots.length) continue;
-    const minY = Math.min(...roots.map((n) => n.y));
-    const maxY = Math.max(...roots.map((n) => n.y + n.h));
-    const targetY = (minY + maxY - mod.h) / 2;
-    mod.y = targetY;
+  const nsNodes = nodes.filter(
+    (n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'ns' }> } => n.pick.t === 'ns',
+  );
+  for (const ns of nsNodes.sort((a, b) => b.pick.path.length - a.pick.path.length)) {
+    const b = boundsOfNamespaceContent(nodes, ns.pick.mi, ns.pick.path);
+    if (!b) continue;
+    const span = b.maxY - b.minY;
+    if (span < ns.h - 0.01) continue;
+    const targetY = (b.minY + b.maxY - ns.h) / 2;
+    if (Math.abs(targetY - ns.y) >= 0.01) ns.y = targetY;
   }
 }
 
@@ -1149,37 +1147,6 @@ function recomputeBounds(
   return b;
 }
 
-function enforceDerivedClassesOnRight(
-  payload: MvModelCodespacePayload,
-  nodes: CodespaceLayoutNode[],
-): void {
-  const classNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class');
-  const nodeByClassId = new Map<string, CodespaceLayoutNode>();
-  for (const n of classNodes) {
-    const c = getClassAtPick(payload, n.pick);
-    if (c?.id) nodeByClassId.set(c.id, n);
-  }
-  const gap = 34;
-  for (let pass = 0; pass < 3; pass++) {
-    let moved = false;
-    for (const childNode of classNodes) {
-      const child = getClassAtPick(payload, childNode.pick);
-      if (!child) continue;
-      let minX = childNode.x;
-      for (const b of child.bases ?? []) {
-        const parentNode = nodeByClassId.get(b.targetId);
-        if (!parentNode) continue;
-        minX = Math.max(minX, parentNode.x + parentNode.w + gap);
-      }
-      if (minX > childNode.x) {
-        childNode.x = minX;
-        moved = true;
-      }
-    }
-    if (!moved) break;
-  }
-}
-
 /** 将 codespace payload 排版为平面节点 + 树状贝塞尔连线（世界坐标） */
 export function layoutCodespaceSvg(
   payload: MvModelCodespacePayload,
@@ -1204,21 +1171,33 @@ export function layoutCodespaceSvg(
     maxW = Math.max(maxW, w);
     cursorY += h + MODULE_GAP;
   });
-  enforceDerivedClassesOnRight(payload, nodesOut);
+  /** 不按 bases 把类推到右侧：模块树画布不表达继承，推远后会产生「单列成员 + 孤立类」与冗长连线 */
   enforceNestedClassClusterLayout(nodesOut);
   resolveClassNodeOverlaps(nodesOut);
   enforceNestedClassClusterLayout(nodesOut);
   resolveNodeOverlaps(nodesOut);
-  enforceSiblingNamespaceSeparation(nodesOut);
-  centerParentsOnChildren(nodesOut);
   enforceNestedClassClusterLayout(nodesOut);
+  /** 类簇会改动类/枚举的 y，须在「同级 NS 竖向留白」之前重算兄弟子树边界 */
+  enforceSiblingNamespaceSeparation(nodesOut);
   repackModulesVertically(nodesOut);
+  /** repack / 类簇 之后同一命名空间下列可能再次重叠，最后再压一遍 */
+  resolveClassNodeOverlaps(nodesOut);
+  resolveNodeOverlaps(nodesOut);
+  /** 在所有成员与模块条位置稳定后，再把各 NS 标题移到其内容列的竖直中心 */
+  centerParentsOnChildren(nodesOut);
+  resolveNodeOverlaps(nodesOut);
+  /**
+   * `centerParentsOnChildren` 只移动 NS 标题行的 y，会破坏先前按子树 bbox 对齐的同级间距；
+   * 最后再跑一次兄弟分离，把同一父下的 NS 子树竖向压紧为「上一棵底 + ROW_GAP」。
+   */
+  enforceSiblingNamespaceSeparation(nodesOut);
+  resolveNodeOverlaps(nodesOut);
   // 线在最终坐标上重建，避免后处理后节点与连线错位。
   const finalEdges: CodespaceLayoutEdge[] = [];
+  // 仅树线 + 类/枚举嵌套包含；不绘制 UML 泛化/继承、也不表示类间关联（在 uml-class 等视图中表示）
   appendTreeEdgesFromFinalNodes(nodesOut, finalEdges, bounds);
   appendNestedClassContainmentEdges(nodesOut, finalEdges, bounds);
   appendClassEnumContainmentEdges(nodesOut, finalEdges, bounds);
-  appendClassInheritanceEdges(payload, nodesOut, finalEdges, bounds);
   const finalBounds = recomputeBounds(nodesOut, finalEdges);
   finalBounds.maxX = Math.max(finalBounds.maxX, PAD + maxW + PAD);
   finalBounds.maxY = Math.max(finalBounds.maxY, cursorY - MODULE_GAP + PAD);

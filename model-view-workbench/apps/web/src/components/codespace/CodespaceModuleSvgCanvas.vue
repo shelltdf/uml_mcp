@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue';
+import { computed, inject, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import type { MvModelCodespacePayload } from '@mvwb/core';
 import { useCanvasViewport } from '../../composables/useCanvasViewport';
 import { CS_CANVAS_MSG_KEY, makeCodespaceLayoutLabels } from '../../i18n/codespace-canvas-messages';
@@ -10,6 +10,8 @@ const csMsg = inject(CS_CANVAS_MSG_KEY)!;
 const props = defineProps<{
   modelValue: MvModelCodespacePayload;
   selected: CodespaceSvgPick | null;
+  /** 与编辑器紧凑布局对齐：缩小边距与字号 */
+  compact?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -27,12 +29,85 @@ const emit = defineEmits<{
   requestDeletePick: [pick: CodespaceSvgPick];
 }>();
 
-const viewportRef = ref<HTMLElement | null>(null);
+const viewportRef = ref<SVGSVGElement | null>(null);
 const vp = useCanvasViewport(viewportRef);
 
-const layout = computed(() =>
-  layoutCodespaceSvg(props.modelValue, makeCodespaceLayoutLabels(csMsg.value)),
+const canvasBox = ref({ w: 400, h: 400 });
+let canvasResizeObs: ResizeObserver | undefined;
+
+const worldGroupTransform = computed(
+  () => `translate(${vp.panX.value}, ${vp.panY.value}) scale(${vp.scale.value})`,
 );
+
+const chromeInset = computed(() => (props.compact ? 8 : 12));
+
+const leftPanelW = computed(() =>
+  props.compact
+    ? Math.min(240, Math.max(120, canvasBox.value.w - 24))
+    : Math.min(280, Math.max(120, canvasBox.value.w - 24)),
+);
+
+const debugX = computed(() => Math.max(chromeInset.value, canvasBox.value.w - 268));
+
+/** 快捷键说明：按行拆成 <text> 行（纯 SVG，无 foreignObject） */
+const shortcutLines = computed(() => csMsg.value.svgKeysBody.split('\n'));
+const shortcutsExpanded = ref(false);
+const keysHeaderH = 22;
+const keysLineGap = 13;
+const keysPanelBodyH = computed(() =>
+  shortcutsExpanded.value ? 8 + shortcutLines.value.length * keysLineGap + 6 : 0,
+);
+const keysPanelH = computed(() => keysHeaderH + keysPanelBodyH.value);
+const toolbarCardSize = 40;
+const toolbarGap = 10;
+
+function toggleShortcuts(e: MouseEvent) {
+  e.stopPropagation();
+  shortcutsExpanded.value = !shortcutsExpanded.value;
+}
+
+const hudPad = 6;
+const hudBtnH = 24;
+const hudGap = 6;
+
+const hudY = computed(() =>
+  Math.max(chromeInset.value, canvasBox.value.h - (hudBtnH + hudPad * 2) - chromeInset.value),
+);
+
+const hudLayout = computed(() => {
+  const M = csMsg.value;
+  const pct = vp.zoomPercent.value;
+  const items: {
+    key: string;
+    label: string;
+    w: number;
+    title: string;
+    run?: () => void;
+  }[] = [
+    { key: 'zout', label: '−', w: 26, title: M.svgZoomOutTitle, run: () => vp.zoomDelta(-0.1) },
+    { key: 'pct', label: pct, w: 44, title: M.svgZoomPctTitle },
+    { key: 'zin', label: '+', w: 26, title: M.svgZoomInTitle, run: () => vp.zoomDelta(0.1) },
+    { key: 'fit', label: M.svgFitLabel, w: 52, title: M.svgFitTitle, run: () => fitView() },
+    { key: 'origin', label: M.svgOriginLabel, w: 52, title: M.svgOriginTitle, run: () => originView() },
+    { key: 'reset', label: M.svgResetLabel, w: 52, title: M.svgResetTitle, run: () => vp.resetZoom() },
+  ];
+  let x = hudPad;
+  const laid = items.map((it) => {
+    const ox = x;
+    x += it.w + hudGap;
+    return { ...it, x: ox };
+  });
+  const totalW = Math.max(x - hudGap + hudPad, 120);
+  return { items: laid, totalW };
+});
+
+/** 用户点击「重新排版」时递增，强制 layout 计算属性重跑布局算法（即使 model 引用未变） */
+const layoutReloadNonce = ref(0);
+
+const layout = computed(() => {
+  void layoutReloadNonce.value;
+  return layoutCodespaceSvg(props.modelValue, makeCodespaceLayoutLabels(csMsg.value));
+});
 
 const contentOffset = computed(() => {
   const b = layout.value.bounds;
@@ -49,38 +124,69 @@ const worldMetrics = computed(() => {
   return { w, h };
 });
 
-const worldDivStyle = computed(() => ({
-  width: `${worldMetrics.value.w}px`,
-  height: `${worldMetrics.value.h}px`,
-  transform: vp.transformStyle.value,
-  transformOrigin: '0 0' as const,
-}));
+/**
+ * 将 path `d` 上相邻数值视为 (x,y) 对，逐项加上 translate(tx,ty)，
+ * 与 `<path :d :transform="'translate(tx,ty)'">` 在几何上等价（便于与 node worldRect 同坐标系）。
+ */
+function translateSvgPathD(d: string, tx: number, ty: number): string {
+  let i = 0;
+  return d.replace(/[-+]?(?:\d*\.\d+|\d+(?:\.\d+)?)(?:[eE][-+]?\d+)?/g, (tok) => {
+    const v = parseFloat(tok);
+    if (Number.isNaN(v)) return tok;
+    const out = v + (i % 2 === 0 ? tx : ty);
+    i++;
+    return String(out);
+  });
+}
 
-const renderDebugSnapshot = computed(() => ({
-  timestamp: new Date().toISOString(),
-  viewport: {
-    scale: vp.scale.value,
-    panX: vp.panX.value,
-    panY: vp.panY.value,
-    zoomPercent: vp.zoomPercent.value,
-  },
-  worldMetrics: worldMetrics.value,
-  contentOffset: contentOffset.value,
-  bounds: layout.value.bounds,
-  viewBounds: viewBounds.value,
-  nodes: layout.value.nodes.map((n) => ({
+const renderDebugSnapshot = computed(() => {
+  const ox = contentOffset.value.x;
+  const oy = contentOffset.value.y;
+  const nodes = layout.value.nodes.map((n, ni) => ({
+    index: ni,
     pick: n.pick,
     label: n.label,
-    x: n.x,
-    y: n.y,
-    w: n.w,
-    h: n.h,
-  })),
-  edges: layout.value.edges.map((e) => ({
+    /** 布局算法坐标（与 layout 一致） */
+    layoutRect: { x: n.x, y: n.y, w: n.w, h: n.h },
+    /** 与 DOM `<rect :x="n.x+ox" ...>` 同一世界坐标系 */
+    worldRect: {
+      x: n.x + ox,
+      y: n.y + oy,
+      w: n.w,
+      h: n.h,
+      maxX: n.x + ox + n.w,
+      maxY: n.y + oy + n.h,
+    },
+  }));
+  const edges = layout.value.edges.map((e, ei) => ({
+    index: ei,
     kind: e.kind ?? 'tree',
-    d: e.d,
-  })),
-}));
+    /** 与 `<path :d>` 完全一致（不含 transform） */
+    dLocal: e.d,
+    /** 折合 `translate(contentOffset)` 后的路径，便于与 worldRect / diagramBounds 对齐排查 */
+    dWorld: translateSvgPathD(e.d, ox, oy),
+  }));
+
+  return {
+    timestamp: new Date().toISOString(),
+    coordsNote:
+      'nodes.worldRect、edges.dWorld：与 SVG 内容同一坐标系（含 contentOffset）。edges.dLocal 与 DOM path[d] 一致，path 另有 transform=translate(contentOffset)。',
+    nodeCount: nodes.length,
+    edgeCount: edges.length,
+    viewport: {
+      scale: vp.scale.value,
+      panX: vp.panX.value,
+      panY: vp.panY.value,
+      zoomPercent: vp.zoomPercent.value,
+    },
+    worldMetrics: worldMetrics.value,
+    contentOffset: contentOffset.value,
+    bounds: layout.value.bounds,
+    viewBounds: viewBounds.value,
+    nodes,
+    edges,
+  };
+});
 
 const viewBounds = computed(() => {
   const b = layout.value.bounds;
@@ -89,16 +195,6 @@ const viewBounds = computed(() => {
     minY: b.minY + contentOffset.value.y,
     maxX: b.maxX + contentOffset.value.x,
     maxY: b.maxY + contentOffset.value.y,
-  };
-});
-
-const viewportBgStyle = computed(() => {
-  const s = Math.max(8, Math.round(24 * vp.scale.value));
-  const px = Math.round(vp.panX.value);
-  const py = Math.round(vp.panY.value);
-  return {
-    backgroundSize: `${s}px ${s}px`,
-    backgroundPosition: `${px}px ${py}px`,
   };
 });
 
@@ -182,18 +278,39 @@ function fitView() {
   vp.zoomToFit(viewBounds.value, 28);
 }
 
+function reflowLayout() {
+  layoutReloadNonce.value += 1;
+  nextTick(() => {
+    fitView();
+  });
+}
+
 function originView() {
   vp.originToContentCenter(viewBounds.value);
 }
+
+const copyDebugFeedback = ref('');
+let copyDebugFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function copyRenderDebugInfo() {
   const text = JSON.stringify(renderDebugSnapshot.value, null, 2);
   try {
     await navigator.clipboard.writeText(text);
-    window.alert('Drawing info copied to clipboard.');
-  }
-  catch {
-    window.alert('Copy failed: clipboard write is not supported in this environment.');
+    if (copyDebugFeedbackTimer) {
+      clearTimeout(copyDebugFeedbackTimer);
+      copyDebugFeedbackTimer = null;
+    }
+    copyDebugFeedback.value = 'Copied';
+    copyDebugFeedbackTimer = setTimeout(() => {
+      copyDebugFeedback.value = '';
+      copyDebugFeedbackTimer = null;
+    }, 2000);
+  } catch {
+    copyDebugFeedback.value = 'Copy failed';
+    copyDebugFeedbackTimer = setTimeout(() => {
+      copyDebugFeedback.value = '';
+      copyDebugFeedbackTimer = null;
+    }, 2500);
   }
 }
 
@@ -224,11 +341,22 @@ function openCtxMenu(e: MouseEvent, items: CtxMenuItem[]) {
   const pad = 8;
   const mw = 220;
   const mh = Math.max(44, items.length * 36 + 8);
-  ctxMenuX.value = Math.min(e.clientX, window.innerWidth - mw - pad);
-  ctxMenuY.value = Math.min(e.clientY, window.innerHeight - mh - pad);
+  const svg = viewportRef.value;
+  if (svg) {
+    const r = svg.getBoundingClientRect();
+    const lx = e.clientX - r.left;
+    const ly = e.clientY - r.top;
+    ctxMenuX.value = Math.min(Math.max(pad, lx), Math.max(pad, r.width - mw - pad));
+    ctxMenuY.value = Math.min(Math.max(pad, ly), Math.max(pad, r.height - mh - pad));
+  } else {
+    ctxMenuX.value = Math.min(e.clientX, window.innerWidth - mw - pad);
+    ctxMenuY.value = Math.min(e.clientY, window.innerHeight - mh - pad);
+  }
   ctxMenuItems.value = items;
   ctxMenuOpen.value = true;
 }
+
+const ctxMenuH = computed(() => Math.max(44, ctxMenuItems.value.length * 36 + 8));
 
 function onViewportContextMenu(e: MouseEvent) {
   e.preventDefault();
@@ -330,43 +458,82 @@ function onCtxKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') closeCtxMenu();
 }
 
+function bindCanvasResize() {
+  canvasResizeObs?.disconnect();
+  const el = viewportRef.value;
+  if (!el) return;
+  const sync = () => {
+    const r = el.getBoundingClientRect();
+    canvasBox.value = { w: r.width, h: r.height };
+  };
+  sync();
+  canvasResizeObs = new ResizeObserver(sync);
+  canvasResizeObs.observe(el);
+}
+
 onMounted(() => {
   mountedFit();
   window.addEventListener('keydown', onCtxKeydown);
+  nextTick(() => {
+    bindCanvasResize();
+  });
 });
 
 onUnmounted(() => {
+  canvasResizeObs?.disconnect();
+  canvasResizeObs = undefined;
+  if (copyDebugFeedbackTimer) {
+    clearTimeout(copyDebugFeedbackTimer);
+    copyDebugFeedbackTimer = null;
+  }
   window.removeEventListener('keydown', onCtxKeydown);
 });
 </script>
 
 <template>
-  <div class="cs-svg-canvas">
-    <details class="cs-svg-keys">
-      <summary :title="csMsg.svgKeysTitle">{{ csMsg.svgKeysSummary }}</summary>
-      <pre class="cs-svg-keys-pre">{{ csMsg.svgKeysBody }}</pre>
-    </details>
+  <svg
+    ref="viewportRef"
+    class="cs-svg-canvas"
+    :class="{ 'cs-svg-canvas--compact': compact }"
+    role="region"
+    :aria-label="csMsg.svgCanvasRegionAria"
+    width="100%"
+    height="100%"
+    @wheel="vp.onWheel"
+    @pointerdown="vp.onPointerDown"
+    @pointermove="vp.onPointerMove"
+    @pointerup="vp.onPointerUp"
+    @pointerleave="vp.onPointerUp"
+    @pointercancel="vp.onPointerUp"
+    @contextmenu="onViewportContextMenu"
+  >
+    <rect class="cs-svg-underlay" x="0" y="0" width="100%" height="100%" fill="#f8fafc" />
 
-    <div
-      ref="viewportRef"
-      class="cs-svg-viewport"
-      :style="viewportBgStyle"
-      @wheel="vp.onWheel"
-      @pointerdown="vp.onPointerDown"
-      @pointermove="vp.onPointerMove"
-      @pointerup="vp.onPointerUp"
-      @pointerleave="vp.onPointerUp"
-      @pointercancel="vp.onPointerUp"
-      @click="onViewportClick"
-      @contextmenu="onViewportContextMenu"
-    >
-      <div class="cs-svg-world" :style="worldDivStyle">
-        <svg
-          class="cs-svg-root"
+    <defs>
+      <filter id="cs-svg-toolbar-shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.1" />
+      </filter>
+      <filter id="cs-svg-menu-shadow" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="0" dy="8" stdDeviation="12" flood-opacity="0.18" />
+      </filter>
+    </defs>
+
+    <g :transform="worldGroupTransform">
+      <g class="cs-svg-world">
+        <rect
+          x="0"
+          y="0"
           :width="worldMetrics.w"
           :height="worldMetrics.h"
-          :viewBox="`0 0 ${worldMetrics.w} ${worldMetrics.h}`"
+          fill="transparent"
+          @click="onViewportClick"
+        />
+        <g
+          id="mv-codespace-module-tree-svg"
+          class="cs-svg-diagram-root"
+          role="img"
           :aria-label="csMsg.svgAriaModuleTree"
+          focusable="false"
         >
           <defs>
             <clipPath v-for="(n, ni) in layout.nodes" :key="'clipdef-' + ni" :id="clipIdForIndex(ni)">
@@ -379,7 +546,6 @@ onUnmounted(() => {
               />
             </clipPath>
           </defs>
-          <!-- 连线 → 矩形 → 文字：贝塞尔边在矩形之下；实线 -->
           <g class="cs-svg-edges" aria-hidden="true">
             <path
               v-for="(e, ei) in layout.edges"
@@ -432,204 +598,303 @@ onUnmounted(() => {
               {{ n.label }}
             </text>
           </g>
-        </svg>
-      </div>
-    </div>
+        </g>
+      </g>
+    </g>
 
-    <div class="cs-svg-hud" :aria-label="csMsg.svgHudAria">
-      <button type="button" class="cs-svg-hud-btn" :title="csMsg.svgZoomOutTitle" @click="vp.zoomDelta(-0.1)">−</button>
-      <span class="cs-svg-hud-pct" :title="csMsg.svgZoomPctTitle">{{ vp.zoomPercent }}</span>
-      <button type="button" class="cs-svg-hud-btn" :title="csMsg.svgZoomInTitle" @click="vp.zoomDelta(0.1)">+</button>
-      <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" :title="csMsg.svgFitTitle" @click="fitView">{{ csMsg.svgFitLabel }}</button>
-      <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" :title="csMsg.svgOriginTitle" @click="originView">
-        {{ csMsg.svgOriginLabel }}
-      </button>
-      <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" :title="csMsg.svgResetTitle" @click="vp.resetZoom">
-        {{ csMsg.svgResetLabel }}
-      </button>
-    </div>
-    <div class="cs-svg-debug-actions">
-      <button
-        type="button"
-        class="cs-svg-hud-btn cs-svg-hud-wide"
-        title="Copy current drawing info to clipboard"
-        @click="copyRenderDebugInfo"
+    <!-- 纯 SVG 叠层：快捷键、工具条、HUD、调试（无 foreignObject） -->
+    <g class="cs-svg-chrome" pointer-events="none">
+      <g
+        class="cs-svg-left-stack"
+        pointer-events="auto"
+        :transform="`translate(${chromeInset}, ${chromeInset})`"
       >
-        Copy drawing info
-      </button>
-    </div>
-
-    <Teleport to="body">
-      <template v-if="ctxMenuOpen">
-        <div
-          class="cs-ctx-backdrop"
-          role="presentation"
-          aria-hidden="true"
-          @click="closeCtxMenu"
-          @contextmenu.prevent="closeCtxMenu"
-        />
-        <div
-          class="cs-ctx-menu"
-          role="menu"
-          :style="{ left: `${ctxMenuX}px`, top: `${ctxMenuY}px` }"
-          @click.stop
-        >
-          <button
-            v-for="item in ctxMenuItems"
-            :key="'ctx-' + item.key"
-            type="button"
-            class="cs-ctx-menu-item"
-            :class="{ 'cs-ctx-menu-item--danger': item.danger }"
-            role="menuitem"
-            :title="item.title ?? item.label"
-            @click="onCtxMenuItemClick(item)"
+        <g class="cs-svg-keys" @click.stop>
+          <rect
+            :width="leftPanelW"
+            :height="keysPanelH"
+            rx="6"
+            fill="rgba(255,255,255,0.92)"
+            stroke="#e2e8f0"
+          />
+          <rect
+            :width="leftPanelW"
+            :height="keysHeaderH"
+            fill="transparent"
+            class="cs-svg-keys-hit"
+            @click="toggleShortcuts"
           >
+            <title>{{ csMsg.svgKeysTitle }}</title>
+          </rect>
+          <text x="8" y="15" class="cs-svg-keys-summary" pointer-events="none">
+            {{ csMsg.svgKeysSummary }} {{ shortcutsExpanded ? '▴' : '▾' }}
+          </text>
+          <g v-if="shortcutsExpanded">
+            <text
+              v-for="(line, li) in shortcutLines"
+              :key="'sk-' + li"
+              x="8"
+              :y="keysHeaderH + 8 + (li + 1) * keysLineGap - 2"
+              class="cs-svg-keys-line"
+            >
+              {{ line }}
+            </text>
+          </g>
+        </g>
+
+        <g
+          class="cs-svg-canvas-toolbar"
+          role="toolbar"
+          :aria-label="csMsg.svgCanvasToolbarAria"
+          :transform="`translate(0, ${keysPanelH + toolbarGap})`"
+        >
+          <rect
+            x="0"
+            y="0"
+            :width="toolbarCardSize"
+            :height="toolbarCardSize"
+            rx="8"
+            fill="color-mix(in srgb, #fafafa 94%, transparent)"
+            stroke="#ccc"
+            filter="url(#cs-svg-toolbar-shadow)"
+          />
+          <g
+            role="button"
+            :tabindex="0"
+            :aria-label="csMsg.svgRelayoutLabel"
+            :transform="`translate(${toolbarCardSize / 2 - 11}, ${toolbarCardSize / 2 - 11})`"
+            class="cs-svg-relayout-btn"
+            @click.stop="reflowLayout"
+            @keydown.enter.prevent="reflowLayout"
+          >
+            <title>{{ csMsg.svgRelayoutTitle }}</title>
+            <rect x="-6" y="-6" width="34" height="34" rx="6" fill="transparent" class="cs-svg-relayout-hit" />
+            <g stroke="#0f172a" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="6" height="6" rx="1.2" stroke-width="1.6" />
+              <rect x="15" y="4" width="6" height="6" rx="1.2" stroke-width="1.6" />
+              <rect x="9" y="14" width="6" height="6" rx="1.2" stroke-width="1.6" />
+              <path d="M9 7h6M12 10v4" stroke-width="1.4" />
+            </g>
+          </g>
+        </g>
+      </g>
+
+      <g
+        class="cs-svg-hud-wrap"
+        pointer-events="auto"
+        :transform="`translate(${chromeInset}, ${hudY})`"
+        :aria-label="csMsg.svgHudAria"
+      >
+        <rect
+          x="0"
+          y="0"
+          :width="hudLayout.totalW"
+          :height="hudBtnH + hudPad * 2"
+          rx="6"
+          fill="rgba(255, 255, 255, 0.94)"
+          stroke="#cbd5e1"
+        />
+        <g
+          v-for="it in hudLayout.items"
+          :key="it.key"
+          :transform="`translate(${it.x}, ${hudPad})`"
+          class="cs-svg-hud-cell"
+        >
+          <title>{{ it.title }}</title>
+          <template v-if="it.run">
+            <rect
+              :width="it.w"
+              :height="hudBtnH"
+              rx="4"
+              fill="#fff"
+              stroke="#94a3b8"
+              class="cs-svg-hud-btn-rect"
+              @click.stop="it.run()"
+            />
+            <text
+              :x="it.w / 2"
+              :y="hudBtnH / 2 + 4"
+              text-anchor="middle"
+              class="cs-svg-hud-txt"
+              pointer-events="none"
+            >
+              {{ it.label }}
+            </text>
+          </template>
+          <template v-else>
+            <rect :width="it.w" :height="hudBtnH" rx="4" fill="#f8fafc" stroke="#cbd5e1" />
+            <text
+              :x="it.w / 2"
+              :y="hudBtnH / 2 + 4"
+              text-anchor="middle"
+              class="cs-svg-hud-pct-txt"
+              pointer-events="none"
+            >
+              {{ it.label }}
+            </text>
+          </template>
+        </g>
+      </g>
+
+      <g class="cs-svg-debug-wrap" pointer-events="auto" :transform="`translate(${debugX}, ${hudY})`">
+        <g class="cs-svg-debug-actions" @click.stop="copyRenderDebugInfo">
+          <title>Copy full layout: every node worldRect + every edge dLocal/dWorld (SVG paths)</title>
+          <rect x="0" y="0" width="158" height="26" rx="4" fill="#fff" stroke="#94a3b8" class="cs-svg-debug-btn-rect" />
+          <text x="79" y="17" text-anchor="middle" class="cs-svg-debug-btn-txt">Copy drawing info</text>
+        </g>
+        <text v-if="copyDebugFeedback" x="166" y="17" class="cs-svg-copy-toast-txt" role="status">
+          {{ copyDebugFeedback }}
+        </text>
+      </g>
+    </g>
+
+    <g v-if="ctxMenuOpen" class="cs-svg-ctx-layer" pointer-events="auto">
+      <rect width="100%" height="100%" fill="transparent" class="cs-svg-ctx-backdrop" @click="closeCtxMenu" @contextmenu.prevent="closeCtxMenu" />
+      <g :transform="`translate(${ctxMenuX}, ${ctxMenuY})`" role="menu">
+        <rect width="220" :height="ctxMenuH" rx="8" fill="#fff" stroke="#94a3b8" filter="url(#cs-svg-menu-shadow)" />
+        <g
+          v-for="(item, ci) in ctxMenuItems"
+          :key="'ctx-' + item.key"
+          :transform="`translate(0, ${4 + ci * 36})`"
+          role="menuitem"
+          class="cs-svg-ctx-row"
+          @click.stop="onCtxMenuItemClick(item)"
+        >
+          <title>{{ item.title ?? item.label }}</title>
+          <rect width="220" height="36" fill="transparent" class="cs-svg-ctx-hit" />
+          <text x="14" y="23" :class="item.danger ? 'cs-svg-ctx-txt cs-svg-ctx-txt--danger' : 'cs-svg-ctx-txt'" pointer-events="none">
             {{ item.label }}
-          </button>
-        </div>
-      </template>
-    </Teleport>
-  </div>
+          </text>
+        </g>
+      </g>
+    </g>
+  </svg>
 </template>
 
 <style scoped>
 .cs-svg-canvas {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 260px;
+  display: block;
   flex: 1;
   min-width: 0;
+  min-height: 260px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   overflow: hidden;
   background: #fff;
-}
-.cs-svg-viewport {
-  flex: 1;
-  min-height: 220px;
-  overflow: hidden;
   cursor: default;
-  background-color: #f8fafc;
-  background-image:
-    linear-gradient(to right, rgba(148, 163, 184, 0.22) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148, 163, 184, 0.22) 1px, transparent 1px);
 }
-.cs-svg-world {
-  position: relative;
+
+.cs-svg-diagram-root {
   transform-origin: 0 0;
 }
-.cs-svg-root {
-  display: block;
-  vertical-align: top;
-}
+
 .cs-svg-hit {
   cursor: pointer;
 }
+
 .cs-svg-txt {
   user-select: none;
 }
-.cs-svg-keys {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 2;
-  max-width: min(280px, 42vw);
-  font-size: 0.72rem;
-  color: #334155;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 4px 8px;
-}
-.cs-svg-keys-pre {
-  margin: 6px 0 0;
-  white-space: pre-wrap;
-  font: 11px/1.45 ui-monospace, Consolas, monospace;
-  color: #475569;
-}
-.cs-svg-hud {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  z-index: 2;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  font-size: 0.78rem;
-}
-.cs-svg-hud-pct {
-  min-width: 3.2em;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-.cs-svg-hud-btn {
-  padding: 4px 8px;
-  border: 1px solid #94a3b8;
-  border-radius: 4px;
-  background: #fff;
-  cursor: pointer;
-  font: inherit;
-}
-.cs-svg-hud-btn:hover {
-  background: #f1f5f9;
-}
-.cs-svg-hud-wide {
-  padding-inline: 6px;
-}
-.cs-svg-debug-actions {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-}
-</style>
 
-<style>
-/* Teleport 到 body，不受画布 overflow 裁剪 */
-.cs-ctx-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 250;
-  background: transparent;
+.cs-svg-keys-summary {
+  font-size: 11px;
+  fill: #334155;
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }
-.cs-ctx-menu {
-  position: fixed;
-  z-index: 251;
-  min-width: 160px;
-  padding: 4px 0;
-  border: 1px solid #94a3b8;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+
+.cs-svg-keys-line {
+  font-size: 11px;
+  fill: #475569;
+  font-family: ui-monospace, Consolas, monospace;
 }
-.cs-ctx-menu-item {
-  display: block;
-  width: 100%;
-  margin: 0;
-  padding: 8px 14px;
-  border: none;
-  background: none;
-  font: inherit;
-  font-size: 0.85rem;
-  text-align: left;
+
+.cs-svg-keys-hit {
   cursor: pointer;
-  color: #0f172a;
 }
-.cs-ctx-menu-item:hover {
-  background: #f1f5f9;
+
+.cs-svg-relayout-btn {
+  cursor: pointer;
+  outline: none;
 }
-.cs-ctx-menu-item--danger {
-  color: #b91c1c;
+
+.cs-svg-relayout-btn:focus .cs-svg-relayout-hit {
+  stroke: #2563eb;
+  stroke-width: 1;
 }
-.cs-ctx-menu-item--danger:hover {
-  background: #fef2f2;
+
+.cs-svg-hud-btn-rect {
+  cursor: pointer;
+}
+
+.cs-svg-hud-btn-rect:hover {
+  fill: #f1f5f9;
+}
+
+.cs-svg-hud-txt {
+  font-size: 12px;
+  fill: #0f172a;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.cs-svg-hud-pct-txt {
+  font-size: 12px;
+  fill: #0f172a;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.cs-svg-debug-btn-rect {
+  cursor: pointer;
+}
+
+.cs-svg-debug-btn-rect:hover {
+  fill: #f8fafc;
+}
+
+.cs-svg-debug-btn-txt {
+  font-size: 11px;
+  fill: #0f172a;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.cs-svg-copy-toast-txt {
+  font-size: 11px;
+  fill: #15803d;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.cs-svg-ctx-hit {
+  cursor: pointer;
+}
+
+.cs-svg-ctx-hit:hover {
+  fill: #f1f5f9;
+}
+
+.cs-svg-ctx-txt {
+  font-size: 13px;
+  fill: #0f172a;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.cs-svg-ctx-txt--danger {
+  fill: #b91c1c;
+}
+
+.cs-svg-canvas--compact .cs-svg-keys-summary {
+  font-size: 10px;
+}
+
+.cs-svg-canvas--compact .cs-svg-keys-line {
+  font-size: 10px;
+}
+
+.cs-svg-canvas--compact .cs-svg-hud-txt,
+.cs-svg-canvas--compact .cs-svg-hud-pct-txt {
+  font-size: 11px;
+}
+
+.cs-svg-canvas--compact .cs-svg-debug-btn-txt {
+  font-size: 10px;
 }
 </style>

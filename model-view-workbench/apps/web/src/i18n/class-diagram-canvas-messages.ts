@@ -42,8 +42,9 @@ export type ClassDiagramCanvasMessages = {
   /** 调试：复制当前画布状态 JSON */
   cdeCopyDrawingInfo: string;
   cdeCopyDrawingInfoTitle: string;
-  cdeCopyDrawingInfoOk: string;
-  cdeCopyDrawingInfoFail: string;
+  /** 复制成功后按钮旁短暂提示（非 alert） */
+  cdeCopyDrawingInfoToastOk: string;
+  cdeCopyDrawingInfoToastFail: string;
 };
 
 export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMessages> = {
@@ -83,10 +84,11 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeCtxRelatedNone: '无可添加的一层相关类型',
     cdeCtxRelatedNeedModel: '需绑定 modelRefs',
     cdeCtxRelatedNoResolve: '无法在 codespace 中解析当前类（检查 modelRefs / 类 id）',
-    cdeCopyDrawingInfo: 'Copy drawing info',
-    cdeCopyDrawingInfoTitle: '将当前类图画布调试信息复制到剪贴板（viewport、类、连线、layout、payload）',
-    cdeCopyDrawingInfoOk: '类图调试信息已复制到剪贴板。',
-    cdeCopyDrawingInfoFail: '复制失败：当前环境不支持写入剪贴板。',
+    cdeCopyDrawingInfo: '复制调试',
+    cdeCopyDrawingInfoTitle:
+      '复制调试 JSON：含 renderGeometry（类框 nodeBounds、边 path 的 d、路由模式）；relationsSummary；payload 真源',
+    cdeCopyDrawingInfoToastOk: '已复制',
+    cdeCopyDrawingInfoToastFail: '复制失败',
   },
   en: {
     cdeNewClass: 'New class',
@@ -126,10 +128,10 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeCtxRelatedNone: 'No one-hop related types',
     cdeCtxRelatedNeedModel: 'Requires modelRefs',
     cdeCtxRelatedNoResolve: 'Cannot resolve this class in bound codespace (check modelRefs / ids)',
-    cdeCopyDrawingInfo: 'Copy drawing info',
+    cdeCopyDrawingInfo: 'Copy debug',
     cdeCopyDrawingInfoTitle:
-      'Copy debug snapshot to clipboard (viewport, classes, links, layout, payload)',
-    cdeCopyDrawingInfoOk: 'Drawing info copied to clipboard.',
-    cdeCopyDrawingInfoFail: 'Copy failed: clipboard write is not supported in this environment.',
+      'Copy debug JSON: renderGeometry (node bounds, SVG path d, edge render modes), relationsSummary, payload',
+    cdeCopyDrawingInfoToastOk: 'Copied',
+    cdeCopyDrawingInfoToastFail: 'Copy failed',
   },
 };
