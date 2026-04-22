@@ -296,6 +296,7 @@ function addEnum(mi: number, path: number[]) {
     n.enums.push({
       id: newCodespaceUniqueId('enum', d),
       name,
+      literals: ['Value1'],
     });
   });
 }
@@ -312,7 +313,7 @@ function addClassEnum(mi: number, path: number[], ci: number, classPath?: number
       csCanvasMsg.value.newEnumName,
       c.enums.map((e) => e.name ?? ''),
     );
-    c.enums.push({ name, enumGroup: 'default', value: '0' });
+    c.enums.push({ name, literals: ['Value1'] });
   });
 }
 

@@ -56,7 +56,7 @@ type SpecialMethodTemplate = {
   label: string;
   method: Omit<MvCodespaceClassMethod, 'name' | 'notes'> & { name: string };
 };
-type ClassifierTabKey = 'basic' | 'bases' | 'members' | 'properties' | 'methods';
+type ClassifierTabKey = 'basic' | 'bases' | 'internals' | 'members' | 'properties' | 'methods';
 
 const SPECIAL_METHOD_TEMPLATES: readonly SpecialMethodTemplate[] = [
   { id: 'ctor-default', category: '构造/析构', label: '默认构造函数', method: { name: 'constructor', methodKind: 'constructor', type: 'void', params: [] } },
@@ -557,8 +557,8 @@ function normalizeEnumMember(mem: MvCodespaceClassEnum): void {
   delete m.virtual;
   delete m.static;
   delete m.typeFromAssociation;
-  if (!mem.value && mem.type) mem.value = mem.type;
-  if (mem.value && !mem.type) mem.type = mem.value;
+  if (!Array.isArray(mem.literals)) mem.literals = [];
+  mem.literals = mem.literals.map((x) => String(x ?? '').trim()).filter(Boolean);
 }
 
 function parseParamsFromSignature(signature: string): MvCodespaceMethodParam[] {
@@ -776,7 +776,7 @@ function addEnumMember() {
     if (!c) return;
     if (!c.enums) c.enums = [];
     const name = ensureUniqueClassifierItemName(c, 'ENUM');
-    c.enums.push({ name, enumGroup: 'default', value: '0' });
+    c.enums.push({ name, literals: ['Value1'] });
   });
 }
 
@@ -938,6 +938,7 @@ watch(
       <div class="cde-float-tabs">
         <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'basic' }" @click="activeTab = 'basic'">基础信息</button>
         <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'bases' }" @click="activeTab = 'bases'">继承关系</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'internals' }" @click="activeTab = 'internals'">内部类型</button>
         <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'members' }" @click="activeTab = 'members'">成员</button>
         <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'properties' }" @click="activeTab = 'properties'">属性</button>
         <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'methods' }" @click="activeTab = 'methods'">方法</button>
@@ -1043,6 +1044,12 @@ watch(
           <button type="button" class="add-row" :title="csMsg.flClsAddBaseTitle" @click="addBase">
             {{ csMsg.flClsAddBaseLabel }}
           </button>
+        </div>
+      </section>
+
+      <section v-if="activeTab === 'internals'" class="cde-section-card">
+        <h4 class="cde-section-title">内部类型</h4>
+        <div class="cs-actions">
           <button type="button" class="add-row" title="新增当前类内部的嵌套类" @click="addSubclass">
             ＋ 内部类
           </button>

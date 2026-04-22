@@ -517,8 +517,18 @@ function validateCodespaceClassifierEnum(
   if (typeof mo.name !== 'string' || !mo.name.trim()) {
     return { ok: false, message: `${mp}.name must be a non-empty string` };
   }
-  const ms = validateCodespaceOptionalString(mo, mp, ['type', 'enumGroup', 'value', 'notes']);
+  const ms = validateCodespaceOptionalString(mo, mp, ['type', 'value', 'notes']);
   if (!ms.ok) return ms;
+  if ('literals' in mo && mo.literals !== undefined) {
+    if (!Array.isArray(mo.literals)) {
+      return { ok: false, message: `${mp}.literals must be an array when present` };
+    }
+    for (let i = 0; i < mo.literals.length; i++) {
+      if (typeof mo.literals[i] !== 'string') {
+        return { ok: false, message: `${mp}.literals[${i}] must be a string` };
+      }
+    }
+  }
   return { ok: true };
 }
 

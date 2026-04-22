@@ -47,6 +47,55 @@ function patchEnum(part: Partial<MvCodespaceClassEnum>) {
   });
 }
 
+function addLiteral() {
+  props.runPatch((d) => {
+    const e = resolveEnum(d);
+    if (!e) return;
+    if (!e.literals) e.literals = [];
+    let i = e.literals.length + 1;
+    let nextName = `Item${i}`;
+    const used = new Set(
+      e.literals
+        .map((x) => x.split('=').map((p) => p.trim())[0] ?? '')
+        .filter(Boolean),
+    );
+    while (used.has(nextName)) {
+      i++;
+      nextName = `Item${i}`;
+    }
+    e.literals.push(nextName);
+  });
+}
+
+function parseLiteral(raw: string): { name: string; value: string } {
+  const s = String(raw ?? '');
+  const eq = s.indexOf('=');
+  if (eq < 0) return { name: s.trim(), value: '' };
+  return {
+    name: s.slice(0, eq).trim(),
+    value: s.slice(eq + 1).trim(),
+  };
+}
+
+function patchLiteral(idx: number, part: { name?: string; value?: string }) {
+  props.runPatch((d) => {
+    const e = resolveEnum(d);
+    if (!e?.literals?.[idx]) return;
+    const cur = parseLiteral(e.literals[idx]);
+    const name = (part.name ?? cur.name).trim();
+    const value = (part.value ?? cur.value).trim();
+    e.literals[idx] = value ? `${name} = ${value}` : name;
+  });
+}
+
+function removeLiteral(idx: number) {
+  props.runPatch((d) => {
+    const e = resolveEnum(d);
+    if (!e?.literals) return;
+    e.literals.splice(idx, 1);
+  });
+}
+
 function removeEnum() {
   props.runPatch((d) => {
     const ns = getNamespaceAtPath(d, props.mi, props.path);
@@ -81,27 +130,7 @@ function removeEnum() {
         />
       </label>
       <label class="field">
-        <span>group</span>
-        <input
-          type="text"
-          class="wide"
-          :value="enumItem.enumGroup ?? ''"
-          title="enum group"
-          @input="patchEnum({ enumGroup: ($event.target as HTMLInputElement).value })"
-        />
-      </label>
-      <label class="field">
-        <span>value</span>
-        <input
-          type="text"
-          class="wide"
-          :value="enumItem.value ?? enumItem.type ?? ''"
-          :title="csMsg.flTechTypeTitle"
-          @input="patchEnum({ value: ($event.target as HTMLInputElement).value })"
-        />
-      </label>
-      <label class="field">
-        <span>type</span>
+        <span>underlyingType</span>
         <input
           type="text"
           class="wide"
@@ -110,6 +139,35 @@ function removeEnum() {
           @input="patchEnum({ type: ($event.target as HTMLInputElement).value })"
         />
       </label>
+      <div class="field">
+        <span>values</span>
+        <div class="cs-literal-list">
+          <div v-for="(lit, li) in enumItem.literals ?? []" :key="'lit-' + li" class="cs-literal-row">
+            <input
+              type="text"
+              class="wide"
+              :value="parseLiteral(lit).name"
+              title="enum name"
+              placeholder="name"
+              @input="patchLiteral(li, { name: ($event.target as HTMLInputElement).value })"
+            />
+            <input
+              type="text"
+              class="wide"
+              :value="parseLiteral(lit).value"
+              title="enum value"
+              placeholder="value"
+              @input="patchLiteral(li, { value: ($event.target as HTMLInputElement).value })"
+            />
+            <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeLiteral(li)">
+              {{ csMsg.flClsRemoveMemberLabel }}
+            </button>
+          </div>
+          <button type="button" class="add-row" :title="csMsg.flClsAddEnumLiteralTitle" @click="addLiteral">
+            {{ csMsg.flClsAddEnumLiteralLabel }}
+          </button>
+        </div>
+      </div>
       <label class="field">
         <span>notes</span>
         <input
@@ -126,3 +184,20 @@ function removeEnum() {
     </template>
   </CodespaceFloatShell>
 </template>
+
+<style scoped>
+.cs-literal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.cs-literal-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cs-literal-row .wide {
+  flex: 1 1 auto;
+}
+</style>

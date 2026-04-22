@@ -151,7 +151,8 @@ export interface MvCodespaceClassMethod {
 /** Classifier 枚举字面量（JSON 键名 `enum`） */
 export interface MvCodespaceClassEnum {
   name: string;
-  enumGroup?: string;
+  /** C++ enum body values, e.g. `Ok = 0` */
+  literals?: string[];
   /** 字面量值（如 C++ 枚举项显式赋值） */
   value?: string;
   type?: string;

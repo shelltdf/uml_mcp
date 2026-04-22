@@ -218,8 +218,7 @@ function formatLines(s: CsDockSelection, p: MvModelCodespacePayload, M: Codespac
       return lines;
     }
     push('name', e.name);
-    push('enumGroup', emptyLabel(e.enumGroup, M.dockUnset));
-    push('value', emptyLabel(e.value, M.dockUnset));
+    push('values', e.literals?.length ? e.literals.join(', ') : M.dockUnset);
     push('type', emptyLabel(e.type, M.dockUnset));
     push('notes', emptyLabel(e.notes, M.dockUnset));
     return lines;

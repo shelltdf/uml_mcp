@@ -102,10 +102,12 @@ function fieldToAttrLine(m: MvCodespaceClassMember): string {
 
 function enumToLine(m: MvCodespaceClassEnum): string {
   const n = (m.name ?? '').trim() || 'ENUM';
-  const val = (m.value ?? m.type ?? '').trim();
-  const grp = (m.enumGroup ?? '').trim();
-  const body = val ? `${n} = ${val}` : n;
-  return grp ? `[${grp}] ${body}` : body;
+  const vals = (m.literals ?? []).map((x) => x.trim()).filter(Boolean);
+  if (!vals.length) {
+    const val = (m.value ?? m.type ?? '').trim();
+    return val ? `${n} = ${val}` : n;
+  }
+  return `${n}{ ${vals.join(', ')} }`;
 }
 
 function methodParamsToText(m: MvCodespaceClassMethod): string {
