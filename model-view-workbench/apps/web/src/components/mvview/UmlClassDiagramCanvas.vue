@@ -49,6 +49,7 @@ const noGlobalShortcutText = computed(() => (locale.value === 'en' ? 'No global 
 const mkId = computed(() => `mk-${props.canvasId.replace(/[^a-zA-Z0-9_-]/g, '')}`);
 const markerAssocUrl = computed(() => `url(#${mkId.value}-asc)`);
 const markerInheritUrl = computed(() => `url(#${mkId.value}-inh)`);
+const markerDependencyUrl = computed(() => `url(#${mkId.value}-dep)`);
 const modelSourceErrorText = computed(() => {
   if (props.modelSourceValid !== false) return '';
   const custom = (props.modelSourceError ?? '').trim();
@@ -1466,6 +1467,12 @@ const edgePaths = computed((): EdgePathItem[] => {
       y1 = p1.y;
       x2 = p2.x + s2.w / 2;
       y2 = p2.y + s2.h;
+    } else if (l.kind === 'dependency') {
+      // class-level dependency: class right handle -> target left handle
+      x1 = p1.x + s1.w + 16;
+      y1 = p1.y + 18;
+      x2 = p2.x - 16;
+      y2 = p2.y + 18;
     } else {
       // Association anchors: from right triangle tip -> to left triangle tip.
       const src = associationSourceTip(l.id, fc, p1, p2);
@@ -1486,8 +1493,9 @@ const edgePaths = computed((): EdgePathItem[] => {
     } else {
       dpath = `M ${x1} ${y1} L ${x2} ${y2}`;
     }
-    const dash = l.kind === 'dependency' ? '6 4' : undefined;
-    const markerEnd = l.kind === 'inherit' ? markerInheritUrl.value : markerAssocUrl.value;
+    const dash = l.kind === 'dependency' ? '7 4' : undefined;
+    const markerEnd =
+      l.kind === 'inherit' ? markerInheritUrl.value : l.kind === 'dependency' ? markerDependencyUrl.value : markerAssocUrl.value;
     const fromMult = l.fromMult;
     const toMult = l.toMult;
     const t0 = 0.22;
@@ -1701,6 +1709,18 @@ function deleteClass(classId: string): void {
               markerUnits="userSpaceOnUse"
             >
               <path d="M0,-4 L10,0 L0,4" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linejoin="round" />
+            </marker>
+            <!-- 依赖：细虚线 + 开口箭头（更轻） -->
+            <marker
+              :id="`${mkId}-dep`"
+              markerWidth="11"
+              markerHeight="9"
+              refX="9"
+              refY="4.5"
+              orient="auto"
+              markerUnits="userSpaceOnUse"
+            >
+              <path d="M0,-3.5 L9,0 L0,3.5" fill="none" stroke="#64748b" stroke-width="1.2" stroke-linejoin="round" />
             </marker>
           </defs>
 
@@ -2028,7 +2048,7 @@ function deleteClass(classId: string): void {
               :d="ep.d"
               fill="none"
               :stroke="selectedEdgeId === ep.id ? '#2563eb' : ep.kind === 'inherit' ? '#475569' : '#64748b'"
-              :stroke-width="selectedEdgeId === ep.id ? 3 : ep.kind === 'inherit' ? 2 : 1.75"
+              :stroke-width="selectedEdgeId === ep.id ? 3 : ep.kind === 'inherit' ? 2 : ep.kind === 'dependency' ? 1.4 : 1.75"
               :stroke-dasharray="ep.dash"
               :marker-end="ep.markerEnd ?? 'none'"
               style="pointer-events: visibleStroke; cursor: pointer"

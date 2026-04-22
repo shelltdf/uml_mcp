@@ -740,6 +740,17 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
   };
   const resolveCsId = (diagramId: string): string | null =>
     resolveDiagramClassToCodespaceClassId(diagramId, nameByDiagramClassId(diagramId), rows);
+  const classifierNameById = new Map<string, string>();
+  for (const mod of side.modules ?? []) {
+    const walk = (nodes: MvCodespaceNamespaceNode[] | undefined) => {
+      if (!nodes?.length) return;
+      for (const n of nodes) {
+        for (const c of n.classes ?? []) classifierNameById.set(c.id, (c.name ?? c.id).trim() || c.id);
+        walk(n.namespaces);
+      }
+    };
+    walk(mod.namespaces);
+  }
 
   type DiagramAssocSlot = {
     fromCs: string;
@@ -804,6 +815,7 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
     byClassSlot.set(`${a.fromCs}\t${a.section}\t${a.slotName}`, a.toCs);
   }
 
+  let changed = false;
   for (const mod of side.modules ?? []) {
     const walk = (nodes: MvCodespaceNamespaceNode[] | undefined) => {
       if (!nodes?.length) return;
@@ -820,11 +832,24 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
               const key = `${c.id}\t${section}\t${nm}`;
               const hit = byClassSlot.get(key);
               if (hit) {
-                row.associatedClassifierId = hit;
-                row.typeFromAssociation = true;
+                if (row.associatedClassifierId !== hit) {
+                  row.associatedClassifierId = hit;
+                  changed = true;
+                }
+                const t = classifierNameById.get(hit) ?? hit;
+                if ((row as { type?: string }).type !== t) {
+                  (row as { type?: string }).type = t;
+                  changed = true;
+                }
+                if (row.typeFromAssociation !== true) {
+                  row.typeFromAssociation = true;
+                  changed = true;
+                }
               } else if (row.typeFromAssociation === true) {
                 row.associatedClassifierId = undefined;
+                if ((row as { type?: string }).type !== undefined) (row as { type?: string }).type = undefined;
                 row.typeFromAssociation = undefined;
+                changed = true;
               }
             }
           };
@@ -865,8 +890,14 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
         });
       }
       const next = [...manual, ...fromDiag];
-      if (JSON.stringify(ns.associations ?? []) !== JSON.stringify(next)) ns.associations = next;
+      if (JSON.stringify(ns.associations ?? []) !== JSON.stringify(next)) {
+        ns.associations = next;
+        changed = true;
+      }
     });
+  }
+  if (changed) {
+    classCanvasCodespaceSidePayload.value = JSON.parse(JSON.stringify(side)) as MvModelCodespacePayload;
   }
 }
 
