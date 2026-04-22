@@ -54,6 +54,68 @@ export function classDiagramHeaderHeight(c: ClassDef): number {
   return 26 + kindLine;
 }
 
+/** 与画布 `classBoxSize` 一致：四段预览区 + 固定宽 248，供 autoLayout / fitAll / diagramBounds 共用 */
+const PREVIEW_LINE_HEIGHT = 12;
+const PREVIEW_TOP_PAD = 8;
+const PREVIEW_BOTTOM_PAD = 8;
+const PREVIEW_LABEL_TO_LINES_GAP = 2;
+const PREVIEW_SECTION_GAP = 4;
+const CLASS_BOX_WIDTH = 248;
+const EMPTY_MEMBER_LINE = '-';
+
+type ClassDefCompat = ClassDef & {
+  stereotype?: string | null;
+  attributes?: string[];
+  methods?: string[];
+};
+
+function effectiveAttrsForBox(c: ClassDefCompat): string[] {
+  const fromAttrs = c.attrs?.length ? c.attrs : undefined;
+  if (fromAttrs) return fromAttrs;
+  const a = c.attributes;
+  return a?.length ? a : [];
+}
+
+function effectivePropsForBox(c: ClassDefCompat): string[] {
+  return c.properties?.length ? c.properties : [];
+}
+
+function effectiveEnumsForBox(c: ClassDefCompat): string[] {
+  return c.enumLiterals?.length ? c.enumLiterals : [];
+}
+
+function effectiveMethsForBox(c: ClassDefCompat): string[] {
+  const fromMeth = c.meth?.length ? c.meth : undefined;
+  if (fromMeth) return fromMeth;
+  const m = c.methods;
+  return m?.length ? m : [];
+}
+
+function displayLines(lines: string[]): string[] {
+  return lines.length ? lines : [EMPTY_MEMBER_LINE];
+}
+
+function previewSectionHeightForBox(lineCount: number): number {
+  return PREVIEW_LINE_HEIGHT + PREVIEW_LABEL_TO_LINES_GAP + lineCount * PREVIEW_LINE_HEIGHT + PREVIEW_SECTION_GAP;
+}
+
+/** 类图节点外接矩形（世界坐标系），与 UML 画布 SVG 布局一致 */
+export function classDiagramClassBoxSize(c: ClassDef): { w: number; h: number } {
+  const cc = c as ClassDefCompat;
+  const sections = [
+    displayLines(effectiveAttrsForBox(cc)),
+    displayLines(effectivePropsForBox(cc)),
+    displayLines(effectiveEnumsForBox(cc)),
+    displayLines(effectiveMethsForBox(cc)),
+  ];
+  const h =
+    classDiagramHeaderHeight(c) +
+    PREVIEW_TOP_PAD +
+    sections.reduce((sum, lines) => sum + previewSectionHeightForBox(lines.length), 0) +
+    PREVIEW_BOTTOM_PAD;
+  return { w: CLASS_BOX_WIDTH, h };
+}
+
 export function diagramBounds(
   state: ClassDiagramState,
   positions: ClassPositions,
@@ -64,14 +126,13 @@ export function diagramBounds(
   let minY = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
+  /** 子类顶部继承三角略高出类框顶边，fit 时需计入否则纵向仍裁切 */
+  const inheritHandleAbove = 16;
   for (const c of state.classes) {
     const p = positions[c.id] ?? { x: 0, y: 0 };
-    const lineCount =
-      (c.attrs?.length ?? 0) + (c.properties?.length ?? 0) + (c.enumLiterals?.length ?? 0) + (c.meth?.length ?? 0);
-    const h = classDiagramHeaderHeight(c) + Math.max(28, lineCount * 18 + 20);
-    const w = 260;
+    const { w, h } = classDiagramClassBoxSize(c);
     minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
+    minY = Math.min(minY, p.y - inheritHandleAbove);
     maxX = Math.max(maxX, p.x + w);
     maxY = Math.max(maxY, p.y + h);
   }

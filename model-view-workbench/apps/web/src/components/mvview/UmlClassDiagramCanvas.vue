@@ -7,7 +7,6 @@ import {
   type ClassDiagramEdgeVisibility,
   buildClassDiagramViewPayload,
   classDiagramHeaderHeight,
-  diagramBounds,
   parseViewPayloadClassDiagram,
   slug,
 } from '../../utils/uml-class-payload';
@@ -57,6 +56,9 @@ const modelSourceErrorText = computed(() => {
 });
 const WORLD_HALF = 100000;
 const WORLD_SIZE = WORLD_HALF * 2;
+
+/** fit / 原点：扣除浮在视口上的 HUD、侧栏，避免自动排版后内容仍被底部控件遮挡 */
+const VIEWPORT_FIT_MARGIN = { top: 10, bottom: 108, left: 10, right: 16 } as const;
 
 const viewportRef = ref<HTMLElement | null>(null);
 const state = reactive<ClassDiagramState>({ classes: [], links: [] });
@@ -584,6 +586,26 @@ function classBoxSize(c: ClassDef): { w: number; h: number } {
   return { w, h };
 }
 
+/** 与 `classBoxSize` 一致（含 codespace 预览成员），供 fit / 居中；避免与仅 JSON 的 diagramBounds 不一致导致裁切 */
+function canvasDiagramBounds(): { minX: number; minY: number; maxX: number; maxY: number } {
+  if (!state.classes.length) return { minX: -240, minY: -160, maxX: 240, maxY: 160 };
+  const inheritHandleAbove = 16;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const c of state.classes) {
+    const p = positions[c.id] ?? { x: 0, y: 0 };
+    const { w, h } = classBoxSize(c);
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y - inheritHandleAbove);
+    maxX = Math.max(maxX, p.x + w);
+    /* 多重性标签、线宽与箭头 marker 会略超出类框底边 */
+    maxY = Math.max(maxY, p.y + h + 14);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
 function classDisplayLabel(c: ClassDef): string {
   return (
     classDisplayNameMap.value.byId.get(c.id) ??
@@ -823,30 +845,39 @@ function getViewportSize(): { w: number; h: number } {
   return { w: r.width, h: r.height };
 }
 
+/** 用于「适应 / 居中」的可视区域（全矩形减去 HUD 等浮层占位） */
+function getViewportFitBox(): { w: number; h: number; cx: number; cy: number } {
+  const { w: fw, h: fh } = getViewportSize();
+  const { top, bottom, left, right } = VIEWPORT_FIT_MARGIN;
+  const w = Math.max(120, fw - left - right);
+  const h = Math.max(120, fh - top - bottom);
+  return { w, h, cx: left + w / 2, cy: top + h / 2 };
+}
+
 function fitAll(): void {
-  const b = diagramBounds(state, positions, folded);
+  const b = canvasDiagramBounds();
   const pad = 48;
   const bw = b.maxX - b.minX + pad * 2;
   const bh = b.maxY - b.minY + pad * 2;
-  const { w: vw, h: vh } = getViewportSize();
+  const { w: vw, h: vh, cx, cy } = getViewportFitBox();
   const sx = vw / bw;
   const sy = vh / bh;
   const next = Math.min(4, Math.max(0.25, Math.min(sx, sy)));
   scale.value = next;
   const ccx = (b.minX + b.maxX) / 2;
   const ccy = (b.minY + b.maxY) / 2;
-  panX.value = vw / 2 - next * ccx;
-  panY.value = vh / 2 - next * ccy;
+  panX.value = cx - next * ccx;
+  panY.value = cy - next * ccy;
 }
 
 function originCenter(): void {
-  const b = diagramBounds(state, positions, folded);
-  const { w: vw, h: vh } = getViewportSize();
+  const b = canvasDiagramBounds();
+  const { cx, cy } = getViewportFitBox();
   const s = scale.value;
   const ccx = (b.minX + b.maxX) / 2;
   const ccy = (b.minY + b.maxY) / 2;
-  panX.value = vw / 2 - s * ccx;
-  panY.value = vh / 2 - s * ccy;
+  panX.value = cx - s * ccx;
+  panY.value = cy - s * ccy;
 }
 
 function resetZoom100(): void {
@@ -999,6 +1030,7 @@ function autoLayoutClasses(): void {
 
   pushPayload();
   fitAll();
+  void nextTick(() => fitAll());
 }
 
 function classIdAtWorldPoint(wx: number, wy: number): string | null {

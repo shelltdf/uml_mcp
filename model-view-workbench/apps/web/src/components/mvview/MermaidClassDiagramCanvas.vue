@@ -47,6 +47,9 @@ const modelSourceErrorText = computed(() => {
 const WORLD_HALF = 100000;
 const WORLD_SIZE = WORLD_HALF * 2;
 
+/** 与 UML 画布一致：fit 时扣除底部 HUD 等占位 */
+const VIEWPORT_FIT_MARGIN = { top: 10, bottom: 108, left: 10, right: 16 } as const;
+
 const viewportRef = ref<HTMLElement | null>(null);
 const state = reactive<ClassDiagramState>({ classes: [], links: [] });
 const positions = reactive<ClassPositions>({});
@@ -798,30 +801,38 @@ function getViewportSize(): { w: number; h: number } {
   return { w: r.width, h: r.height };
 }
 
+function getViewportFitBox(): { w: number; h: number; cx: number; cy: number } {
+  const { w: fw, h: fh } = getViewportSize();
+  const { top, bottom, left, right } = VIEWPORT_FIT_MARGIN;
+  const w = Math.max(120, fw - left - right);
+  const h = Math.max(120, fh - top - bottom);
+  return { w, h, cx: left + w / 2, cy: top + h / 2 };
+}
+
 function fitAll(): void {
   const b = diagramBounds(state, positions, folded);
   const pad = 48;
   const bw = b.maxX - b.minX + pad * 2;
   const bh = b.maxY - b.minY + pad * 2;
-  const { w: vw, h: vh } = getViewportSize();
+  const { w: vw, h: vh, cx, cy } = getViewportFitBox();
   const sx = vw / bw;
   const sy = vh / bh;
   const next = Math.min(4, Math.max(0.25, Math.min(sx, sy)));
   scale.value = next;
   const ccx = (b.minX + b.maxX) / 2;
   const ccy = (b.minY + b.maxY) / 2;
-  panX.value = vw / 2 - next * ccx;
-  panY.value = vh / 2 - next * ccy;
+  panX.value = cx - next * ccx;
+  panY.value = cy - next * ccy;
 }
 
 function originCenter(): void {
   const b = diagramBounds(state, positions, folded);
-  const { w: vw, h: vh } = getViewportSize();
+  const { cx, cy } = getViewportFitBox();
   const s = scale.value;
   const ccx = (b.minX + b.maxX) / 2;
   const ccy = (b.minY + b.maxY) / 2;
-  panX.value = vw / 2 - s * ccx;
-  panY.value = vh / 2 - s * ccy;
+  panX.value = cx - s * ccx;
+  panY.value = cy - s * ccy;
 }
 
 function resetZoom100(): void {
