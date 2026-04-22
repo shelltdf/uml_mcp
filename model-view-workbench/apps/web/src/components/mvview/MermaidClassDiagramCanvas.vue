@@ -14,6 +14,7 @@ import {
 import { useAppLocale } from '../../composables/useAppLocale';
 import { classDiagramCanvasMessages } from '../../i18n/class-diagram-canvas-messages';
 import type { CodespaceClassTreeItem } from '../../utils/class-canvas-codespace-bridge';
+import type { CodespaceDockContextPayload } from '../../utils/codespace-dock-context';
 
 const props = defineProps<{
   modelValue: string;
@@ -31,6 +32,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: string];
   openClassifier: [payload: { classDiagramClassId: string; className: string }];
   createMissingClassifier: [payload: { classId: string; className: string }];
+  dockContext: [ctx: CodespaceDockContextPayload];
 }>();
 
 const { locale } = useAppLocale();
@@ -220,6 +222,95 @@ watch(
   },
   { deep: true },
 );
+
+/** 右侧 Properties：与 UML/mindmap 画布同一套 Dock 上下文 */
+function emitMermaidDockContext(): void {
+  const en = locale.value === 'en';
+  const edgeId = selectedEdgeId.value;
+  if (edgeId) {
+    const link = state.links.find((l) => l.id === edgeId);
+    if (link) {
+      const fromC = state.classes.find((c) => c.id === link.from);
+      const toC = state.classes.find((c) => c.id === link.to);
+      const kindLabel =
+        link.kind === 'inherit'
+          ? en
+            ? 'Inheritance'
+            : '继承'
+          : link.kind === 'association'
+            ? en
+              ? 'Association'
+              : '关联'
+            : en
+              ? 'Dependency'
+              : '依赖';
+      const lines: CodespaceDockContextPayload['lines'] = [
+        { label: en ? 'Kind' : '类型', value: kindLabel },
+        { label: en ? 'Edge id' : '连线 id', value: link.id },
+        {
+          label: en ? 'From' : '起点',
+          value: `${fromC?.name ?? link.from} (${link.from})`,
+        },
+        {
+          label: en ? 'To' : '终点',
+          value: `${toC?.name ?? link.to} (${link.to})`,
+        },
+      ];
+      const renderMode = edgeRenderById[link.id];
+      if (link.kind !== 'inherit' && renderMode) {
+        lines.push({
+          label: en ? 'Route render' : '布线样式',
+          value: renderMode,
+        });
+      }
+      emit('dockContext', {
+        summary: en ? `Edge · ${kindLabel}` : `连线 · ${kindLabel}`,
+        lines,
+      });
+      return;
+    }
+  }
+
+  const ids = selectedIds.value;
+  if (ids.length === 1) {
+    const id = ids[0]!;
+    const c = state.classes.find((x) => x.id === id);
+    const p = positions[id];
+    const lines: CodespaceDockContextPayload['lines'] = [
+      { label: en ? 'Class id' : '类 id', value: id },
+      { label: en ? 'Name' : '名称', value: (c?.name ?? '').trim() || '—' },
+    ];
+    if (p) {
+      lines.push({
+        label: en ? 'Position (world px)' : '位置（世界坐标 px）',
+        value: `x: ${Math.round(p.x)}, y: ${Math.round(p.y)}`,
+      });
+    }
+    emit('dockContext', {
+      summary: en ? `Class · ${(c?.name ?? '').trim() || id}` : `类 · ${(c?.name ?? '').trim() || id}`,
+      lines,
+    });
+    return;
+  }
+
+  if (ids.length > 1) {
+    emit('dockContext', {
+      summary: en ? `${ids.length} classes selected` : `已选 ${ids.length} 个类`,
+      lines: [{ label: en ? 'Class ids' : '类 id', value: ids.join(', ') }],
+    });
+    return;
+  }
+
+  emit('dockContext', {
+    summary: en ? 'Class diagram' : '类图',
+    lines: [
+      { label: en ? 'Classes' : '类数量', value: String(state.classes.length) },
+      { label: en ? 'Links' : '连线数', value: String(state.links.length) },
+    ],
+  });
+}
+
+watch([selectedIds, selectedEdgeId], emitMermaidDockContext, { deep: true, immediate: true });
 
 function onMarqueePointerMove(e: PointerEvent): void {
   if (!marquee.value) return;

@@ -137,6 +137,8 @@ interface CanvasTabSpec {
   blockId: string;
   fenceKind: MvFenceKind;
   subtypeLabel: string;
+  /** `mv-view` 子类型；解析围栏失败或 id 变更时用于属性 Dock 是否展示「画布选中」 */
+  mvViewKind?: MvViewPayload['kind'];
   /** `mv-model-codespace` 画布：当前选中节点说明（由 CodespaceCanvasEditor 同步） */
   codespaceDockSummary?: string;
   /** 画布选中节点的属性键值（与 `codespaceDockSummary` 同次更新） */
@@ -643,7 +645,12 @@ function refreshCanvasTabSubtypesForPath(relPath: string, markdown: string) {
     if (t.relPath !== relPath) return t;
     const hit = bl.find((b) => b.payload.id === t.blockId);
     if (!hit) return t;
-    return { ...t, fenceKind: hit.kind, subtypeLabel: fenceBlockSubtypeLabel(hit, locale.value) };
+    return {
+      ...t,
+      fenceKind: hit.kind,
+      subtypeLabel: fenceBlockSubtypeLabel(hit, locale.value),
+      mvViewKind: hit.kind === 'mv-view' ? (hit.payload as MvViewPayload).kind : undefined,
+    };
   });
 }
 
@@ -1805,15 +1812,40 @@ const activeCanvasBlock = computed((): ParsedFenceBlock | null => {
   return blocks.find((b) => b.payload.id === tab.blockId) ?? null;
 });
 
-/** 主窗口内嵌代码空间画布时，在属性 Dock 展示画布当前选中节点 */
-const showCodespaceDockCanvasSelection = computed(() => {
-  const tab = activeCanvasSession.value;
-  const b = activeCanvasBlock.value;
-  if (activeEditorTab.value === 'markdown') return false;
-  if (!tab || !b || b.payload.id !== tab.blockId) return false;
-  if (b.kind === 'mv-model-codespace') return true;
-  if (b.kind === 'mv-view' && (b.payload as MvViewPayload).kind === 'mindmap-ui') return true;
+/** 当前画布标签是否应在 Properties 展示「画布内选中对象」明细（codespace / 部分 mv-view） */
+function canvasTabSupportsSelectionDock(tab: CanvasTabSpec, parsed: ParsedFenceBlock | null): boolean {
+  const match = parsed && parsed.payload.id === tab.blockId ? parsed : null;
+  if (match) {
+    if (match.kind === 'mv-model-codespace') return true;
+    if (match.kind === 'mv-view') {
+      const vk = (match.payload as MvViewPayload).kind;
+      return vk === 'mindmap-ui' || vk === 'uml-class' || vk === 'mermaid-class';
+    }
+    return false;
+  }
+  if (tab.fenceKind === 'mv-model-codespace') return true;
+  if (tab.fenceKind === 'mv-view' && tab.mvViewKind) {
+    return (
+      tab.mvViewKind === 'mindmap-ui' ||
+      tab.mvViewKind === 'uml-class' ||
+      tab.mvViewKind === 'mermaid-class'
+    );
+  }
   return false;
+}
+
+/** 主窗口内嵌画布时，在属性 Dock 展示画布当前选中节点（中间列为画布标签且类型支持） */
+const showCodespaceDockCanvasSelection = computed(() => {
+  if (activeEditorTab.value === 'markdown') return false;
+  const tab = activeCanvasSession.value;
+  if (!tab) return false;
+  return canvasTabSupportsSelectionDock(tab, activeCanvasBlock.value);
+});
+
+watch(activeEditorTab, (tabId) => {
+  if (tabId === 'markdown') return;
+  const tab = canvasTabs.value.find((t) => t.id === tabId);
+  if (tab) selectedBlockId.value = tab.blockId;
 });
 
 const codespaceDockCanvasSelectionText = computed(() => {
@@ -1961,6 +1993,7 @@ function openVisualCanvas(block: ParsedFenceBlock) {
   const existing = canvasTabs.value.find((t) => t.relPath === p && t.blockId === block.payload.id);
   if (existing) {
     activeEditorTab.value = existing.id;
+    selectedBlockId.value = existing.blockId;
     logLine(trLogSwitchedCanvasTab(locale.value, block.payload.id), 'info');
     return;
   }
@@ -1973,12 +2006,14 @@ function openVisualCanvas(block: ParsedFenceBlock) {
       blockId: block.payload.id,
       fenceKind: block.kind,
       subtypeLabel: fenceBlockSubtypeLabel(block, locale.value),
+      mvViewKind: block.kind === 'mv-view' ? (block.payload as MvViewPayload).kind : undefined,
       codespaceDockSummary: '',
       codespaceDockLines: [],
       unsaved: false,
     },
   ];
   activeEditorTab.value = id;
+  selectedBlockId.value = block.payload.id;
   logLine(trLogOpenedCanvasTab(locale.value, block.payload.id), 'info');
 }
 

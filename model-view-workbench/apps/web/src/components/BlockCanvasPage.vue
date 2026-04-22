@@ -2347,6 +2347,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 @update:model-value="(v: string) => setViewPayloadText(v)"
                 @open-classifier="onClassCanvasOpenClassifier"
                 @create-missing-classifier="onClassCanvasCreateMissingClassifier"
+                @dock-context="onMindmapDockContext"
               />
               <UmlClassDiagramCanvas
                 v-else-if="viewDraft.kind === 'uml-class'"
@@ -2361,6 +2362,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 @update:model-value="(v: string) => setViewPayloadText(v)"
                 @open-classifier="onClassCanvasOpenClassifier"
                 @create-missing-classifier="onClassCanvasCreateMissingClassifier"
+                @dock-context="onMindmapDockContext"
               />
             </div>
             <label

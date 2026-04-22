@@ -18,6 +18,7 @@ import {
   type CodespaceClassTreeItem,
   listOneHopRelatedClassifierIdsForDiagramClass,
 } from '../../utils/class-canvas-codespace-bridge';
+import type { CodespaceDockContextPayload } from '../../utils/codespace-dock-context';
 
 type ClassDefCompat = ClassDef & {
   stereotype?: string | null;
@@ -49,6 +50,8 @@ const emit = defineEmits<{
   'update:modelValue': [value: string];
   openClassifier: [payload: { classDiagramClassId: string; className: string }];
   createMissingClassifier: [payload: { classId: string; className: string }];
+  /** 嵌入主窗口时在右侧 Properties 展示当前选中类 / 连线 */
+  dockContext: [ctx: CodespaceDockContextPayload];
 }>();
 
 const { locale } = useAppLocale();
@@ -150,7 +153,7 @@ const shortcutsOpen = ref(false);
 const visibilityOpen = ref(false);
 const shortcutLines = computed(() => cd.value.cdeShortcutsBody.split('\n'));
 type LayoutBeautyMode = 'fast' | 'balanced' | 'polish';
-const layoutBeautyMode = ref<LayoutBeautyMode>('balanced');
+const layoutBeautyMode = ref<LayoutBeautyMode>('polish');
 const layoutBeautyLabel = computed(() =>
   layoutBeautyMode.value === 'fast'
     ? cd.value.cdeLayoutBeautyFast
@@ -529,6 +532,101 @@ watch(
   },
   { deep: true },
 );
+
+/** 右侧 Properties：与 mindmap/codespace 画布同一套 Dock 上下文 */
+function emitUmlDockContext(): void {
+  const en = locale.value === 'en';
+  const edgeId = selectedEdgeId.value;
+  if (edgeId) {
+    const link = state.links.find((l) => l.id === edgeId);
+    if (link) {
+      const fromC = state.classes.find((c) => c.id === link.from);
+      const toC = state.classes.find((c) => c.id === link.to);
+      const kindLabel =
+        link.kind === 'inherit'
+          ? en
+            ? 'Inheritance'
+            : '继承'
+          : link.kind === 'association'
+            ? en
+              ? 'Association'
+              : '关联'
+            : en
+              ? 'Dependency'
+              : '依赖';
+      const lines: CodespaceDockContextPayload['lines'] = [
+        { label: en ? 'Kind' : '类型', value: kindLabel },
+        { label: en ? 'Edge id' : '连线 id', value: link.id },
+        {
+          label: en ? 'From' : '起点',
+          value: `${fromC?.name ?? link.from} (${link.from})`,
+        },
+        {
+          label: en ? 'To' : '终点',
+          value: `${toC?.name ?? link.to} (${link.to})`,
+        },
+      ];
+      if (link.kind === 'association' && link.fromSlotName) {
+        lines.push({
+          label: en ? 'Slot' : '槽位',
+          value: `${link.fromSlotSection ?? 'members'}.${link.fromSlotName}`,
+        });
+      }
+      const renderMode = edgeRenderById[link.id];
+      if (link.kind !== 'inherit' && renderMode) {
+        lines.push({
+          label: en ? 'Route render' : '布线样式',
+          value: renderMode,
+        });
+      }
+      emit('dockContext', {
+        summary: en ? `Edge · ${kindLabel}` : `连线 · ${kindLabel}`,
+        lines,
+      });
+      return;
+    }
+  }
+
+  const ids = selectedIds.value;
+  if (ids.length === 1) {
+    const id = ids[0]!;
+    const c = state.classes.find((x) => x.id === id);
+    const p = positions[id];
+    const lines: CodespaceDockContextPayload['lines'] = [
+      { label: en ? 'Class id' : '类 id', value: id },
+      { label: en ? 'Name' : '名称', value: (c?.name ?? '').trim() || '—' },
+    ];
+    if (p) {
+      lines.push({
+        label: en ? 'Position (world px)' : '位置（世界坐标 px）',
+        value: `x: ${Math.round(p.x)}, y: ${Math.round(p.y)}`,
+      });
+    }
+    emit('dockContext', {
+      summary: en ? `Class · ${(c?.name ?? '').trim() || id}` : `类 · ${(c?.name ?? '').trim() || id}`,
+      lines,
+    });
+    return;
+  }
+
+  if (ids.length > 1) {
+    emit('dockContext', {
+      summary: en ? `${ids.length} classes selected` : `已选 ${ids.length} 个类`,
+      lines: [{ label: en ? 'Class ids' : '类 id', value: ids.join(', ') }],
+    });
+    return;
+  }
+
+  emit('dockContext', {
+    summary: en ? 'Class diagram' : '类图',
+    lines: [
+      { label: en ? 'Classes' : '类数量', value: String(state.classes.length) },
+      { label: en ? 'Links' : '连线数', value: String(state.links.length) },
+    ],
+  });
+}
+
+watch([selectedIds, selectedEdgeId], emitUmlDockContext, { deep: true, immediate: true });
 
 function onMarqueePointerMove(e: PointerEvent): void {
   if (!marquee.value) return;
@@ -1578,10 +1676,86 @@ function autoLayoutClasses(): void {
   const classes = state.classes;
   if (!classes.length) return;
   const byId = new Map(classes.map((c) => [c.id, c] as const));
+  normalizeDuplicateClassIds(false);
+  collapseOverlappingDuplicateClasses(false);
+  const beauty = (() => {
+    if (layoutBeautyMode.value === 'fast') {
+      return {
+        edgeImproveIter: 2,
+        baryRounds: 1,
+        swapPass: 0,
+        swapGuard: 2,
+        gridHGap: 54,
+        gridVGap: 54,
+        treeHGap: 36,
+        treeGap: 58,
+        treeVGap: 54,
+        relationPasses: 3,
+        relationPull: 0.12,
+        assocMinGap: 54,
+        depMinGap: 42,
+        assocConstraintPasses: 7,
+        rootBandMaxWidth: 800,
+        assocRender: 'straight' as const,
+        wireRelaxPasses: 5,
+        wireRelaxStep: 18,
+        /** 越大越追求各边端点弦长接近（与总代价折中） */
+        wireBalanceWeight: 1,
+        /** 每一对相交边的惩罚（与总长同量级启发式） */
+        wireCrossingWeight: 6500,
+      };
+    }
+    if (layoutBeautyMode.value === 'polish') {
+      return {
+        edgeImproveIter: 12,
+        baryRounds: 6,
+        swapPass: 3,
+        swapGuard: 20,
+        gridHGap: 92,
+        gridVGap: 88,
+        treeHGap: 64,
+        treeGap: 100,
+        treeVGap: 88,
+        relationPasses: 8,
+        relationPull: 0.28,
+        assocMinGap: 96,
+        depMinGap: 60,
+        assocConstraintPasses: 12,
+        rootBandMaxWidth: 1080,
+        assocRender: 'orthogonal' as const,
+        wireRelaxPasses: 18,
+        wireRelaxStep: 28,
+        wireBalanceWeight: 3,
+        wireCrossingWeight: 11000,
+      };
+    }
+    return {
+      edgeImproveIter: 7,
+      baryRounds: 3,
+      swapPass: 1,
+      swapGuard: 10,
+      gridHGap: 72,
+      gridVGap: 70,
+      treeHGap: 48,
+      treeGap: 82,
+      treeVGap: 72,
+      relationPasses: 5,
+      relationPull: 0.18,
+      assocMinGap: 76,
+      depMinGap: 54,
+      assocConstraintPasses: 9,
+      rootBandMaxWidth: 940,
+      assocRender: 'orthogonal' as const,
+      wireRelaxPasses: 12,
+      wireRelaxStep: 22,
+      wireBalanceWeight: 2,
+      wireCrossingWeight: 9000,
+    };
+  })();
   const enforceDirectionalConstraintsFinal = (): void => {
-    const assocGap = 56;
-    const depGap = 44;
-    for (let pass = 0; pass < 6; pass++) {
+    const assocGap = beauty.assocMinGap;
+    const depGap = beauty.depMinGap;
+    for (let pass = 0; pass < beauty.assocConstraintPasses; pass++) {
       let moved = false;
       for (const l of state.links) {
         if (l.kind !== 'association' && l.kind !== 'dependency') continue;
@@ -1599,56 +1773,25 @@ function autoLayoutClasses(): void {
       if (!moved) break;
     }
   };
-  normalizeDuplicateClassIds(false);
-  collapseOverlappingDuplicateClasses(false);
-  const beauty = (() => {
-    if (layoutBeautyMode.value === 'fast') {
-      return {
-        edgeImproveIter: 2,
-        baryRounds: 1,
-        swapPass: 0,
-        swapGuard: 2,
-        gridHGap: 52,
-        gridVGap: 52,
-        treeHGap: 34,
-        treeGap: 54,
-        treeVGap: 52,
-        relationPasses: 2,
-        relationPull: 0.1,
-        assocRender: 'straight' as const,
-      };
+  /** 将整图平移到最小左上边距，避免长期排版后漂到负坐标外 */
+  const normalizeDiagramPadding = (minPad = 80): void => {
+    let minX = Infinity;
+    let minY = Infinity;
+    for (const c of classes) {
+      const p = positions[c.id];
+      if (!p) continue;
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
     }
-    if (layoutBeautyMode.value === 'polish') {
-      return {
-        edgeImproveIter: 12,
-        baryRounds: 6,
-        swapPass: 3,
-        swapGuard: 20,
-        gridHGap: 90,
-        gridVGap: 86,
-        treeHGap: 62,
-        treeGap: 98,
-        treeVGap: 86,
-        relationPasses: 8,
-        relationPull: 0.26,
-        assocRender: 'orthogonal' as const,
-      };
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return;
+    const dx = minX < minPad ? minPad - minX : 0;
+    const dy = minY < minPad ? minPad - minY : 0;
+    if (dx === 0 && dy === 0) return;
+    for (const c of classes) {
+      const p = positions[c.id];
+      if (p) positions[c.id] = { x: p.x + dx, y: p.y + dy };
     }
-    return {
-      edgeImproveIter: 7,
-      baryRounds: 3,
-      swapPass: 1,
-      swapGuard: 10,
-      gridHGap: 68,
-      gridVGap: 64,
-      treeHGap: 44,
-      treeGap: 72,
-      treeVGap: 64,
-      relationPasses: 4,
-      relationPull: 0.16,
-      assocRender: 'orthogonal' as const,
-    };
-  })();
+  };
   const applyBeautyEdgeRender = (): void => {
     for (const l of state.links) {
       if (l.kind === 'inherit') continue;
@@ -1658,7 +1801,8 @@ function autoLayoutClasses(): void {
   const resolveClassBoxOverlaps = (): void => {
     const ids = classes.map((c) => c.id).filter((id) => !!positions[id] && !!byId.get(id));
     if (ids.length < 2) return;
-    const pad = 18;
+    /** 视觉留白略大于旧值，便于框线/阴影仍不互相遮盖 */
+    const pad = Math.max(22, Math.round(beauty.gridVGap * 0.26));
     // Phase 1: symmetric separation (keeps center balance).
     for (let iter = 0; iter < 24; iter++) {
       let moved = false;
@@ -1702,7 +1846,7 @@ function autoLayoutClasses(): void {
       if (!moved) break;
     }
     // Phase 2: deterministic shove-out (hard guarantee, avoids oscillation leftovers).
-    for (let iter = 0; iter < 48; iter++) {
+    for (let iter = 0; iter < 64; iter++) {
       let moved = false;
       for (let i = 0; i < ids.length; i++) {
         const aId = ids[i]!;
@@ -1773,6 +1917,76 @@ function autoLayoutClasses(): void {
       placed.push({ x, y, w: s.w, h: s.h });
     }
   };
+  /**
+   * 关联语义要求「目标在源右侧」时会反复右推 to；若先于分离执行或只做一轮，
+   * 多个 to 可能被推到同一列且纵向仍相交。在此与 resolveClassBoxOverlaps 交替迭代收敛。
+   */
+  const enforceAssocMinXAndUnOverlap = (): void => {
+    for (let r = 0; r < 4; r++) {
+      enforceDirectionalConstraintsFinal();
+      resolveClassBoxOverlaps();
+    }
+  };
+  /** 微调类坐标，降低 `combinedWireRelaxObjective`（总长/折线代价 + 弦长均衡 + 连线交叉惩罚） */
+  const relaxWireCostByMovingClasses = (): void => {
+    const passes = beauty.wireRelaxPasses;
+    const step0 = beauty.wireRelaxStep;
+    const balanceW = beauty.wireBalanceWeight;
+    const crossingW = beauty.wireCrossingWeight;
+    if (passes <= 0 || classes.length === 0) return;
+    const snapshot = (): Record<string, { x: number; y: number }> => {
+      const o: Record<string, { x: number; y: number }> = {};
+      for (const c of classes) {
+        const p = positions[c.id];
+        if (p) o[c.id] = { x: p.x, y: p.y };
+      }
+      return o;
+    };
+    const restore = (s: Record<string, { x: number; y: number }>): void => {
+      for (const c of classes) {
+        const p = s[c.id];
+        if (p) positions[c.id] = { x: p.x, y: p.y };
+      }
+    };
+    const dirs: Array<[number, number]> = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
+    ];
+    for (let pass = 0; pass < passes; pass++) {
+      const step = pass >= passes - 3 ? step0 * 0.5 : step0;
+      const ids = classes.map((c) => c.id);
+      for (let i = ids.length - 1; i > 0; i--) {
+        const j = (Math.random() * (i + 1)) | 0;
+        const t = ids[i]!;
+        ids[i] = ids[j]!;
+        ids[j] = t;
+      }
+      for (const id of ids) {
+        if (!positions[id]) continue;
+        const snap = snapshot();
+        const cost0 = combinedWireRelaxObjective(balanceW, crossingW);
+        let improved = false;
+        for (const [ix, iy] of dirs) {
+          restore(snap);
+          const pos = positions[id]!;
+          positions[id] = { x: pos.x + ix * step, y: pos.y + iy * step };
+          enforceDirectionalConstraintsFinal();
+          resolveClassBoxOverlaps();
+          if (combinedWireRelaxObjective(balanceW, crossingW) < cost0 - 1e-3) {
+            improved = true;
+            break;
+          }
+        }
+        if (!improved) restore(snap);
+      }
+    }
+  };
   // 继承树布局：父类在上、子类在下；多个根按森林横向排列。
   // 纵向间距按每一层节点“真实框高”计算，避免内容多的类框重叠。
   const children = new Map<string, string[]>();
@@ -1804,8 +2018,9 @@ function autoLayoutClasses(): void {
   function improveEdgeAesthetics(): void {
     const ids = classes.map((c) => c.id).filter((id) => !!positions[id]);
     if (ids.length < 2) return;
-    const yWeight = hasInheritLinks ? 0.05 : 0.2;
-    const xWeight = 0.24;
+    const yWeight = hasInheritLinks ? 0.06 : 0.2;
+    /** 略提高横向拉拢，减轻关联类与 Orthogonal 边的横向拉扯 */
+    const xWeight = hasInheritLinks ? 0.28 : 0.26;
     for (let iter = 0; iter < beauty.edgeImproveIter; iter++) {
       for (const id of ids) {
         const p = positions[id];
@@ -1901,8 +2116,8 @@ function autoLayoutClasses(): void {
     }
     // Keep association/dependency direction semantics in grid layout:
     // target node should stay on the right side of source node.
-    const assocGap = 56;
-    const depGap = 44;
+    const assocGap = beauty.assocMinGap;
+    const depGap = beauty.depMinGap;
     for (let pass = 0; pass < beauty.relationPasses; pass++) {
       let moved = false;
       for (const l of state.links) {
@@ -1923,7 +2138,10 @@ function autoLayoutClasses(): void {
     applyBeautyEdgeRender();
     improveEdgeAesthetics();
     resolveClassBoxOverlaps();
-    enforceDirectionalConstraintsFinal();
+    enforceAssocMinXAndUnOverlap();
+    normalizeDiagramPadding();
+    relaxWireCostByMovingClasses();
+    normalizeDiagramPadding();
     pushPayload();
     fitAll();
     void nextTick(() => fitAll());
@@ -2008,6 +2226,78 @@ function autoLayoutClasses(): void {
     positions[c.id] = { x: curX, y: 80 };
     depthById.set(c.id, 0);
     curX += w + treeGap;
+  }
+
+  // 多个继承根横向过长时换「带」：后续根对应森林整体下移， Orthogonal 连线更易读。
+  if (roots.length > 1) {
+    const MAX_W = beauty.rootBandMaxWidth;
+    const firstInBand: number[] = [0];
+    let rowAccum = 0;
+    for (let i = 0; i < roots.length; i++) {
+      const rw = measure(roots[i]!);
+      if (i === 0) {
+        rowAccum = rw;
+        continue;
+      }
+      if (rowAccum + treeGap + rw > MAX_W) {
+        firstInBand.push(i);
+        rowAccum = rw;
+      } else {
+        rowAccum += treeGap + rw;
+      }
+    }
+    const rootIdToIndex = new Map(roots.map((id, idx) => [id, idx] as const));
+    const diagramTop = (id: string): string => {
+      let cur = id;
+      for (let g = 0; g < 200; g++) {
+        const l = state.links.find((x) => x.kind === 'inherit' && x.from === cur);
+        if (!l || !byId.has(l.to)) return cur;
+        cur = l.to;
+      }
+      return cur;
+    };
+    const rootToBand = new Array(roots.length).fill(0);
+    for (let b = 0; b < firstInBand.length; b++) {
+      const a = firstInBand[b]!;
+      const end = firstInBand[b + 1] ?? roots.length;
+      for (let i = a; i < end; i++) rootToBand[i] = b;
+    }
+    const bandIndexFor = (classId: string): number => {
+      const top = diagramTop(classId);
+      const ri = rootIdToIndex.get(top);
+      if (ri === undefined) return 0;
+      return rootToBand[ri] ?? 0;
+    };
+    if (firstInBand.length > 1) {
+      const bandDeltaY: number[] = [];
+      let yAfterBand = 80;
+      for (let b = 0; b < firstInBand.length; b++) {
+        let minY = Infinity;
+        let maxY = -Infinity;
+        for (const c of classes) {
+          if (bandIndexFor(c.id) !== b) continue;
+          const p = positions[c.id];
+          if (!p) continue;
+          const h = nodeHeight(c.id);
+          minY = Math.min(minY, p.y);
+          maxY = Math.max(maxY, p.y + h);
+        }
+        if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+          bandDeltaY[b] = 0;
+          continue;
+        }
+        const delta = b === 0 ? 0 : yAfterBand - minY;
+        bandDeltaY[b] = delta;
+        yAfterBand = maxY + delta + vGap * 2;
+      }
+      for (const c of classes) {
+        const bi = bandIndexFor(c.id);
+        const dy = bandDeltaY[bi] ?? 0;
+        if (!dy) continue;
+        const p = positions[c.id];
+        if (p) positions[c.id] = { x: p.x, y: p.y + dy };
+      }
+    }
   }
 
   const relationNeighbors = (() => {
@@ -2110,8 +2400,8 @@ function autoLayoutClasses(): void {
 
   // Association/dependency direction constraint: target should stay on the right side.
   // Apply multiple passes to propagate shifts across relation chains.
-  const assocGap = 56;
-  const depGap = 44;
+  const assocGap = beauty.assocMinGap;
+  const depGap = beauty.depMinGap;
   for (let pass = 0; pass < beauty.relationPasses; pass++) {
     let moved = false;
     for (const l of state.links) {
@@ -2139,7 +2429,10 @@ function autoLayoutClasses(): void {
   applyBeautyEdgeRender();
   improveEdgeAesthetics();
   resolveClassBoxOverlaps();
-  enforceDirectionalConstraintsFinal();
+  enforceAssocMinXAndUnOverlap();
+  normalizeDiagramPadding();
+  relaxWireCostByMovingClasses();
+  normalizeDiagramPadding();
 
   pushPayload();
   fitAll();
@@ -2581,16 +2874,262 @@ function segmentIntersectsRect(
   return false;
 }
 
-const edgePaths = computed((): EdgePathItem[] => {
-  const out: EdgePathItem[] = [];
-  const classRectById = new Map<string, { x: number; y: number; w: number; h: number }>();
-  for (const c of state.classes) {
-    const p = positions[c.id];
-    if (!p) continue;
-    const s = classBoxSize(c);
-    classRectById.set(c.id, { x: p.x, y: p.y, w: s.w, h: s.h });
+/** 轴对齐折线的曼哈顿总长 */
+function polylineManhattanLength(pts: ReadonlyArray<readonly [number, number]>): number {
+  let s = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    s += Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
   }
-  const nonInheritEdges = state.links.filter((l) => l.kind === 'association' || l.kind === 'dependency');
+  return s;
+}
+
+/** 去掉共线中间点后再数转折（每处方向变化计 1） */
+function simplifyAxisAlignedPolyline(pts: ReadonlyArray<readonly [number, number]>): [number, number][] {
+  if (pts.length <= 2) return pts.map((p) => [p[0], p[1]] as [number, number]);
+  const out: [number, number][] = [[pts[0]![0], pts[0]![1]]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = out[out.length - 1]!;
+    const b = pts[i]!;
+    const c = pts[i + 1]!;
+    const col = (a[0] === b[0] && b[0] === c[0]) || (a[1] === b[1] && b[1] === c[1]);
+    if (!col) out.push([b[0], b[1]]);
+  }
+  out.push([pts[pts.length - 1]![0], pts[pts.length - 1]![1]]);
+  return out;
+}
+
+function countPolyline90Bends(pts: ReadonlyArray<readonly [number, number]>): number {
+  const p = simplifyAxisAlignedPolyline(pts);
+  if (p.length <= 2) return 0;
+  let bends = 0;
+  for (let i = 1; i < p.length - 1; i++) {
+    const ax = p[i - 1]![0];
+    const ay = p[i - 1]![1];
+    const bx = p[i]![0];
+    const by = p[i]![1];
+    const cx = p[i + 1]![0];
+    const cy = p[i + 1]![1];
+    const h0 = ax !== bx;
+    const h1 = bx !== cx;
+    if (h0 !== h1) bends++;
+  }
+  return bends;
+}
+
+function polylineHitsAnyClass(
+  pts: ReadonlyArray<readonly [number, number]>,
+  classRectById: Map<string, { x: number; y: number; w: number; h: number }>,
+  excludeA: string,
+  excludeB: string,
+): boolean {
+  for (let i = 1; i < pts.length; i++) {
+    const ax = pts[i - 1]![0];
+    const ay = pts[i - 1]![1];
+    const bx = pts[i]![0];
+    const by = pts[i]![1];
+    for (const [id, r] of classRectById.entries()) {
+      if (id === excludeA || id === excludeB) continue;
+      if (segmentIntersectsRect(ax, ay, bx, by, r)) return true;
+    }
+  }
+  return false;
+}
+
+function axisAlignedPathToD(pts: ReadonlyArray<readonly [number, number]>): string {
+  const p = simplifyAxisAlignedPolyline(pts);
+  if (p.length === 0) return 'M 0 0';
+  let d = `M ${p[0]![0]} ${p[0]![1]}`;
+  for (let i = 1; i < p.length; i++) d += ` L ${p[i]![0]} ${p[i]![1]}`;
+  return d;
+}
+
+/** 两线段是否「真交」（不共端点；共线重叠不计入，供交叉启发式） */
+function segmentsCrossProper(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+): boolean {
+  const eps = 1e-4;
+  const rx = bx - ax;
+  const ry = by - ay;
+  const sx = dx - cx;
+  const sy = dy - cy;
+  const denom = rx * sy - ry * sx;
+  const qx = cx - ax;
+  const qy = cy - ay;
+  if (Math.abs(denom) < 1e-14) return false;
+  const t = (qx * sy - qy * sx) / denom;
+  const u = (qx * ry - qy * rx) / denom;
+  return t > eps && t < 1 - eps && u > eps && u < 1 - eps;
+}
+
+function edgePolylinesCross(ssA: Array<{ ax: number; ay: number; bx: number; by: number }>, ssB: typeof ssA): boolean {
+  for (const a of ssA) {
+    for (const b of ssB) {
+      if (segmentsCrossProper(a.ax, a.ay, a.bx, a.by, b.ax, b.ay, b.bx, b.by)) return true;
+    }
+  }
+  return false;
+}
+
+/** 与画布 `edgePaths` 同源：择优正交折线并给出与布线一致的代价（总长 + 转折惩罚 + 穿框惩罚） */
+function orthogonalWireChoose(
+  classRectById: Map<string, { x: number; y: number; w: number; h: number }>,
+  fromId: string,
+  toId: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  startLaneOffset: number,
+  endLaneOffset: number,
+  channelBias: number,
+): { d: string; cost: number; pts: [number, number][] } {
+  const startStub = x1 + 20 + startLaneOffset;
+  const endStub = x2 - 20 + endLaneOffset;
+  const left = Math.min(startStub, endStub);
+  const right = Math.max(startStub, endStub);
+  const BEND_WEIGHT = 92;
+  const BLOCK_WEIGHT = 10000;
+
+  function scorePath(pts: ReadonlyArray<readonly [number, number]>): number | null {
+    if (pts.length < 2) return null;
+    if (polylineHitsAnyClass(pts, classRectById, fromId, toId)) return null;
+    const len = polylineManhattanLength(pts);
+    const bends = countPolyline90Bends(pts);
+    return len + bends * BEND_WEIGHT;
+  }
+
+  function fallbackCostPts(pts: ReadonlyArray<readonly [number, number]>): number {
+    const len = polylineManhattanLength(pts);
+    const bends = countPolyline90Bends(pts);
+    return len + bends * BEND_WEIGHT;
+  }
+
+  const tryPaths: Array<ReadonlyArray<readonly [number, number]>> = [];
+
+  if (Math.abs(y1 - y2) < 0.5) {
+    tryPaths.push([
+      [x1, y1],
+      [x2, y2],
+    ]);
+    tryPaths.push([
+      [x1, y1],
+      [startStub, y1],
+      [x2, y2],
+    ]);
+  }
+
+  tryPaths.push([
+    [x1, y1],
+    [startStub, y1],
+    [x2, y1],
+    [x2, y2],
+  ]);
+
+  tryPaths.push([
+    [x1, y1],
+    [startStub, y1],
+    [startStub, y2],
+    [x2, y2],
+  ]);
+
+  tryPaths.push([
+    [x1, y1],
+    [startStub, y1],
+    [endStub, y1],
+    [endStub, y2],
+    [x2, y2],
+  ]);
+  tryPaths.push([
+    [x1, y1],
+    [startStub, y1],
+    [startStub, y2],
+    [endStub, y2],
+    [x2, y2],
+  ]);
+
+  let bestPts: ReadonlyArray<readonly [number, number]> | null = null;
+  let bestCost = Number.POSITIVE_INFINITY;
+  for (const cand of tryPaths) {
+    const sc = scorePath(cand);
+    if (sc !== null && sc < bestCost) {
+      bestCost = sc;
+      bestPts = cand;
+    }
+  }
+
+  const channelYs = [
+    (y1 + y2) / 2 + channelBias,
+    y1 - 56,
+    y1 + 56,
+    y2 - 56,
+    y2 + 56,
+    Math.min(y1, y2) - 72,
+    Math.max(y1, y2) + 72,
+  ];
+  const seenY = new Set<number>();
+  for (const cy of channelYs) {
+    const ky = Math.round(cy * 1000) / 1000;
+    if (seenY.has(ky)) continue;
+    seenY.add(ky);
+    let hit = 0;
+    for (const [id, r] of classRectById.entries()) {
+      if (id === fromId || id === toId) continue;
+      if (
+        segmentIntersectsRect(left, cy, right, cy, r) ||
+        segmentIntersectsRect(startStub, y1, startStub, cy, r) ||
+        segmentIntersectsRect(endStub, cy, endStub, y2, r)
+      ) {
+        hit++;
+      }
+    }
+    const zPts: [number, number][] = [
+      [x1, y1],
+      [startStub, y1],
+      [startStub, cy],
+      [endStub, cy],
+      [endStub, y2],
+      [x2, y2],
+    ];
+    const sc = scorePath(zPts);
+    if (sc !== null) {
+      const penalized = sc + hit * BLOCK_WEIGHT;
+      if (penalized < bestCost) {
+        bestCost = penalized;
+        bestPts = zPts;
+      }
+    }
+  }
+
+  if (!bestPts || bestPts.length < 2) {
+    const cy = (y1 + y2) / 2 + channelBias;
+    const fb: [number, number][] = [
+      [x1, y1],
+      [startStub, y1],
+      [startStub, cy],
+      [endStub, cy],
+      [endStub, y2],
+      [x2, y2],
+    ];
+    const fbPts = simplifyAxisAlignedPolyline(fb);
+    return { d: axisAlignedPathToD(fb), cost: fallbackCostPts(fb), pts: fbPts };
+  }
+  const simp = simplifyAxisAlignedPolyline(bestPts);
+  return { d: axisAlignedPathToD(bestPts), cost: bestCost, pts: simp };
+}
+
+function buildLaneByEdgeIdFromLinks(
+  links: readonly ClassLink[],
+): Map<string, { outRank: number; outTotal: number; inRank: number; inTotal: number }> {
+  const nonInheritEdges = links.filter((l) => l.kind === 'association' || l.kind === 'dependency');
   const outEdgeIdsByClass = new Map<string, string[]>();
   const inEdgeIdsByClass = new Map<string, string[]>();
   for (const e of nonInheritEdges) {
@@ -2601,9 +3140,9 @@ const edgePaths = computed((): EdgePathItem[] => {
     inArr.push(e.id);
     inEdgeIdsByClass.set(e.to, inArr);
   }
-  const laneByEdgeId = new Map<string, { outRank: number; outTotal: number; inRank: number; inTotal: number }>();
   for (const ids of outEdgeIdsByClass.values()) ids.sort();
   for (const ids of inEdgeIdsByClass.values()) ids.sort();
+  const laneByEdgeId = new Map<string, { outRank: number; outTotal: number; inRank: number; inTotal: number }>();
   for (const e of nonInheritEdges) {
     const outIds = outEdgeIdsByClass.get(e.from) ?? [];
     const inIds = inEdgeIdsByClass.get(e.to) ?? [];
@@ -2614,53 +3153,260 @@ const edgePaths = computed((): EdgePathItem[] => {
       inTotal: inIds.length,
     });
   }
-  const orthogonalPathAvoidingClasses = (
-    fromId: string,
-    toId: string,
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-    startLaneOffset: number,
-    endLaneOffset: number,
-    channelBias: number,
-  ): string => {
-    const startStub = x1 + 20 + startLaneOffset;
-    const endStub = x2 - 20 + endLaneOffset;
-    const left = Math.min(startStub, endStub);
-    const right = Math.max(startStub, endStub);
-    const candidates = [
-      (y1 + y2) / 2 + channelBias,
-      y1 - 56,
-      y1 + 56,
-      y2 - 56,
-      y2 + 56,
-      Math.min(y1, y2) - 72,
-      Math.max(y1, y2) + 72,
-    ];
-    let bestY = candidates[0]!;
-    let bestCost = Number.POSITIVE_INFINITY;
-    for (const cy of candidates) {
-      let hit = 0;
-      for (const [id, r] of classRectById.entries()) {
-        if (id === fromId || id === toId) continue;
-        if (
-          segmentIntersectsRect(left, cy, right, cy, r) ||
-          segmentIntersectsRect(startStub, y1, startStub, cy, r) ||
-          segmentIntersectsRect(endStub, cy, endStub, y2, r)
-        ) {
-          hit++;
-        }
-      }
-      const bend = Math.abs(cy - y1) + Math.abs(cy - y2);
-      const cost = hit * 10000 + bend;
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestY = cy;
-      }
+  return laneByEdgeId;
+}
+
+/** 当前 positions 下图上可见边的连线总代价（与正交布线代价一致；继承/直线为欧氏长度近似） */
+function diagramTotalWireCost(): number {
+  const classRectById = new Map<string, { x: number; y: number; w: number; h: number }>();
+  for (const c of state.classes) {
+    const p = positions[c.id];
+    if (!p) continue;
+    const s = classBoxSize(c);
+    classRectById.set(c.id, { x: p.x, y: p.y, w: s.w, h: s.h });
+  }
+  const laneByEdgeId = buildLaneByEdgeIdFromLinks(state.links);
+  const laneStep = 9;
+  let sum = 0;
+  for (const l of state.links) {
+    if (l.kind === 'inherit' && !edgeVisibility.inherit) continue;
+    if ((l.kind === 'association' || l.kind === 'dependency') && !edgeVisibility.association) continue;
+    const fc = state.classes.find((x) => x.id === l.from);
+    const tc = state.classes.find((x) => x.id === l.to);
+    if (!fc || !tc) continue;
+    const p1 = positions[l.from];
+    const p2 = positions[l.to];
+    if (!p1 || !p2) continue;
+    const s1 = classBoxSize(fc);
+    const s2 = classBoxSize(tc);
+    let x1 = 0;
+    let y1 = 0;
+    let x2 = 0;
+    let y2 = 0;
+    if (l.kind === 'inherit') {
+      x1 = p1.x + s1.w / 2;
+      y1 = p1.y;
+      x2 = p2.x + s2.w / 2;
+      y2 = p2.y + s2.h;
+      sum += Math.hypot(x2 - x1, y2 - y1);
+      continue;
     }
-    return `M ${x1} ${y1} L ${startStub} ${y1} L ${startStub} ${bestY} L ${endStub} ${bestY} L ${endStub} ${y2} L ${x2} ${y2}`;
-  };
+    if (l.kind === 'dependency') {
+      x1 = p1.x + s1.w + 16;
+      y1 = p1.y + 18;
+      x2 = p2.x - 16;
+      y2 = p2.y + 18;
+    } else {
+      const src = associationSourceTip(l.id, { fromSlotSection: l.fromSlotSection, fromSlotName: l.fromSlotName }, fc, p1, p2);
+      x1 = src.x;
+      y1 = src.y;
+      x2 = p2.x - 16;
+      y2 = p2.y + 18;
+    }
+    const lane = laneByEdgeId.get(l.id);
+    const outLaneOffset = lane ? (lane.outRank - (lane.outTotal - 1) / 2) * laneStep : 0;
+    const inLaneOffset = lane ? (lane.inRank - (lane.inTotal - 1) / 2) * laneStep : 0;
+    if (l.kind === 'dependency') {
+      y1 += outLaneOffset * 0.5;
+      y2 += inLaneOffset * 0.5;
+    }
+    const render = edgeRenderById[l.id] ?? (l.kind === 'dependency' ? 'orthogonal' : 'straight');
+    if (render === 'orthogonal') {
+      sum += orthogonalWireChoose(
+        classRectById,
+        l.from,
+        l.to,
+        x1,
+        y1,
+        x2,
+        y2,
+        outLaneOffset,
+        inLaneOffset,
+        outLaneOffset * 0.35,
+      ).cost;
+    } else if (render === 'curve') {
+      sum += Math.hypot(x2 - x1, y2 - y1) * 1.12;
+    } else {
+      sum += Math.hypot(x2 - x1, y2 - y1);
+    }
+  }
+  return sum;
+}
+
+/** 与 `diagramTotalWireCost` 相同的端点几何，用于衡量「连线跨度」是否接近（弦长，非折线展开长） */
+function collectVisibleEdgeChordLengths(): number[] {
+  const laneByEdgeId = buildLaneByEdgeIdFromLinks(state.links);
+  const laneStep = 9;
+  const out: number[] = [];
+  for (const l of state.links) {
+    if (l.kind === 'inherit' && !edgeVisibility.inherit) continue;
+    if ((l.kind === 'association' || l.kind === 'dependency') && !edgeVisibility.association) continue;
+    const fc = state.classes.find((x) => x.id === l.from);
+    const tc = state.classes.find((x) => x.id === l.to);
+    if (!fc || !tc) continue;
+    const p1 = positions[l.from];
+    const p2 = positions[l.to];
+    if (!p1 || !p2) continue;
+    const s1 = classBoxSize(fc);
+    const s2 = classBoxSize(tc);
+    let x1 = 0;
+    let y1 = 0;
+    let x2 = 0;
+    let y2 = 0;
+    if (l.kind === 'inherit') {
+      x1 = p1.x + s1.w / 2;
+      y1 = p1.y;
+      x2 = p2.x + s2.w / 2;
+      y2 = p2.y + s2.h;
+    } else if (l.kind === 'dependency') {
+      x1 = p1.x + s1.w + 16;
+      y1 = p1.y + 18;
+      x2 = p2.x - 16;
+      y2 = p2.y + 18;
+    } else {
+      const src = associationSourceTip(l.id, { fromSlotSection: l.fromSlotSection, fromSlotName: l.fromSlotName }, fc, p1, p2);
+      x1 = src.x;
+      y1 = src.y;
+      x2 = p2.x - 16;
+      y2 = p2.y + 18;
+    }
+    const lane = laneByEdgeId.get(l.id);
+    const outLaneOffset = lane ? (lane.outRank - (lane.outTotal - 1) / 2) * laneStep : 0;
+    const inLaneOffset = lane ? (lane.inRank - (lane.inTotal - 1) / 2) * laneStep : 0;
+    if (l.kind === 'dependency') {
+      y1 += outLaneOffset * 0.5;
+      y2 += inLaneOffset * 0.5;
+    }
+    out.push(Math.hypot(x2 - x1, y2 - y1));
+  }
+  return out;
+}
+
+/** 弦长最大最小差；越小则各边跨度越接近 */
+function diagramEdgeChordLengthSpread(): number {
+  const L = collectVisibleEdgeChordLengths();
+  if (L.length < 2) return 0;
+  return Math.max(...L) - Math.min(...L);
+}
+
+function segmentsFromSimplifiedPts(pts: ReadonlyArray<readonly [number, number]>): Array<{
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+}> {
+  const out: Array<{ ax: number; ay: number; bx: number; by: number }> = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    out.push({ ax: a[0], ay: a[1], bx: b[0], by: b[1] });
+  }
+  return out;
+}
+
+/** 可见边两两之间是否存在几何交叉（与当前正交布线折线一致；直线/曲线边用端点弦近似） */
+function diagramEdgeCrossingPairCount(): number {
+  const classRectById = new Map<string, { x: number; y: number; w: number; h: number }>();
+  for (const c of state.classes) {
+    const p = positions[c.id];
+    if (!p) continue;
+    const s = classBoxSize(c);
+    classRectById.set(c.id, { x: p.x, y: p.y, w: s.w, h: s.h });
+  }
+  const laneByEdgeId = buildLaneByEdgeIdFromLinks(state.links);
+  const laneStep = 9;
+  const perEdgeSegs: Array<Array<{ ax: number; ay: number; bx: number; by: number }>> = [];
+
+  for (const l of state.links) {
+    if (l.kind === 'inherit' && !edgeVisibility.inherit) continue;
+    if ((l.kind === 'association' || l.kind === 'dependency') && !edgeVisibility.association) continue;
+    const fc = state.classes.find((x) => x.id === l.from);
+    const tc = state.classes.find((x) => x.id === l.to);
+    if (!fc || !tc) continue;
+    const p1 = positions[l.from];
+    const p2 = positions[l.to];
+    if (!p1 || !p2) continue;
+    const s1 = classBoxSize(fc);
+    const s2 = classBoxSize(tc);
+    let x1 = 0;
+    let y1 = 0;
+    let x2 = 0;
+    let y2 = 0;
+    if (l.kind === 'inherit') {
+      x1 = p1.x + s1.w / 2;
+      y1 = p1.y;
+      x2 = p2.x + s2.w / 2;
+      y2 = p2.y + s2.h;
+      perEdgeSegs.push([{ ax: x1, ay: y1, bx: x2, by: y2 }]);
+      continue;
+    }
+    if (l.kind === 'dependency') {
+      x1 = p1.x + s1.w + 16;
+      y1 = p1.y + 18;
+      x2 = p2.x - 16;
+      y2 = p2.y + 18;
+    } else {
+      const src = associationSourceTip(l.id, { fromSlotSection: l.fromSlotSection, fromSlotName: l.fromSlotName }, fc, p1, p2);
+      x1 = src.x;
+      y1 = src.y;
+      x2 = p2.x - 16;
+      y2 = p2.y + 18;
+    }
+    const lane = laneByEdgeId.get(l.id);
+    const outLaneOffset = lane ? (lane.outRank - (lane.outTotal - 1) / 2) * laneStep : 0;
+    const inLaneOffset = lane ? (lane.inRank - (lane.inTotal - 1) / 2) * laneStep : 0;
+    if (l.kind === 'dependency') {
+      y1 += outLaneOffset * 0.5;
+      y2 += inLaneOffset * 0.5;
+    }
+    const render = edgeRenderById[l.id] ?? (l.kind === 'dependency' ? 'orthogonal' : 'straight');
+    if (render === 'orthogonal') {
+      const { pts } = orthogonalWireChoose(
+        classRectById,
+        l.from,
+        l.to,
+        x1,
+        y1,
+        x2,
+        y2,
+        outLaneOffset,
+        inLaneOffset,
+        outLaneOffset * 0.35,
+      );
+      perEdgeSegs.push(segmentsFromSimplifiedPts(pts));
+    } else {
+      perEdgeSegs.push([{ ax: x1, ay: y1, bx: x2, by: y2 }]);
+    }
+  }
+
+  let pairs = 0;
+  for (let i = 0; i < perEdgeSegs.length; i++) {
+    for (let j = i + 1; j < perEdgeSegs.length; j++) {
+      if (edgePolylinesCross(perEdgeSegs[i]!, perEdgeSegs[j]!)) pairs++;
+    }
+  }
+  return pairs;
+}
+
+/** 自动排版松弛用：总布线代价 + 弦长均衡 + 交叉对惩罚 */
+function combinedWireRelaxObjective(balanceWeight: number, crossingWeight: number): number {
+  return (
+    diagramTotalWireCost() +
+    balanceWeight * diagramEdgeChordLengthSpread() +
+    crossingWeight * diagramEdgeCrossingPairCount()
+  );
+}
+
+const edgePaths = computed((): EdgePathItem[] => {
+  const out: EdgePathItem[] = [];
+  const classRectById = new Map<string, { x: number; y: number; w: number; h: number }>();
+  for (const c of state.classes) {
+    const p = positions[c.id];
+    if (!p) continue;
+    const s = classBoxSize(c);
+    classRectById.set(c.id, { x: p.x, y: p.y, w: s.w, h: s.h });
+  }
+  const laneByEdgeId = buildLaneByEdgeIdFromLinks(state.links);
   for (const l of state.links) {
     if (l.kind === 'inherit' && !edgeVisibility.inherit) continue;
     if ((l.kind === 'association' || l.kind === 'dependency') && !edgeVisibility.association) continue;
@@ -2706,7 +3452,18 @@ const edgePaths = computed((): EdgePathItem[] => {
     }
     const render = edgeRenderById[l.id] ?? (l.kind === 'dependency' ? 'orthogonal' : 'straight');
     if (render === 'orthogonal') {
-      dpath = orthogonalPathAvoidingClasses(l.from, l.to, x1, y1, x2, y2, outLaneOffset, inLaneOffset, outLaneOffset * 0.35);
+      dpath = orthogonalWireChoose(
+        classRectById,
+        l.from,
+        l.to,
+        x1,
+        y1,
+        x2,
+        y2,
+        outLaneOffset,
+        inLaneOffset,
+        outLaneOffset * 0.35,
+      ).d;
     } else if (render === 'curve') {
       const dx = x2 - x1;
       const c1x = x1 + dx * 0.33;
@@ -2802,6 +3559,108 @@ const umlDiagramDebugSnapshot = computed(() => {
       edgeRenderById[l.id] ?? (l.kind === 'dependency' ? 'orthogonal' : 'straight');
   }
 
+  const edgePathById = new Map(edgePaths.value.map((ep) => [ep.id, ep]));
+  const relationsSummary = relationsSummaryForDebug(state.classes, state.links);
+  const relLinesByEdgeId = new Map(relationsSummary.edges.map((e) => [e.id, e.line]));
+
+  const svgObjectsDetailed = state.classes.flatMap((c) => {
+    const p = positions[c.id];
+    if (!p) return [];
+    const sz = classBoxSize(c);
+    const sections = previewSections(c).map((sec) => ({
+      sectionLabel: sec.label,
+      lineCount: sec.lines.length,
+      previewSampleLines: sec.lines.slice(0, 5),
+    }));
+    const assocHandles = layoutOnly.value
+      ? []
+      : rightHandleRows(c).map((h) => ({
+          handleKey: h.key,
+          sectionIndex: h.sectionIndex,
+          lineIndex: h.lineIndex,
+          polygonPointsTemplate: '264,previewY-12 248,previewY 248,previewY+8 (local, y 见 tipWorld)',
+          tipWorld: {
+            x: roundCoord(p.x + 264),
+            y: roundCoord(p.y + rightHandleTipY(c, h)),
+          },
+        }));
+
+    return [
+      {
+        role: 'uml-class-svg-group',
+        classId: c.id,
+        displayName: (c.name ?? '').trim() || c.id,
+        folded: !!folded[c.id],
+        stereotype: classStereotype(c) || undefined,
+        domGroupTransform: `translate(${roundCoord(p.x)}, ${roundCoord(p.y)})`,
+        boundingRectWorld: {
+          x: roundCoord(p.x),
+          y: roundCoord(p.y),
+          width: sz.w,
+          height: roundCoord(sz.h),
+          maxX: roundCoord(p.x + sz.w),
+          maxY: roundCoord(p.y + sz.h),
+        },
+        svgElementsOutline: {
+          note:
+            '坐标均为类局部（原点为类左上角），除非标注 tipWorld / boundingRectWorld。',
+          classBodyRect: { tag: 'rect', x: 0, y: 0, width: 248, height: roundCoord(sz.h), rx: 4 },
+          inheritTriangle: {
+            tag: 'polygon',
+            pointsLocal: '124,-14 116,0 132,0',
+            tipWorld: { x: roundCoord(p.x + 124), y: roundCoord(p.y - 14) },
+          },
+          dependencyHandleTriangle: {
+            tag: 'polygon',
+            pointsLocal: '248,18 264,10 264,26',
+            anchorWorld: { x: roundCoord(p.x + 264), y: roundCoord(p.y + 18) },
+          },
+          previewSectionsDrawnAsText: sections,
+          associationSlotHandlesRight: assocHandles,
+        },
+      },
+    ];
+  });
+
+  const svgEdgesDetailed = state.links.map((l) => {
+    const ep = edgePathById.get(l.id);
+    const renderShape =
+      edgeRenderById[l.id] ?? (l.kind === 'dependency' ? 'orthogonal' : 'straight');
+    const hiddenByVisibility =
+      (l.kind === 'inherit' && !edgeVisibility.inherit) ||
+      (l.kind === 'association' && !edgeVisibility.association);
+
+    return {
+      edgeId: l.id,
+      payload: {
+        kind: l.kind,
+        fromClassId: l.from,
+        toClassId: l.to,
+        fromMult: l.fromMult,
+        toMult: l.toMult,
+        fromSlotSection: l.fromSlotSection,
+        fromSlotName: l.fromSlotName,
+      },
+      routing: {
+        renderShape,
+        hiddenByVisibilityToggle: hiddenByVisibility,
+      },
+      svgStroke: ep
+        ? {
+            /** 与 DOM path[d] 几何一致，数值舍入仅用于剪贴板可读性 */
+            pathD: roundSvgPathDForDebug(ep.d),
+            strokeDasharray: ep.dash ?? null,
+            markerEnd: ep.markerEnd === 'none' ? 'none' : String(ep.markerEnd),
+            multiplicityLabelAnchorsWorld: {
+              nearFromEndpoint: ep.lx != null ? { x: roundCoord(ep.lx), y: roundCoord(ep.ly) } : null,
+              nearToEndpoint: ep.rx != null ? { x: roundCoord(ep.rx), y: roundCoord(ep.ry) } : null,
+            },
+          }
+        : { error: 'edgePaths 中无此 id（可能被过滤或未参与布局）' },
+      summaryLine: relLinesByEdgeId.get(l.id) ?? l.id,
+    };
+  });
+
   return {
     meta: {
       timestamp: new Date().toISOString(),
@@ -2824,14 +3683,22 @@ const umlDiagramDebugSnapshot = computed(() => {
       selection: [...selectedIds.value],
       selectedEdgeId: selectedEdgeId.value,
     },
-    relationsSummary: relationsSummaryForDebug(state.classes, state.links),
+    relationsSummary,
     renderGeometry: {
       coords: 'svg-world-px-top-left',
       note:
         'nodeBounds / path d / 标签锚点数值已四舍五入便于阅读；DOM 中 path 仍为全精度。d 与画布几何一致。',
+      worldLayerSvgTransform: `translate(${roundCoord(panX.value)}, ${roundCoord(panY.value)}) scale(${roundCoord(scale.value)})`,
       nodeBounds,
       edgeSvgPaths,
       edgeRenderModeByEdgeId,
+    },
+    /** 复制「调试信息」时的主要增量：逐类 SVG 构件说明 + 逐边 path/槽位/可见性 */
+    svgDrawingExport: {
+      coordinateSystem:
+        '世界坐标：类 <g transform="translate(x,y)"> 内为类局部坐标；连线 path[d] 与 world-layer 同源。视口对整层 worldLayerSvgTransform 做 pan/zoom。',
+      nodes: svgObjectsDetailed,
+      edges: svgEdgesDetailed,
     },
     payload,
   };
