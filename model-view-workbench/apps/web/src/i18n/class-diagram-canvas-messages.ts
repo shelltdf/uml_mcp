@@ -39,6 +39,11 @@ export type ClassDiagramCanvasMessages = {
   cdeCtxRelatedNeedModel: string;
   /** 当前类无法在 codespace 中解析（与双击打开失败同类） */
   cdeCtxRelatedNoResolve: string;
+  /** 调试：复制当前画布状态 JSON */
+  cdeCopyDrawingInfo: string;
+  cdeCopyDrawingInfoTitle: string;
+  cdeCopyDrawingInfoOk: string;
+  cdeCopyDrawingInfoFail: string;
 };
 
 export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMessages> = {
@@ -78,6 +83,10 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeCtxRelatedNone: '无可添加的一层相关类型',
     cdeCtxRelatedNeedModel: '需绑定 modelRefs',
     cdeCtxRelatedNoResolve: '无法在 codespace 中解析当前类（检查 modelRefs / 类 id）',
+    cdeCopyDrawingInfo: 'Copy drawing info',
+    cdeCopyDrawingInfoTitle: '将当前类图画布调试信息复制到剪贴板（viewport、类、连线、layout、payload）',
+    cdeCopyDrawingInfoOk: '类图调试信息已复制到剪贴板。',
+    cdeCopyDrawingInfoFail: '复制失败：当前环境不支持写入剪贴板。',
   },
   en: {
     cdeNewClass: 'New class',
@@ -117,5 +126,10 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeCtxRelatedNone: 'No one-hop related types',
     cdeCtxRelatedNeedModel: 'Requires modelRefs',
     cdeCtxRelatedNoResolve: 'Cannot resolve this class in bound codespace (check modelRefs / ids)',
+    cdeCopyDrawingInfo: 'Copy drawing info',
+    cdeCopyDrawingInfoTitle:
+      'Copy debug snapshot to clipboard (viewport, classes, links, layout, payload)',
+    cdeCopyDrawingInfoOk: 'Drawing info copied to clipboard.',
+    cdeCopyDrawingInfoFail: 'Copy failed: clipboard write is not supported in this environment.',
   },
 };

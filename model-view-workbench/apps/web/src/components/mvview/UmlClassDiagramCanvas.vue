@@ -7,6 +7,7 @@ import {
   type ClassDiagramEdgeVisibility,
   buildClassDiagramViewPayload,
   classDiagramHeaderHeight,
+  diagramBounds,
   parseViewPayloadClassDiagram,
   slug,
 } from '../../utils/uml-class-payload';
@@ -306,6 +307,60 @@ function pushPayload(): void {
   );
   lastSynced.value = next;
   emit('update:modelValue', next);
+}
+
+const umlDiagramDebugSnapshot = computed(() => ({
+  timestamp: new Date().toISOString(),
+  canvasId: props.canvasId,
+  propsSummary: {
+    modelSourceValid: props.modelSourceValid,
+    observeCodespaceOnly: props.observeCodespaceOnly ?? false,
+    codespaceClassesCount: props.codespaceClasses?.length ?? 0,
+    modelRefsCount: props.modelRefs?.length ?? 0,
+    codespaceResolveMarkdownLen: props.codespaceResolveMarkdown?.length ?? 0,
+  },
+  viewport: {
+    scale: scale.value,
+    panX: panX.value,
+    panY: panY.value,
+    zoomPercent: Math.round(scale.value * 100),
+  },
+  world: { WORLD_HALF, WORLD_SIZE },
+  layoutBeautyMode: layoutBeautyMode.value,
+  diagramBounds: diagramBounds(state, positions, folded),
+  edgeVisibility: { inherit: edgeVisibility.inherit, association: edgeVisibility.association },
+  selection: [...selectedIds.value],
+  selectedEdgeId: selectedEdgeId.value,
+  classes: state.classes.map((c) => ({ id: c.id, name: c.name })),
+  links: state.links.map((l) => ({
+    id: l.id,
+    kind: l.kind,
+    from: l.from,
+    to: l.to,
+    fromSlotSection: l.fromSlotSection,
+    fromSlotName: l.fromSlotName,
+    fromMult: l.fromMult,
+    toMult: l.toMult,
+  })),
+  positions: { ...positions },
+  folded: { ...folded },
+  emitPayloadJson: buildClassDiagramViewPayload(
+    lastSynced.value,
+    state,
+    positions,
+    { ...folded },
+    { inherit: edgeVisibility.inherit, association: edgeVisibility.association },
+  ),
+}));
+
+async function copyUmlDiagramDebugInfo() {
+  const text = JSON.stringify(umlDiagramDebugSnapshot.value, null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    window.alert(cd.value.cdeCopyDrawingInfoOk);
+  } catch {
+    window.alert(cd.value.cdeCopyDrawingInfoFail);
+  }
 }
 
 watch(
@@ -3126,6 +3181,17 @@ function deleteClass(classId: string): void {
         </div>
       </div>
 
+      <div class="cde-debug-actions">
+        <button
+          type="button"
+          class="cde-debug-actions__btn"
+          :title="cd.cdeCopyDrawingInfoTitle"
+          @click="copyUmlDiagramDebugInfo"
+        >
+          {{ cd.cdeCopyDrawingInfo }}
+        </button>
+      </div>
+
       <div
         v-if="ctx.open"
         class="cde-ctx"
@@ -3613,6 +3679,30 @@ function deleteClass(classId: string): void {
   border-radius: 4px;
   border: 1px solid var(--border, #ccc);
   background: var(--editor-bg, #fff);
+}
+
+/* 与 Codespace SVG 画布「Copy drawing info」一致：右下角调试复制 */
+.cde-debug-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+}
+.cde-debug-actions__btn {
+  padding: 4px 8px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--panel-bg, #fafafa) 94%, transparent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.cde-debug-actions__btn:hover {
+  background: color-mix(in srgb, var(--editor-bg, #fff) 88%, #f1f5f9);
 }
 
 .cde-ctx {
