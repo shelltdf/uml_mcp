@@ -1434,6 +1434,23 @@ function setKvDocString(i: number, s: string) {
   kvDocStrings.value = next;
 }
 
+/** 与各 KV 文档 textarea 当前文本一致的 documents；任一段非法 JSON 则为 null。 */
+function kvResolvedDocumentsLoose(): Record<string, unknown>[] | null {
+  if (!kvDraft.value) return null;
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < kvDraft.value.documents.length; i++) {
+    const raw = kvDocStrings.value[i] ?? '{}';
+    try {
+      const p = JSON.parse(raw) as unknown;
+      if (p === null || typeof p !== 'object' || Array.isArray(p)) return null;
+      out.push(p as Record<string, unknown>);
+    } catch {
+      return null;
+    }
+  }
+  return out;
+}
+
 function onKvDocBlur(i: number) {
   if (!kvDraft.value) return;
   const raw = kvDocStrings.value[i] ?? '{}';
@@ -1477,7 +1494,9 @@ function buildInnerJson(): string | null {
     return fenceInnerParsesOk('mv-model-sql', inner) ? inner : null;
   }
   if (b.kind === 'mv-model-kv' && kvDraft.value) {
-    const inner = JSON.stringify(kvDraft.value, null, 2);
+    const resolvedDocs = kvResolvedDocumentsLoose();
+    if (!resolvedDocs) return null;
+    const inner = JSON.stringify({ ...kvDraft.value, documents: resolvedDocs }, null, 2);
     return fenceInnerParsesOk('mv-model-kv', inner) ? inner : null;
   }
   if (b.kind === 'mv-model-struct') {
@@ -1567,11 +1586,24 @@ function currentDraftInnerLoose(): string | null {
   return null;
 }
 
+/**
+ * 脏检测与内存 md 同步指纹：须覆盖 textarea 中间态（如 KV 文档未 blur 时），避免仅监听已提交到 ref 的草稿。
+ */
+function draftInnerLooseForDirtyCheck(): string | null {
+  const b = block.value;
+  if (b?.kind === 'mv-model-kv' && kvDraft.value) {
+    const resolved = kvResolvedDocumentsLoose();
+    if (resolved !== null) return JSON.stringify({ ...kvDraft.value, documents: resolved }, null, 2);
+    return `${JSON.stringify(kvDraft.value, null, 2)}\n__kv_docs__\n${kvDocStrings.value.join('\x1e')}`;
+  }
+  return currentDraftInnerLoose();
+}
+
 const hasCanvasUnsavedChanges = computed(() => {
   const b = block.value;
   if (!b) return false;
   const orig = originalInnerJsonForCurrentBlock();
-  const cur = currentDraftInnerLoose();
+  const cur = draftInnerLooseForDirtyCheck();
   const mainDirty = (orig ?? '').trim() !== (cur ?? '').trim();
   if (!mainDirty && b.kind !== 'mv-view') return false;
 
@@ -1646,13 +1678,23 @@ function autoSyncToMarkdownInMemory(): void {
   emit('updated', { markdown: next, relPath: props.relPath });
 }
 
+/**
+ * 内存 md 同步：必须在「每一次」草稿实质变化时尝试写回，不能只监听 hasCanvasUnsavedChanges 的布尔翻转。
+ * 覆盖：mv-view 各类画布、mv-model-kv 文档 textarea、codespace、SQL、map 等所有围栏编辑态。
+ */
 watch(
-  hasCanvasUnsavedChanges,
-  (dirty) => {
-    if (!dirty) return;
+  [
+    () => draftInnerLooseForDirtyCheck(),
+    () =>
+      classCanvasCodespaceSidePayload.value
+        ? JSON.stringify(classCanvasCodespaceSidePayload.value, null, 2)
+        : '',
+  ],
+  () => {
+    if (!hasCanvasUnsavedChanges.value) return;
     autoSyncToMarkdownInMemory();
   },
-  { flush: 'post' },
+  { flush: 'post', deep: true },
 );
 
 function closeWin() {
@@ -2314,6 +2356,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 :model-source-valid="classCanvasHasValidModelSource"
                 :model-source-error="classCanvasModelSourceError"
                 :observe-codespace-only="viewDraft.observeCodespaceOnly === true"
+                :codespace-resolve-markdown="classCanvasSourceMarkdown"
+                :model-refs="viewDraft.modelRefs ?? []"
                 @update:model-value="(v: string) => setViewPayloadText(v)"
                 @open-classifier="onClassCanvasOpenClassifier"
                 @create-missing-classifier="onClassCanvasCreateMissingClassifier"

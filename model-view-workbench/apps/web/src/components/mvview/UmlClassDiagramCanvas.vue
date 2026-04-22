@@ -12,7 +12,10 @@ import {
 } from '../../utils/uml-class-payload';
 import { useAppLocale } from '../../composables/useAppLocale';
 import { classDiagramCanvasMessages } from '../../i18n/class-diagram-canvas-messages';
-import type { CodespaceClassTreeItem } from '../../utils/class-canvas-codespace-bridge';
+import {
+  type CodespaceClassTreeItem,
+  listOneHopRelatedClassifierIdsForDiagramClass,
+} from '../../utils/class-canvas-codespace-bridge';
 
 type ClassDefCompat = ClassDef & {
   stereotype?: string | null;
@@ -32,6 +35,10 @@ const props = defineProps<{
   modelSourceError?: string;
   /** 为 true：只读观察 bound model，仅允许改布局位置等；不写 codespace、不拉继承/关联到 model */
   observeCodespaceOnly?: boolean;
+  /** 与同文件 mv-view 的 codespace 解析一致，用于「添加一层相关类型」右键菜单 */
+  codespaceResolveMarkdown?: string;
+  /** mv-view.modelRefs，与 codespaceResolveMarkdown 一起解析 Classifier */
+  modelRefs?: string[];
 }>();
 
 const layoutOnly = computed(() => props.observeCodespaceOnly === true);
@@ -857,6 +864,106 @@ function isClassAlreadyAdded(row: (typeof codespaceClassRows.value)[number]): bo
     if (rowClassId) return c.id === rowClassId;
     return c.id === slug(row.className);
   });
+}
+
+function treeRowsForClassifierIds(ids: string[]): CodespaceClassTreeItem[] {
+  const src = props.codespaceClasses ?? [];
+  const out: CodespaceClassTreeItem[] = [];
+  const seen = new Set<string>();
+  for (const raw of ids) {
+    const id = raw.trim();
+    if (!id) continue;
+    const r = src.find((x) => x.classId === id);
+    if (!r || seen.has(r.classId)) continue;
+    seen.add(r.classId);
+    out.push(r);
+  }
+  return out;
+}
+
+function labelForCodespaceTreeRow(row: CodespaceClassTreeItem): string {
+  return (
+    classDisplayNameMap.value.byId.get(row.classId) ??
+    `[${row.moduleName}].${codespaceNsChain(row.namespacePath)}.${row.className}`
+  );
+}
+
+const canUseRelatedTypesMenu = computed(
+  () =>
+    !layoutOnly.value &&
+    props.modelSourceValid !== false &&
+    !!(props.codespaceResolveMarkdown ?? '').trim() &&
+    (props.modelRefs ?? []).length > 0,
+);
+
+const ctxRelatedOneHopPack = computed(() => {
+  if (!ctx.open || !canUseRelatedTypesMenu.value) return null;
+  const c = state.classes.find((x) => x.id === ctx.classId);
+  if (!c) return null;
+  return listOneHopRelatedClassifierIdsForDiagramClass(
+    (props.codespaceResolveMarkdown ?? '').trim(),
+    props.modelRefs ?? [],
+    c.id,
+    (c.name ?? '').trim(),
+  );
+});
+
+const ctxRelatedInheritanceRows = computed(() => {
+  const pack = ctxRelatedOneHopPack.value;
+  if (!pack) return [];
+  return treeRowsForClassifierIds(pack.inheritanceIds).filter((r) => !isClassAlreadyAdded(r));
+});
+
+const ctxRelatedAssociationRows = computed(() => {
+  const pack = ctxRelatedOneHopPack.value;
+  if (!pack) return [];
+  return treeRowsForClassifierIds(pack.associationIds).filter((r) => !isClassAlreadyAdded(r));
+});
+
+function addRelatedClassifierFromTree(row: CodespaceClassTreeItem, kind: 'inherit' | 'association'): void {
+  if (layoutOnly.value) return;
+  const anchorId = ctx.classId;
+  const anchor = state.classes.find((x) => x.id === anchorId);
+  if (!anchor) return;
+
+  const rowClassId = String(row.classId ?? '').trim();
+  const existingPeer = state.classes.find((cl) => {
+    if (rowClassId) return cl.id === rowClassId;
+    return cl.id === slug(row.className);
+  });
+
+  let peerId: string;
+  if (existingPeer) {
+    peerId = existingPeer.id;
+  } else {
+    peerId = ensureUniqueClassId(row.classId || slug(row.className));
+    const ap = positions[anchorId] ?? { x: 120, y: 120 };
+    const offsetX = kind === 'inherit' ? -280 : 280;
+    state.classes.push({
+      id: peerId,
+      name: row.className,
+      attrs: [],
+      meth: [],
+    });
+    positions[peerId] = { x: ap.x + offsetX, y: ap.y };
+  }
+
+  const linkKind = kind === 'inherit' ? 'inherit' : 'association';
+  const exists = state.links.some(
+    (l) =>
+      l.kind === linkKind &&
+      ((l.from === anchorId && l.to === peerId) ||
+        (linkKind === 'association' && l.from === peerId && l.to === anchorId)),
+  );
+  if (!exists) {
+    const lid =
+      linkKind === 'inherit' ? `inh-${anchorId}-${peerId}` : `asc-${anchorId}-${peerId}`;
+    state.links.push({ id: lid, from: anchorId, to: peerId, kind: linkKind });
+  }
+
+  selectedIds.value = [peerId];
+  ctx.open = false;
+  pushPayload();
 }
 
 function addClassFromCodespace(row: (typeof codespaceClassRows.value)[number]): void {
@@ -3022,11 +3129,51 @@ function deleteClass(classId: string): void {
       <div
         v-if="ctx.open"
         class="cde-ctx"
+        :class="{ 'cde-ctx--wide': canUseRelatedTypesMenu }"
         :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }"
         role="menu"
         @click.stop
       >
         <button type="button" @click="openClassifierFromDiagram(ctx.classId)">{{ cd.cdeOpenCodespaceClass }}</button>
+        <template v-if="canUseRelatedTypesMenu">
+          <div class="cde-ctx-group">
+            <div class="cde-ctx-sub">{{ cd.cdeCtxAddRelatedHeader }}</div>
+            <template v-if="ctxRelatedInheritanceRows.length">
+              <div class="cde-ctx-hint">{{ cd.cdeCtxRelatedInheritance }}</div>
+              <button
+                v-for="r in ctxRelatedInheritanceRows"
+                :key="'rel-inh-' + r.classId"
+                type="button"
+                @click="addRelatedClassifierFromTree(r, 'inherit')"
+              >
+                + {{ labelForCodespaceTreeRow(r) }}
+              </button>
+            </template>
+            <template v-if="ctxRelatedAssociationRows.length">
+              <div class="cde-ctx-hint">{{ cd.cdeCtxRelatedAssociation }}</div>
+              <button
+                v-for="r in ctxRelatedAssociationRows"
+                :key="'rel-asc-' + r.classId"
+                type="button"
+                @click="addRelatedClassifierFromTree(r, 'association')"
+              >
+                + {{ labelForCodespaceTreeRow(r) }}
+              </button>
+            </template>
+            <div
+              v-if="ctxRelatedOneHopPack && !ctxRelatedInheritanceRows.length && !ctxRelatedAssociationRows.length"
+              class="cde-ctx-muted"
+            >
+              {{ cd.cdeCtxRelatedNone }}
+            </div>
+            <div v-if="!ctxRelatedOneHopPack" class="cde-ctx-muted">{{ cd.cdeCtxRelatedNoResolve }}</div>
+          </div>
+        </template>
+        <template v-else-if="!layoutOnly">
+          <div class="cde-ctx-group">
+            <div class="cde-ctx-muted">{{ cd.cdeCtxRelatedNeedModel }}</div>
+          </div>
+        </template>
         <button type="button" class="cde-ctx-danger" @click="deleteClass(ctx.classId)">{{ cd.cdeDeleteClass }}</button>
       </div>
       <div
@@ -3495,6 +3642,33 @@ function deleteClass(classId: string): void {
 }
 .cde-ctx .cde-ctx-danger {
   color: #b91c1c;
+}
+.cde-ctx--wide {
+  min-width: 220px;
+  max-width: min(380px, 82vw);
+}
+.cde-ctx-group {
+  border-top: 1px solid var(--border, #e2e8f0);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+.cde-ctx-sub {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #475569;
+  padding: 2px 4px 6px;
+}
+.cde-ctx-hint {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #64748b;
+  padding: 6px 4px 2px;
+}
+.cde-ctx-muted {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  padding: 4px;
+  line-height: 1.35;
 }
 .cde-edgeedit {
   min-width: 220px;

@@ -13,6 +13,7 @@ import {
   type ParsedFenceBlock,
 } from '@mvwb/core';
 import { slug } from '@mvwb/mermaid';
+import { getNamespaceAtPath } from './codespace-canvas';
 
 function walkClassifiers(
   p: MvModelCodespacePayload,
@@ -225,6 +226,71 @@ export function findCodespaceClassifierForMermaidClass(
     if (hit) return hit;
   }
   return null;
+}
+
+/** 仅从 model 读取「一层」关联：继承目标（bases）与关联端点（命名空间 associations + 成员/属性 associatedClassifierId）。 */
+export function collectOneHopRelatedClassifierIdsForPayload(
+  payload: MvModelCodespacePayload,
+  mi: number,
+  path: number[],
+  ci: number,
+): { inheritanceIds: string[]; associationIds: string[] } {
+  const ns = getNamespaceAtPath(payload, mi, path);
+  const cls = ns?.classes?.[ci] as MvCodespaceClassifier | undefined;
+  if (!cls) return { inheritanceIds: [], associationIds: [] };
+
+  const inheritance = new Set<string>();
+  for (const b of cls.bases ?? []) {
+    if (b.relation !== 'generalization' && b.relation !== 'realization') continue;
+    const t = (b.targetId ?? '').trim();
+    if (t && t !== cls.id) inheritance.add(t);
+  }
+
+  const association = new Set<string>();
+  const gatherMemberAssoc = (c: MvCodespaceClassifier) => {
+    for (const m of c.members ?? []) {
+      const tid = (m.associatedClassifierId ?? '').trim();
+      if (tid && tid !== cls.id) association.add(tid);
+    }
+    for (const p of c.properties ?? []) {
+      const tid = (p.associatedClassifierId ?? '').trim();
+      if (tid && tid !== cls.id) association.add(tid);
+    }
+  };
+  gatherMemberAssoc(cls);
+
+  const walkNsAssoc = (nodes: MvCodespaceNamespaceNode[] | undefined) => {
+    if (!nodes) return;
+    for (const n of nodes) {
+      for (const a of n.associations ?? []) {
+        if (a.fromClassifierId === cls.id) {
+          const tid = (a.toClassifierId ?? '').trim();
+          if (tid && tid !== cls.id) association.add(tid);
+        } else if (a.toClassifierId === cls.id) {
+          const tid = (a.fromClassifierId ?? '').trim();
+          if (tid && tid !== cls.id) association.add(tid);
+        }
+      }
+      walkNsAssoc(n.namespaces);
+    }
+  };
+  for (const mod of payload.modules ?? []) {
+    walkNsAssoc(mod.namespaces);
+  }
+
+  return { inheritanceIds: [...inheritance], associationIds: [...association] };
+}
+
+/** 类图节点对应 Classifier 的一层相关类型（不递归）。 */
+export function listOneHopRelatedClassifierIdsForDiagramClass(
+  markdown: string,
+  modelRefs: string[],
+  diagramClassId: string,
+  diagramClassName: string,
+): { inheritanceIds: string[]; associationIds: string[] } | null {
+  const hit = findCodespaceClassifierForMermaidClass(markdown, modelRefs, diagramClassId, diagramClassName);
+  if (!hit) return null;
+  return collectOneHopRelatedClassifierIdsForPayload(hit.payload, hit.mi, hit.path, hit.ci);
 }
 
 /** 从当前 ``modelRefs`` 解析同文件第一个 codespace，并拉平出“模块/命名空间/类”树节点。 */

@@ -31,6 +31,14 @@ export type ClassDiagramCanvasMessages = {
   cdeModelSourceInvalid: string;
   /** uml-class 仅观察 codespace 时在画布上的提示 */
   cdeObserveModeBanner: string;
+  /** 右键：从 model 添加一层相关的类到画布 */
+  cdeCtxAddRelatedHeader: string;
+  cdeCtxRelatedInheritance: string;
+  cdeCtxRelatedAssociation: string;
+  cdeCtxRelatedNone: string;
+  cdeCtxRelatedNeedModel: string;
+  /** 当前类无法在 codespace 中解析（与双击打开失败同类） */
+  cdeCtxRelatedNoResolve: string;
 };
 
 export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMessages> = {
@@ -64,6 +72,12 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeDeleteClassConfirm: '确定删除该类及其全部连线？此操作不可撤销。',
     cdeModelSourceInvalid: '未指定有效 model 来源。请先在“基本信息”中绑定可用的 modelRefs（块id#子表id）。',
     cdeObserveModeBanner: '仅观察：类与连线来自 codespace，只读；本视图仅保存布局位置等显示信息。',
+    cdeCtxAddRelatedHeader: '添加相关类型（一层）',
+    cdeCtxRelatedInheritance: '继承 / 实现',
+    cdeCtxRelatedAssociation: '关联',
+    cdeCtxRelatedNone: '无可添加的一层相关类型',
+    cdeCtxRelatedNeedModel: '需绑定 modelRefs',
+    cdeCtxRelatedNoResolve: '无法在 codespace 中解析当前类（检查 modelRefs / 类 id）',
   },
   en: {
     cdeNewClass: 'New class',
@@ -97,5 +111,11 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
       'No valid model source configured. Bind a usable modelRefs entry (blockId#tableId) in Basic Info first.',
     cdeObserveModeBanner:
       'Observe-only: classes and edges come from codespace (read-only). This view saves layout/positions only.',
+    cdeCtxAddRelatedHeader: 'Add related types (one hop)',
+    cdeCtxRelatedInheritance: 'Inheritance / realization',
+    cdeCtxRelatedAssociation: 'Associations',
+    cdeCtxRelatedNone: 'No one-hop related types',
+    cdeCtxRelatedNeedModel: 'Requires modelRefs',
+    cdeCtxRelatedNoResolve: 'Cannot resolve this class in bound codespace (check modelRefs / ids)',
   },
 };
