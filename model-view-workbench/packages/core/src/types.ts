@@ -698,6 +698,11 @@ export interface MvViewPayload {
   kind: MvViewKind;
   /** 绑定的 Model 地址：同文件 `块id` 或 sql 多表时的 `块id#表id`；跨文件 `ref:路径.md#块id`（见 `MV_MODEL_REFS_SCHEME_DOC_ZH` / `MV_MODEL_REFS_SCHEME_DOC_EN`、`modelRefsSchemeDoc`） */
   modelRefs: string[];
+  /**
+   * 仅当 `kind === 'uml-class'` 有意义：为 true 时表示本块**只读观察** `modelRefs` 指向的 codespace（类、继承、关联等从 model 来），
+   * **不写入、不同步** codespace；`payload` 中只宜保留各 view 私有的**显示状态**（如 `layout.positions`、折叠、边可见性等）。
+   */
+  observeCodespaceOnly?: boolean;
   /** 可选视图标题（展示用） */
   title?: string;
   /**

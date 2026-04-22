@@ -132,3 +132,42 @@ export function buildClassDiagramViewPayload(
   };
   return JSON.stringify(next, null, 2);
 }
+
+/** 从类图 JSON 中移除 inherit 边（继承以 mv-model-codespace 的 `bases` 为准落盘）。 */
+export function stripInheritFromClassDiagramPayload(payload: string): string {
+  const p = parseViewPayloadClassDiagram(payload);
+  const links = p.state.links.filter((l) => l.kind !== 'inherit');
+  return buildClassDiagramViewPayload(payload, { ...p.state, links }, p.positions, p.folded, p.edgeVisibility);
+}
+
+/**
+ * 将 codespace 推导出的继承边写入类图 JSON（仅追加 `kind: inherit`，不保留 payload 里旧的 inherit）。
+ * 边 id 固定为 `inh-${from}-${to}`，便于与画布 emit 对齐、减少无意义重载。
+ */
+export function mergeInheritIntoClassDiagramPayload(
+  payload: string,
+  inheritEdges: { from: string; to: string }[],
+): string {
+  const p = parseViewPayloadClassDiagram(payload);
+  const nonInherit = p.state.links.filter((l) => l.kind !== 'inherit');
+  const synthetic: ClassLink[] = [];
+  const seen = new Set<string>();
+  for (const e of inheritEdges) {
+    const k = `${e.from}\t${e.to}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    synthetic.push({
+      id: `inh-${e.from}-${e.to}`,
+      from: e.from,
+      to: e.to,
+      kind: 'inherit',
+    });
+  }
+  return buildClassDiagramViewPayload(
+    payload,
+    { ...p.state, links: [...nonInherit, ...synthetic] },
+    p.positions,
+    p.folded,
+    p.edgeVisibility,
+  );
+}

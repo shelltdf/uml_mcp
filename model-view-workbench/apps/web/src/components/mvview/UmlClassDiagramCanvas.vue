@@ -31,7 +31,11 @@ const props = defineProps<{
   modelSourceValid?: boolean;
   /** 可选：父层自定义错误提示 */
   modelSourceError?: string;
+  /** 为 true：只读观察 bound model，仅允许改布局位置等；不写 codespace、不拉继承/关联到 model */
+  observeCodespaceOnly?: boolean;
 }>();
+
+const layoutOnly = computed(() => props.observeCodespaceOnly === true);
 
 const emit = defineEmits<{
   'update:modelValue': [value: string];
@@ -281,6 +285,7 @@ function onSvgBackgroundPointerDown(e: PointerEvent): void {
 }
 
 function addNewClass(): void {
+  if (layoutOnly.value) return;
   const el = viewportRef.value;
   if (el) {
     const r = el.getBoundingClientRect();
@@ -607,6 +612,7 @@ function isClassAlreadyAdded(row: (typeof codespaceClassRows.value)[number]): bo
 }
 
 function addClassFromCodespace(row: (typeof codespaceClassRows.value)[number]): void {
+  if (layoutOnly.value) return;
   const existing = state.classes.find(
     (c) => c.id === row.classId || c.name === row.className || slug(c.name) === row.classId,
   );
@@ -632,6 +638,7 @@ function addClassFromCodespace(row: (typeof codespaceClassRows.value)[number]): 
 }
 
 function addCustomClassAndSyncModel(): void {
+  if (layoutOnly.value) return;
   const raw = customClassName.value.trim();
   if (!raw) return;
   if (!CLASS_NAME_RE.test(raw)) {
@@ -1037,6 +1044,7 @@ function classIdAtRightHandlePoint(wx: number, wy: number): string | null {
 }
 
 function startInheritDrag(e: PointerEvent, childId: string, anchor: 'top' | 'left' = 'top'): void {
+  if (layoutOnly.value) return;
   e.stopPropagation();
   e.preventDefault();
   selectedInheritHandleClassId.value = childId;
@@ -1060,6 +1068,7 @@ function startAssociationDrag(
   lineIndex: number,
   anchor: 'left' | 'right' = 'right',
 ): void {
+  if (layoutOnly.value) return;
   e.stopPropagation();
   e.preventDefault();
   const p = positions[fromId];
@@ -1093,6 +1102,13 @@ function onGlobalPointerMove(e: PointerEvent): void {
 }
 
 function onGlobalPointerUp(e: PointerEvent): void {
+  if (layoutOnly.value) {
+    inheritDrag.value = null;
+    associationDrag.value = null;
+    tempInheritLine.value = null;
+    tempAssociationLine.value = null;
+    return;
+  }
   if (!inheritDrag.value && !associationDrag.value) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const w = clientToWorld(e.clientX, e.clientY);
@@ -1103,7 +1119,7 @@ function onGlobalPointerUp(e: PointerEvent): void {
     tempInheritLine.value = null;
     if (targetId && targetId !== childId) {
       state.links = state.links.filter((l) => !(l.kind === 'inherit' && l.from === childId));
-      const newId = `inh-${Date.now()}`;
+      const newId = `inh-${childId}-${targetId}`;
       state.links.push({
         id: newId,
         from: childId,
@@ -1157,6 +1173,7 @@ function onEdgePointerDown(e: PointerEvent, edgeId: string): void {
 }
 
 function openEdgeEditor(edgeId: string, x: number, y: number): void {
+  if (layoutOnly.value) return;
   selectedEdgeId.value = edgeId;
   selectedInheritHandleClassId.value = null;
   ctx.open = false;
@@ -1169,6 +1186,7 @@ function openEdgeEditor(edgeId: string, x: number, y: number): void {
 }
 
 function onEdgeContextMenu(e: MouseEvent, edgeId: string): void {
+  if (layoutOnly.value) return;
   e.preventDefault();
   e.stopPropagation();
   selectedEdgeId.value = edgeId;
@@ -1185,10 +1203,12 @@ function onEdgeContextMenu(e: MouseEvent, edgeId: string): void {
 function onEdgeDblClick(e: MouseEvent, edgeId: string): void {
   e.preventDefault();
   e.stopPropagation();
+  if (layoutOnly.value) return;
   openEdgeEditor(edgeId, e.clientX, e.clientY);
 }
 
 function deleteEdge(edgeId: string): void {
+  if (layoutOnly.value) return;
   state.links = state.links.filter((l) => l.id !== edgeId);
   delete associationAnchorByEdge[edgeId];
   delete edgeRenderById[edgeId];
@@ -1202,6 +1222,7 @@ const selectedEdge = computed(() => state.links.find((l) => l.id === edgeEditor.
 const selectedEdgeRender = computed<'straight' | 'orthogonal' | 'curve'>(() => edgeRenderById[edgeEditor.edgeId] ?? 'straight');
 
 function patchEdge(part: Partial<{ kind: 'inherit' | 'association' | 'dependency'; fromMult: string; toMult: string }>): void {
+  if (layoutOnly.value) return;
   const edge = state.links.find((l) => l.id === edgeEditor.edgeId);
   if (!edge) return;
   if (part.kind !== undefined) edge.kind = part.kind;
@@ -1282,6 +1303,7 @@ function onSvgClassPointerUp(e: PointerEvent, classId: string): void {
 function onClassContextMenu(e: MouseEvent, classId: string): void {
   e.preventDefault();
   e.stopPropagation();
+  if (layoutOnly.value) return;
   edgeCtx.open = false;
   addCtx.open = false;
   selectedIds.value = [classId];
@@ -1296,6 +1318,7 @@ function onBackgroundContextMenu(e: MouseEvent): void {
   e.stopPropagation();
   edgeCtx.open = false;
   ctx.open = false;
+  if (layoutOnly.value) return;
   addCtx.open = true;
   customClassName.value = '';
   addCtx.x = e.clientX;
@@ -1489,6 +1512,7 @@ function titleNameY(c: ClassDef): number {
 }
 
 function openClassifierFromDiagram(classId: string): void {
+  if (layoutOnly.value) return;
   const c = state.classes.find((x) => x.id === classId);
   if (!c) return;
   emit('openClassifier', { classDiagramClassId: c.id, className: c.name.trim() });
@@ -1500,6 +1524,7 @@ function onClassDblClick(classId: string): void {
 }
 
 function deleteClass(classId: string): void {
+  if (layoutOnly.value) return;
   if (!window.confirm(cd.value.cdeDeleteClassConfirm)) return;
   state.classes = state.classes.filter((c) => c.id !== classId);
   state.links = state.links.filter((l) => l.from !== classId && l.to !== classId);
@@ -1530,6 +1555,9 @@ function deleteClass(classId: string): void {
     >
       <div v-if="modelSourceErrorText" class="cde-model-source-error" role="alert">
         {{ modelSourceErrorText }}
+      </div>
+      <div v-else-if="layoutOnly" class="cde-model-source-error cde-model-source-error--info" role="status">
+        {{ cd.cdeObserveModeBanner }}
       </div>
       <div class="cde-world" :style="worldTransform()">
         <div class="cde-grid" aria-hidden="true" />
@@ -1594,6 +1622,7 @@ function deleteClass(classId: string): void {
             @contextmenu="onClassContextMenu($event, c.id)"
           >
             <polygon
+              v-if="!layoutOnly"
               points="124,-14 116,0 132,0"
               :fill="selectedInheritHandleClassId === c.id || isClassSelected(c.id) ? '#2563eb' : '#94a3b8'"
               stroke="#334155"
@@ -1653,6 +1682,7 @@ function deleteClass(classId: string): void {
               {{ escapeXml(classDisplayLabel(c)) }}
             </text>
             <polygon
+              v-if="!layoutOnly"
               points="-16,18 0,10 0,26"
               :fill="isDarkTheme() ? '#94a3b8' : '#475569'"
               style="cursor: crosshair"
@@ -1683,7 +1713,7 @@ function deleteClass(classId: string): void {
               </text>
             </template>
             <polygon
-              v-for="h in rightHandleRows(c)"
+              v-for="h in layoutOnly ? [] : rightHandleRows(c)"
               :key="'memb-handle-' + h.key"
               :points="`264,${previewSectionLineY(c, h.sectionIndex, h.lineIndex) - 4} 248,${previewSectionLineY(c, h.sectionIndex, h.lineIndex) - 12} 248,${previewSectionLineY(c, h.sectionIndex, h.lineIndex) + 4}`"
               :fill="isDarkTheme() ? '#93c5fd' : '#2563eb'"
@@ -1982,6 +2012,7 @@ function deleteClass(classId: string): void {
             </svg>
           </button>
           <button
+            v-if="!layoutOnly"
             type="button"
             class="cde-canvas-toolbar__btn"
             :aria-label="cd.cdeNewClass"
@@ -2236,6 +2267,16 @@ function deleteClass(classId: string): void {
   border-color: #fbbf24;
   background: rgba(120, 53, 15, 0.92);
   color: #fde68a;
+}
+.cde-model-source-error--info {
+  border-color: #93c5fd;
+  background: rgba(219, 234, 254, 0.95);
+  color: #1e3a5f;
+}
+:root[data-theme='dark'] .cde-model-source-error--info {
+  border-color: #3b82f6;
+  background: rgba(30, 58, 138, 0.88);
+  color: #dbeafe;
 }
 .cde-viewport--panning {
   cursor: grabbing;

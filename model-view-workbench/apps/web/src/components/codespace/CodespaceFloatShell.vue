@@ -228,6 +228,52 @@ function toggleMaximize(): void {
   margin-bottom: 6px;
   font-size: 0.78rem;
 }
+.cff-wrap .cs-base-row {
+  align-items: flex-start;
+}
+.cff-wrap .cs-base-main {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cff-wrap .cs-base-field {
+  margin-bottom: 0;
+}
+.cff-wrap .cs-base-ref {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: #475569;
+  line-height: 1.35;
+}
+.cff-wrap .cs-base-ref--warn {
+  color: #b45309;
+}
+.cff-wrap .cs-base-ref-name {
+  font-weight: 600;
+}
+.cff-wrap .cs-base-ref-id {
+  font-size: 0.68rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #f1f5f9;
+}
+.cff-wrap .cs-base-ref--warn .cs-base-ref-id {
+  background: #ffedd5;
+}
+.cff-wrap .cs-base-rel {
+  flex: 0 0 auto;
+}
+.cff-wrap .cs-field-hint {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: #64748b;
+}
 .cff-wrap .cs-inline-pair {
   display: flex;
   align-items: flex-end;

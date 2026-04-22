@@ -66,6 +66,18 @@ export type CodespaceClassTreeItem = {
   methodLines: string[];
 };
 
+/** 将类图节点 id/名称解析为 codespace 中 `classes[].id`（首条匹配），供画布→model 同步。 */
+export function resolveDiagramClassToCodespaceClassId(
+  diagramClassId: string,
+  diagramClassName: string,
+  rows: CodespaceClassTreeItem[],
+): string | null {
+  for (const r of rows) {
+    if (matchesClass(diagramClassId, diagramClassName, r.classId, r.className)) return r.classId;
+  }
+  return null;
+}
+
 export type FirstCodespaceRef = {
   codespaceBlockId: string;
   payload: MvModelCodespacePayload;

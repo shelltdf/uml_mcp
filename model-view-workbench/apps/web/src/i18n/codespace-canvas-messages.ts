@@ -158,6 +158,8 @@ export interface CodespaceCanvasMessages {
   flMacroDeleteTitle: string;
   flMacroDeleteLabel: string;
   flClsIdTitle: string;
+  /** 类 id 输入框下方说明：随名称/路径重算 id、关系引用自动改写 */
+  flClsIdReadonlyHint: string;
   flClsNameTitle: string;
   flClsKindTitle: string;
   flClsAbstractTitle: string;
@@ -169,7 +171,14 @@ export interface CodespaceCanvasMessages {
   flClsNotesTitle: string;
   flClsNotesPlaceholder: string;
   flClsBasesHeading: string;
+  /** bases 行：按名称选择基类型时的字段标签 */
+  flClsBaseTypeLabel: string;
+  /** bases 行：解析后的名称 + id 只读展示说明 */
+  flClsBaseRefCaption: string;
+  /** bases 下拉：选择基类型（存储仍为 targetId） */
   flClsTargetIdTitle: string;
+  /** targetId 不在当前围栏类表中时的下拉首项前缀 */
+  flClsBaseInvalidTargetPrefix: string;
   flClsRelationTitle: string;
   flClsDelShortTitle: string;
   flClsDelShortLabel: string;
@@ -357,7 +366,9 @@ Right-click: canvas menu (add module, etc.)`,
   flFnDeleteLabel: 'Delete function',
   flMacroDeleteTitle: 'Delete macro — no global shortcut',
   flMacroDeleteLabel: 'Delete macro',
-  flClsIdTitle: 'Class id — no global shortcut',
+  flClsIdTitle: 'Class id (read-only) — no global shortcut',
+  flClsIdReadonlyHint:
+    'Read-only: when you change the class name (and its namespace path), path-based ids are recomputed and references in bases / associations are remapped automatically.',
   flClsNameTitle: 'Class name — no global shortcut',
   flClsKindTitle: 'Kind — no global shortcut',
   flClsAbstractTitle: 'abstract — no global shortcut',
@@ -369,7 +380,10 @@ Right-click: canvas menu (add module, etc.)`,
   flClsNotesTitle: 'Notes — no global shortcut',
   flClsNotesPlaceholder: 'Describe design intent, constraints, and decisions...',
   flClsBasesHeading: 'bases (generalization / realization)',
-  flClsTargetIdTitle: 'targetId — no global shortcut',
+  flClsBaseTypeLabel: 'Base type',
+  flClsBaseRefCaption: 'Resolved name · stored id (read-only)',
+  flClsTargetIdTitle: 'Pick a classifier by display name; JSON stores stable id as targetId — no global shortcut',
+  flClsBaseInvalidTargetPrefix: '⚠ Invalid targetId:',
   flClsRelationTitle: 'relation — no global shortcut',
   flClsDelShortTitle: 'Remove — no global shortcut',
   flClsDelShortLabel: 'Del',
@@ -508,6 +522,14 @@ const codespaceCanvasZhOverrides: Partial<CodespaceCanvasMessages> = {
   flClsAddEnumLiteralLabel: '＋ 枚举字面量',
   flClsRemoveClassTitle: '删除该类 — 无全局快捷键',
   flClsRemoveClassLabel: '删除类',
+  flClsIdTitle: '类 id（只读）',
+  flClsIdReadonlyHint:
+    '只读：修改类名（及所在命名空间路径）后会按路径重算类 id，bases / associations 里对该类的引用会自动改写。',
+  flClsBasesHeading: 'bases（继承 / 实现）',
+  flClsBaseTypeLabel: '基类型',
+  flClsBaseRefCaption: '解析名称 · 存储 id（只读）',
+  flClsTargetIdTitle: '按类型名称选择基类；JSON 中仍以稳定 id 写入 targetId — 无全局快捷键',
+  flClsBaseInvalidTargetPrefix: '⚠ 无效 targetId：',
 };
 
 export const codespaceCanvasMessages: Record<AppLocale, CodespaceCanvasMessages> = {

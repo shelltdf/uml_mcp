@@ -89,6 +89,22 @@ const classifierNameById = computed(() => {
   return m;
 });
 
+const classifierIdSet = computed(() => new Set(classifierOptions.value));
+
+/** bases 下拉：排除自身；标签为「类型名 (id)」，值仍为 id */
+const baseTargetPickOptions = computed(() => {
+  const self = selectedClass.value?.id;
+  const nm = classifierNameById.value;
+  const ids = classifierOptions.value.filter((id) => id !== self);
+  return [...ids]
+    .map((id) => {
+      const n = (nm.get(id) ?? '').trim();
+      const label = n && n !== id ? `${n} (${id})` : id;
+      return { id, label };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+});
+
 const associatedTypeCandidates = computed((): string[] => {
   const cls = selectedClass.value;
   const ns = selectedNamespace.value;
@@ -493,6 +509,7 @@ watch(associatedTypeCandidates, (next, prev) => {
           :title="csMsg.flClsIdTitle"
           readonly
         />
+        <p class="cs-field-hint">{{ csMsg.flClsIdReadonlyHint }}</p>
       </label>
       <label class="field">
         <span>name</span>
@@ -562,15 +579,33 @@ watch(associatedTypeCandidates, (next, prev) => {
       </label>
 
       <h5 class="cs-subh">{{ csMsg.flClsBasesHeading }}</h5>
-      <div v-for="(b, bi) in selectedClass.bases ?? []" :key="bi" class="cs-rowline">
+      <div v-for="(b, bi) in selectedClass.bases ?? []" :key="'cbase-' + bi + '-' + b.targetId" class="cs-rowline cs-base-row">
+        <div class="cs-base-main">
+          <label class="field cs-base-field">
+            <span>{{ csMsg.flClsBaseTypeLabel }}</span>
+            <select
+              class="wide"
+              :title="csMsg.flClsTargetIdTitle"
+              :value="b.targetId"
+              @change="patchBase(bi, { targetId: ($event.target as HTMLSelectElement).value })"
+            >
+              <option v-if="!classifierIdSet.has(b.targetId)" :value="b.targetId">
+                {{ csMsg.flClsBaseInvalidTargetPrefix }} {{ b.targetId }}
+              </option>
+              <option v-for="opt in baseTargetPickOptions" :key="'bopt-' + opt.id" :value="opt.id">{{ opt.label }}</option>
+            </select>
+          </label>
+          <div
+            class="cs-base-ref"
+            :class="{ 'cs-base-ref--warn': !classifierIdSet.has(b.targetId) }"
+            :title="csMsg.flClsBaseRefCaption"
+          >
+            <span class="cs-base-ref-name">{{ classifierNameById.get(b.targetId) ?? '—' }}</span>
+            <code class="cs-base-ref-id">{{ b.targetId }}</code>
+          </div>
+        </div>
         <select
-          :title="csMsg.flClsTargetIdTitle"
-          :value="b.targetId"
-          @change="patchBase(bi, { targetId: ($event.target as HTMLSelectElement).value })"
-        >
-          <option v-for="cid in classifierOptions" :key="cid" :value="cid">{{ cid }}</option>
-        </select>
-        <select
+          class="cs-base-rel"
           :title="csMsg.flClsRelationTitle"
           :value="b.relation"
           @change="

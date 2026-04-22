@@ -19,6 +19,7 @@ import {
   parseMarkdownBlocks,
   replaceBlockInnerById,
   slug,
+  type MvCodespaceClassifierBase,
   type MvMapPayload,
   type MvModelCodespacePayload,
   type MvModelColumnDef,
@@ -29,6 +30,11 @@ import {
   type MvViewPayload,
   type ParsedFenceBlock,
 } from '@mvwb/core';
+import {
+  mergeInheritIntoClassDiagramPayload,
+  parseViewPayloadClassDiagram as parseUmlClassDiagramPayload,
+  stripInheritFromClassDiagramPayload,
+} from '../utils/uml-class-payload';
 import { useAppLocale } from '../composables/useAppLocale';
 import { CS_CANVAS_MSG_KEY, codespaceCanvasMessages } from '../i18n/codespace-canvas-messages';
 import { blockCanvasSurfaceTitle } from '../i18n/insert-modal-locale';
@@ -45,6 +51,7 @@ import {
   findCodespaceClassifierForClassCanvas,
   getFirstCodespaceRefForClassCanvas,
   listCodespaceClassesForClassCanvas,
+  resolveDiagramClassToCodespaceClassId,
   type CodespaceClassTreeItem,
 } from '../utils/class-canvas-codespace-bridge';
 import {
@@ -295,6 +302,11 @@ function fromViewPayloadText(kind: MvViewKind, text: string): MvViewPayload['pay
 function setViewPayloadText(text: string): void {
   const v = viewDraft.value;
   if (!v) return;
+  if (v.kind === 'uml-class' && !v.observeCodespaceOnly && classCanvasHasValidModelSource.value) {
+    if (ensureClassCanvasCodespaceSidePayloadForClassSync()) {
+      syncUmlInheritLinksToCodespaceBases(text);
+    }
+  }
   v.payload = fromViewPayloadText(v.kind, text);
 }
 
@@ -439,6 +451,19 @@ const classCanvasModelSourceError = computed((): string => {
     : '未指定有效 model 来源，请先在“基本信息”里绑定可用的 modelRefs。';
 });
 
+/** uml-class：仅观察 codespace，不写回 model、不占用侧车同步。 */
+const umlClassObserveCodespaceOnly = computed(
+  () => viewDraft.value?.kind === 'uml-class' && viewDraft.value.observeCodespaceOnly === true,
+);
+
+/** 与 codespace 合并展示 / 落盘 strip inherit：有效 modelRefs，或仅观察模式（至少配置了 modelRefs 列表）。 */
+const umlClassUsesCodespaceLayoutMerge = computed((): boolean => {
+  const v = viewDraft.value;
+  if (!v || v.kind !== 'uml-class') return false;
+  if (umlClassObserveCodespaceOnly.value) return Array.isArray(v.modelRefs) && v.modelRefs.length > 0;
+  return classCanvasHasValidModelSource.value;
+});
+
 const classCanvasCodespaceClassTree = computed<CodespaceClassTreeItem[]>(() => {
   if (!viewDraft.value || (viewDraft.value.kind !== 'mermaid-class' && viewDraft.value.kind !== 'uml-class')) return [];
   return listCodespaceClassesForClassCanvas(classCanvasSourceMarkdown.value, viewDraft.value.modelRefs ?? []);
@@ -450,6 +475,76 @@ const classCanvasSourceMarkdown = computed((): string => {
   if (!sideId || !sidePayload) return props.markdown;
   const next = replaceBlockInnerById(props.markdown, sideId, JSON.stringify(sidePayload, null, 2));
   return next ?? props.markdown;
+});
+
+/** 只读：合并展示用 codespace payload，勿在 computed 里写入侧车 ref。 */
+function classCanvasCodespacePayloadForMerge(): MvModelCodespacePayload | null {
+  if (classCanvasCodespaceSidePayload.value) return classCanvasCodespaceSidePayload.value;
+  const v = viewDraft.value;
+  if (!v || v.kind !== 'uml-class') return null;
+  return getFirstCodespaceRefForClassCanvas(props.markdown, v.modelRefs ?? [])?.payload ?? null;
+}
+
+function collectInheritEdgesFromCodespaceForDiagram(
+  diagramPayloadText: string,
+  cs: MvModelCodespacePayload,
+  rows: CodespaceClassTreeItem[],
+): { from: string; to: string }[] {
+  const { state } = parseUmlClassDiagramPayload(diagramPayloadText);
+  if (!state.classes.length) return [];
+  const nameByDiagramId = new Map(state.classes.map((c) => [c.id, (c.name ?? c.id).trim()] as const));
+  const csToDiag = new Map<string, string>();
+  for (const dc of state.classes) {
+    const csId = resolveDiagramClassToCodespaceClassId(dc.id, nameByDiagramId.get(dc.id) ?? dc.id, rows);
+    if (csId) csToDiag.set(csId, dc.id);
+  }
+  const out: { from: string; to: string }[] = [];
+  const seen = new Set<string>();
+  for (const mod of cs.modules ?? []) {
+    const walk = (nodes: typeof mod.namespaces) => {
+      for (const n of nodes ?? []) {
+        for (const c of n.classes ?? []) {
+          const childDiag = csToDiag.get(c.id);
+          if (!childDiag) continue;
+          for (const b of c.bases ?? []) {
+            if (b.relation !== 'generalization') continue;
+            const parentDiag = csToDiag.get(b.targetId);
+            if (!parentDiag) continue;
+            const k = `${childDiag}\t${parentDiag}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            out.push({ from: childDiag, to: parentDiag });
+          }
+        }
+        walk(n.namespaces);
+      }
+    };
+    walk(mod.namespaces);
+  }
+  return out;
+}
+
+/** 画布展示：继承边来自 codespace `bases.generalization`；编辑态 viewDraft 仍可带 inherit 供 watch 写回 codespace。 */
+const umlClassCanvasModelValue = computed((): string => {
+  const v = viewDraft.value;
+  const raw = toViewPayloadText(v?.payload);
+  if (!v || v.kind !== 'uml-class') return raw;
+  if (!umlClassUsesCodespaceLayoutMerge.value) return raw;
+  const cs = classCanvasCodespacePayloadForMerge();
+  if (!cs) return raw;
+  const rows = listCodespaceClassesForClassCanvas(classCanvasSourceMarkdown.value, v.modelRefs ?? []);
+  const stripped = stripInheritFromClassDiagramPayload(raw);
+  const edges = collectInheritEdgesFromCodespaceForDiagram(stripped, cs, rows);
+  return mergeInheritIntoClassDiagramPayload(stripped, edges);
+});
+
+/** 源码 tab：与保存到 md 的 mv-view 一致，不展示 inherit（继承只在 codespace `bases`）。 */
+const umlClassPayloadSourceText = computed((): string => {
+  const v = viewDraft.value;
+  const raw = toViewPayloadText(v?.payload);
+  if (!v || v.kind !== 'uml-class') return raw;
+  if (!umlClassUsesCodespaceLayoutMerge.value) return raw;
+  return stripInheritFromClassDiagramPayload(raw);
 });
 
 const classCanvasAssocTargetsByClassId = computed<Record<string, string[]>>(() => {
@@ -529,6 +624,80 @@ function syncAssocTypeFromDiagramToCodespace(): void {
             p.typeFromAssociation = !!t || undefined;
             if (t) p.type = t;
           }
+        }
+        walk(n.namespaces);
+      }
+    };
+    walk(mod.namespaces);
+  }
+}
+
+/** 未打开 codespace 浮窗时，为类图→model 同步懒加载同文件首个 codespace 围栏。 */
+function ensureClassCanvasCodespaceSidePayloadForClassSync(): boolean {
+  const v0 = viewDraft.value;
+  if (v0?.kind === 'uml-class' && v0.observeCodespaceOnly) return false;
+  if (classCanvasCodespaceSidePayload.value) return true;
+  const v = viewDraft.value;
+  if (!v || (v.kind !== 'uml-class' && v.kind !== 'mermaid-class')) return false;
+  const first = getFirstCodespaceRefForClassCanvas(props.markdown, v.modelRefs ?? []);
+  if (!first) return false;
+  classCanvasCodespaceSideBlockId.value = first.codespaceBlockId;
+  classCanvasCodespaceSidePayload.value = first.payload;
+  return true;
+}
+
+/** uml-class：以当前 payload 文本中的 inherit 为准写 codespace `bases.generalization`；删除画布继承会清空对应记录。 */
+function syncUmlInheritLinksToCodespaceBases(diagramPayloadText: string): void {
+  const v = viewDraft.value;
+  if (!v || v.kind !== 'uml-class') return;
+  if (v.observeCodespaceOnly) return;
+  if (!classCanvasCodespaceSidePayload.value) return;
+  const side = classCanvasCodespaceSidePayload.value;
+  const { state } = parseUmlClassDiagramPayload(diagramPayloadText);
+  const rows = listCodespaceClassesForClassCanvas(classCanvasSourceMarkdown.value, v.modelRefs ?? []);
+  const nameByDiagramClassId = (id: string): string => {
+    const c = state.classes.find((x) => x.id === id);
+    return (c?.name ?? id).trim() || id;
+  };
+  const resolveCsId = (diagramId: string): string | null =>
+    resolveDiagramClassToCodespaceClassId(diagramId, nameByDiagramClassId(diagramId), rows);
+
+  const codespaceIdsInDiagram = new Set<string>();
+  for (const dc of state.classes) {
+    const cid = resolveCsId(dc.id);
+    if (cid) codespaceIdsInDiagram.add(cid);
+  }
+
+  const genByChild = new Map<string, MvCodespaceClassifierBase[]>();
+  for (const l of state.links) {
+    if (l.kind !== 'inherit') continue;
+    const childCs = resolveCsId(l.from);
+    const parentCs = resolveCsId(l.to);
+    if (!childCs || !parentCs || childCs === parentCs) continue;
+    const arr = genByChild.get(childCs) ?? [];
+    arr.push({ targetId: parentCs, relation: 'generalization' });
+    genByChild.set(childCs, arr);
+  }
+  for (const [childId, arr] of genByChild) {
+    const seen = new Set<string>();
+    const dedup: MvCodespaceClassifierBase[] = [];
+    for (const b of arr) {
+      if (seen.has(b.targetId)) continue;
+      seen.add(b.targetId);
+      dedup.push(b);
+    }
+    genByChild.set(childId, dedup);
+  }
+
+  for (const mod of side.modules ?? []) {
+    const walk = (nodes: typeof mod.namespaces) => {
+      for (const n of nodes ?? []) {
+        for (const c of n.classes ?? []) {
+          if (!codespaceIdsInDiagram.has(c.id)) continue;
+          const kept = (c.bases ?? []).filter((b) => b.relation !== 'generalization');
+          const gens = genByChild.get(c.id) ?? [];
+          const nextBases = [...kept, ...gens];
+          if (JSON.stringify(c.bases ?? []) !== JSON.stringify(nextBases)) c.bases = nextBases;
         }
         walk(n.namespaces);
       }
@@ -1130,6 +1299,15 @@ function buildInnerJson(): string | null {
     if (!Array.isArray(v.modelRefs)) v.modelRefs = [];
     // Mermaid view must store source in a dedicated ```mermaid``` block.
     if (isMermaidViewKind(v.kind)) v.payload = '';
+    else if (
+      v.kind === 'uml-class' &&
+      (classCanvasHasValidModelSource.value || v.observeCodespaceOnly === true) &&
+      (typeof v.payload === 'string' || (v.payload && typeof v.payload === 'object'))
+    ) {
+      const pt = typeof v.payload === 'string' ? v.payload : JSON.stringify(v.payload, null, 2);
+      const stripped = stripInheritFromClassDiagramPayload(pt);
+      v.payload = fromViewPayloadText('uml-class', stripped);
+    }
     return JSON.stringify(v, null, 2);
   }
   if (b.kind === 'mv-map') {
@@ -1211,9 +1389,29 @@ watch(
 watch(
   [() => viewDraft.value?.payload, () => classCanvasCodespaceSidePayload.value],
   () => {
+    const vd = viewDraft.value;
+    if (vd?.kind === 'uml-class' && vd.observeCodespaceOnly) {
+      syncAssocTypeFromDiagramToCodespace();
+      return;
+    }
+    if (vd?.kind === 'uml-class' || vd?.kind === 'mermaid-class') {
+      ensureClassCanvasCodespaceSidePayloadForClassSync();
+    }
     syncAssocTypeFromDiagramToCodespace();
   },
   { deep: true },
+);
+
+watch(
+  () => viewDraft.value?.observeCodespaceOnly,
+  (obs) => {
+    if (obs && viewDraft.value?.kind === 'uml-class') {
+      classCanvasCodespaceFloatOpen.value = false;
+      classCanvasCodespaceFloat.value = null;
+      classCanvasCodespaceSideBlockId.value = null;
+      classCanvasCodespaceSidePayload.value = null;
+    }
+  },
 );
 
 function save() {
@@ -1272,6 +1470,14 @@ function patchClassCanvasCodespaceSide(fn: (d: MvModelCodespacePayload) => void)
 function onClassCanvasOpenClassifier(ev: { classDiagramClassId: string; className: string }) {
   const vd = viewDraft.value;
   if (!vd) return;
+  if (vd.kind === 'uml-class' && vd.observeCodespaceOnly) {
+    window.alert(
+      locale.value === 'en'
+        ? 'This view is observe-only. Open the mv-model-codespace fence to edit the model.'
+        : '当前为仅观察视图。请直接打开 mv-model-codespace 围栏编辑模型。',
+    );
+    return;
+  }
   const hit = findCodespaceClassifierForClassCanvas(
     classCanvasSourceMarkdown.value,
     vd.modelRefs,
@@ -1299,6 +1505,7 @@ function closeClassCanvasCodespaceFloat() {
 function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: string }) {
   const vd = viewDraft.value;
   if (!vd) return;
+  if (vd.kind === 'uml-class' && vd.observeCodespaceOnly) return;
 
   if (!classCanvasCodespaceSidePayload.value || !classCanvasCodespaceSideBlockId.value) {
     const first = getFirstCodespaceRefForClassCanvas(classCanvasSourceMarkdown.value, vd.modelRefs ?? []);
@@ -1873,6 +2080,18 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                   </div>
                 </div>
               </div>
+              <label v-if="viewDraft.kind === 'uml-class'" class="field mv-class-observe-only">
+                <span>{{
+                  locale === 'en'
+                    ? 'Observe codespace only (read-only; this block saves layout/positions only)'
+                    : '仅观察 codespace（只读；本块只保存画布布局与位置等显示信息）'
+                }}</span>
+                <input
+                  type="checkbox"
+                  :checked="viewDraft.observeCodespaceOnly === true"
+                  @change="viewDraft.observeCodespaceOnly = ($event.target as HTMLInputElement).checked"
+                />
+              </label>
             </div>
             <div
               v-show="classCanvasPayloadMode === 'canvas'"
@@ -1894,11 +2113,12 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
               />
               <UmlClassDiagramCanvas
                 v-else-if="viewDraft.kind === 'uml-class'"
-                :model-value="toViewPayloadText(viewDraft.payload)"
+                :model-value="umlClassCanvasModelValue"
                 :canvas-id="`${blockId}-uml`"
                 :codespace-classes="classCanvasCodespaceClassTree"
                 :model-source-valid="classCanvasHasValidModelSource"
                 :model-source-error="classCanvasModelSourceError"
+                :observe-codespace-only="viewDraft.observeCodespaceOnly === true"
                 @update:model-value="(v: string) => setViewPayloadText(v)"
                 @open-classifier="onClassCanvasOpenClassifier"
                 @create-missing-classifier="onClassCanvasCreateMissingClassifier"
@@ -1913,7 +2133,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
             >
               <span>payload（{{ viewDraft.kind === 'uml-class' ? 'UML classDiagram' : 'Mermaid classDiagram' }}）</span>
               <textarea
-                :value="toViewPayloadText(viewDraft.payload)"
+                :value="viewDraft.kind === 'uml-class' ? umlClassPayloadSourceText : toViewPayloadText(viewDraft.payload)"
                 class="payload-ta"
                 spellcheck="false"
                 rows="16"

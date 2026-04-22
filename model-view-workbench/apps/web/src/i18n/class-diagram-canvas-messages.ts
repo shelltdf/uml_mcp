@@ -25,6 +25,8 @@ export type ClassDiagramCanvasMessages = {
   cdeDeleteClass: string;
   cdeDeleteClassConfirm: string;
   cdeModelSourceInvalid: string;
+  /** uml-class 仅观察 codespace 时在画布上的提示 */
+  cdeObserveModeBanner: string;
 };
 
 export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMessages> = {
@@ -53,6 +55,7 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeDeleteClass: '删除此类',
     cdeDeleteClassConfirm: '确定删除该类及其全部连线？此操作不可撤销。',
     cdeModelSourceInvalid: '未指定有效 model 来源。请先在“基本信息”中绑定可用的 modelRefs（块id#子表id）。',
+    cdeObserveModeBanner: '仅观察：类与连线来自 codespace，只读；本视图仅保存布局位置等显示信息。',
   },
   en: {
     cdeNewClass: 'New class',
@@ -80,5 +83,7 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeDeleteClassConfirm: 'Delete this class and all attached lines? This cannot be undone.',
     cdeModelSourceInvalid:
       'No valid model source configured. Bind a usable modelRefs entry (blockId#tableId) in Basic Info first.',
+    cdeObserveModeBanner:
+      'Observe-only: classes and edges come from codespace (read-only). This view saves layout/positions only.',
   },
 };
