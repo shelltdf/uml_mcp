@@ -162,6 +162,9 @@ const layoutBeautyLabel = computed(() =>
       : cd.value.cdeLayoutBeautyBalanced,
 );
 
+/** 连线松弛：优先压低交叉数（词典序先于总长）；无法从算法上保证任意拓扑均零交叉 */
+const layoutPrioritizeNoCrossing = ref(false);
+
 const inheritDrag = ref<{ fromId: string } | null>(null);
 const tempInheritLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 const associationDrag = ref<{ fromId: string; sectionIndex: number; lineIndex: number; anchor: 'left' | 'right' } | null>(null);
@@ -174,6 +177,17 @@ const edgeCtx = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
 const edgeEditor = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
 const associationAnchorByEdge = reactive<Record<string, { sectionIndex: number; lineIndex: number }>>({});
 const edgeRenderById = reactive<Record<string, 'straight' | 'orthogonal' | 'curve'>>({});
+
+/**
+ * 同源/同宿多条关联时的端点水平错位（px）。
+ * 过小会导致多条正交路由共用同一竖廊道，看起来像交叉或揉在一起。
+ */
+const EDGE_FAN_LANE_STEP = 14;
+
+/** 正交布线「通道」纵向偏移：与 EDGE_FAN_LANE_STEP 配套，拉大 Z 形路径的中段高度差 */
+function orthogonalChannelBias(outLaneOffset: number, inLaneOffset: number): number {
+  return outLaneOffset * 3 + inLaneOffset * 2.25;
+}
 
 function loadFromPayload(payload: string): void {
   const raw = (payload ?? '').trim();
@@ -1672,7 +1686,11 @@ function zoomDelta(d: number): void {
   scale.value = next;
 }
 
-function autoLayoutClasses(): void {
+function onToolbarAutoLayout(e: MouseEvent): void {
+  autoLayoutClasses({ preservePositions: e.altKey });
+}
+
+function autoLayoutClasses(opts?: { preservePositions?: boolean }): void {
   const classes = state.classes;
   if (!classes.length) return;
   const byId = new Map(classes.map((c) => [c.id, c] as const));
@@ -1928,11 +1946,11 @@ function autoLayoutClasses(): void {
     }
   };
   /** 微调类坐标，降低 `combinedWireRelaxObjective`（总长/折线代价 + 弦长均衡 + 连线交叉惩罚） */
-  const relaxWireCostByMovingClasses = (): void => {
+  const relaxWireCostByMovingClasses = (crossingWeightMul = 1): void => {
     const passes = beauty.wireRelaxPasses;
     const step0 = beauty.wireRelaxStep;
     const balanceW = beauty.wireBalanceWeight;
-    const crossingW = beauty.wireCrossingWeight;
+    const crossingW = beauty.wireCrossingWeight * crossingWeightMul;
     if (passes <= 0 || classes.length === 0) return;
     const snapshot = (): Record<string, { x: number; y: number }> => {
       const o: Record<string, { x: number; y: number }> = {};
@@ -2081,6 +2099,22 @@ function autoLayoutClasses(): void {
         }
       }
     }
+  }
+
+  /**
+   * 「保留位置」路径：不重算网格/继承树（否则会覆盖手工拖拽）。
+   * 只做关联方向约束、去重叠，并以略高的交叉惩罚做小步连线松弛。
+   */
+  if (opts?.preservePositions) {
+    applyBeautyEdgeRender();
+    enforceAssocMinXAndUnOverlap();
+    normalizeDiagramPadding();
+    relaxWireCostByMovingClasses(1.65);
+    normalizeDiagramPadding();
+    pushPayload();
+    fitAll();
+    void nextTick(() => fitAll());
+    return;
   }
 
   // 无继承链时改为紧凑网格布局，避免所有类横向排成一条长带。
@@ -3166,7 +3200,7 @@ function diagramTotalWireCost(): number {
     classRectById.set(c.id, { x: p.x, y: p.y, w: s.w, h: s.h });
   }
   const laneByEdgeId = buildLaneByEdgeIdFromLinks(state.links);
-  const laneStep = 9;
+  const laneStep = EDGE_FAN_LANE_STEP;
   let sum = 0;
   for (const l of state.links) {
     if (l.kind === 'inherit' && !edgeVisibility.inherit) continue;
@@ -3222,7 +3256,7 @@ function diagramTotalWireCost(): number {
         y2,
         outLaneOffset,
         inLaneOffset,
-        outLaneOffset * 0.35,
+        orthogonalChannelBias(outLaneOffset, inLaneOffset),
       ).cost;
     } else if (render === 'curve') {
       sum += Math.hypot(x2 - x1, y2 - y1) * 1.12;
@@ -3236,7 +3270,7 @@ function diagramTotalWireCost(): number {
 /** 与 `diagramTotalWireCost` 相同的端点几何，用于衡量「连线跨度」是否接近（弦长，非折线展开长） */
 function collectVisibleEdgeChordLengths(): number[] {
   const laneByEdgeId = buildLaneByEdgeIdFromLinks(state.links);
-  const laneStep = 9;
+  const laneStep = EDGE_FAN_LANE_STEP;
   const out: number[] = [];
   for (const l of state.links) {
     if (l.kind === 'inherit' && !edgeVisibility.inherit) continue;
@@ -3314,7 +3348,7 @@ function diagramEdgeCrossingPairCount(): number {
     classRectById.set(c.id, { x: p.x, y: p.y, w: s.w, h: s.h });
   }
   const laneByEdgeId = buildLaneByEdgeIdFromLinks(state.links);
-  const laneStep = 9;
+  const laneStep = EDGE_FAN_LANE_STEP;
   const perEdgeSegs: Array<Array<{ ax: number; ay: number; bx: number; by: number }>> = [];
 
   for (const l of state.links) {
@@ -3371,7 +3405,7 @@ function diagramEdgeCrossingPairCount(): number {
         y2,
         outLaneOffset,
         inLaneOffset,
-        outLaneOffset * 0.35,
+        orthogonalChannelBias(outLaneOffset, inLaneOffset),
       );
       perEdgeSegs.push(segmentsFromSimplifiedPts(pts));
     } else {
@@ -3388,13 +3422,16 @@ function diagramEdgeCrossingPairCount(): number {
   return pairs;
 }
 
-/** 自动排版松弛用：总布线代价 + 弦长均衡 + 交叉对惩罚 */
+/** 自动排版松弛用：总布线代价 + 弦长均衡 + 交叉对惩罚（可选：交叉优先） */
 function combinedWireRelaxObjective(balanceWeight: number, crossingWeight: number): number {
-  return (
-    diagramTotalWireCost() +
-    balanceWeight * diagramEdgeChordLengthSpread() +
-    crossingWeight * diagramEdgeCrossingPairCount()
-  );
+  const crossPairs = diagramEdgeCrossingPairCount();
+  const wireCost =
+    diagramTotalWireCost() + balanceWeight * diagramEdgeChordLengthSpread();
+  if (layoutPrioritizeNoCrossing.value && crossPairs > 0) {
+    /** 大到足以覆盖 wireCost，使任意「交叉更少」的步骤优先于总长 */
+    return 1e15 * crossPairs + wireCost;
+  }
+  return wireCost + crossingWeight * crossPairs;
 }
 
 const edgePaths = computed((): EdgePathItem[] => {
@@ -3443,7 +3480,7 @@ const edgePaths = computed((): EdgePathItem[] => {
       y2 = p2.y + 18;
     }
     const lane = laneByEdgeId.get(l.id);
-    const laneStep = 9;
+    const laneStep = EDGE_FAN_LANE_STEP;
     const outLaneOffset = lane ? (lane.outRank - (lane.outTotal - 1) / 2) * laneStep : 0;
     const inLaneOffset = lane ? (lane.inRank - (lane.inTotal - 1) / 2) * laneStep : 0;
     if (l.kind === 'dependency') {
@@ -3462,7 +3499,7 @@ const edgePaths = computed((): EdgePathItem[] => {
         y2,
         outLaneOffset,
         inLaneOffset,
-        outLaneOffset * 0.35,
+        orthogonalChannelBias(outLaneOffset, inLaneOffset),
       ).d;
     } else if (render === 'curve') {
       const dx = x2 - x1;
@@ -4378,7 +4415,7 @@ function deleteClass(classId: string): void {
               x="0"
               y="0"
               :width="UML_TOOLBAR_CARD_W"
-              :height="layoutOnly ? 152 : 198"
+              :height="layoutOnly ? 180 : 226"
               rx="8"
               :fill="chromePanelFill"
               :stroke="chromePanelStroke"
@@ -4444,8 +4481,28 @@ function deleteClass(classId: string): void {
                 P
               </text>
             </g>
-            <g transform="translate(8, 108)" style="cursor: pointer" @click.stop="autoLayoutClasses">
-              <title>{{ `${cd.cdeAutoLayout} (${layoutBeautyLabel}) — ${noGlobalShortcutText}` }}</title>
+            <g
+              transform="translate(8, 104)"
+              style="cursor: pointer"
+              @click.stop="layoutPrioritizeNoCrossing = !layoutPrioritizeNoCrossing"
+            >
+              <title>{{ cd.cdePrioritizeNoCrossingTitle }}</title>
+              <rect x="0" y="0" :width="UML_TOOLBAR_BTN_W" height="24" rx="5" fill="transparent" stroke="#cbd5e1" stroke-opacity="0.65" />
+              <rect
+                x="6"
+                y="7"
+                width="11"
+                height="11"
+                rx="2"
+                :fill="layoutPrioritizeNoCrossing ? '#2563eb' : 'transparent'"
+                stroke="#64748b"
+              />
+              <text x="21" y="17" font-size="9.5" pointer-events="none" :fill="chromeTextFill">{{ cd.cdePrioritizeNoCrossing }}</text>
+            </g>
+            <g transform="translate(8, 134)" style="cursor: pointer" @click.stop="onToolbarAutoLayout">
+              <title>{{
+                `${cd.cdeAutoLayout} (${layoutBeautyLabel}) — ${cd.cdeAutoLayoutAltPreserve} — ${noGlobalShortcutText}`
+              }}</title>
               <rect x="0" y="0" :width="UML_TOOLBAR_BTN_W" height="36" rx="6" fill="transparent" />
               <g transform="translate(17, 4)" :stroke="chromeTextFill" fill="none" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="4" width="6" height="6" rx="1.2" stroke-width="1.6" />
@@ -4456,7 +4513,7 @@ function deleteClass(classId: string): void {
             </g>
             <g
               v-if="!layoutOnly"
-              transform="translate(8, 154)"
+              transform="translate(8, 180)"
               style="cursor: pointer"
               @click.stop="addNewClass"
             >

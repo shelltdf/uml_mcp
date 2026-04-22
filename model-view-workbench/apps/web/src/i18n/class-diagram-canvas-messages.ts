@@ -6,6 +6,11 @@ export type ClassDiagramCanvasMessages = {
   cdeNewClassHint: string;
   cdeToolbarAria: string;
   cdeAutoLayout: string;
+  /** 工具提示：Alt+点击仅微调连线、不重建树形排版 */
+  cdeAutoLayoutAltPreserve: string;
+  /** 排版松弛：优先消除边交叉（无法从数学上保证任意图一定零交叉） */
+  cdePrioritizeNoCrossing: string;
+  cdePrioritizeNoCrossingTitle: string;
   cdeFit: string;
   cdeOrigin: string;
   cdeResetZoom: string;
@@ -53,6 +58,10 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeNewClassHint: '在视口中心附近添加新类框（名称自动避重）',
     cdeToolbarAria: '类图画布工具',
     cdeAutoLayout: '自动排版',
+    cdeAutoLayoutAltPreserve: 'Alt+点击：保留类框位置，仅做关联约束/去重叠与连线松弛（不重建继承树排版）',
+    cdePrioritizeNoCrossing: '先免交叉',
+    cdePrioritizeNoCrossingTitle:
+      '优先消除边交叉：松弛时先尽量把交叉数降到 0，再优化总长。复杂图仍可能残留交叉；亦非所有图都存在无交叉平面嵌入。',
     cdeFit: '适应',
     cdeOrigin: '原点',
     cdeResetZoom: '还原',
@@ -95,6 +104,11 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeNewClassHint: 'Add a class box near the viewport center (name auto-deconflicted)',
     cdeToolbarAria: 'Class diagram toolbar',
     cdeAutoLayout: 'Auto layout',
+    cdeAutoLayoutAltPreserve:
+      'Alt+click: keep class positions; only enforce gaps, separate overlaps, relax wires (no inherit-tree relayout)',
+    cdePrioritizeNoCrossing: 'Cross first',
+    cdePrioritizeNoCrossingTitle:
+      'Prioritize removing edge crossings during relax (minimize crossing count before wire length). Some graphs cannot be crossing-free; detection is heuristic.',
     cdeFit: 'Fit',
     cdeOrigin: 'Origin',
     cdeResetZoom: 'Reset zoom',
