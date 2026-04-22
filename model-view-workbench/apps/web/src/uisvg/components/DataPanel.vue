@@ -2,6 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import DockFoldSection from './DockFoldSection.vue'
 import DockRailTab from './DockRailTab.vue'
+import OptionalDockPaneWrap from './OptionalDockPaneWrap.vue'
+import OptionalDataPanelMainColumn from './OptionalDataPanelMainColumn.vue'
+import OptionalDataPanelRoot from './OptionalDataPanelRoot.vue'
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
@@ -106,8 +109,12 @@ watch(
   { immediate: true },
 )
 
-/** 右侧三个独立 dock 的纵向分割（第三块 flex 填满剩余） */
-const dataPanelRootRef = ref<HTMLElement | null>(null)
+/** 右侧三个独立 dock 的纵向分割（第三块 flex 填满剩余）；仅非 workbench 时有 div.data-panel 外壳 */
+const panelShellRef = ref<{ shellRef: HTMLElement | null } | null>(null)
+
+function splitHostEl(): HTMLElement | null {
+  return panelShellRef.value?.shellRef ?? null
+}
 const rightPane1H = ref(200)
 const rightPane2H = ref(220)
 
@@ -129,44 +136,47 @@ const pane2Style = computed(() => {
   return { flex: '1 1 auto', minHeight: `${rightPane2H.value}px` }
 })
 
-/** 主窗口右侧嵌入：三块为独立 dock（纵向堆叠），不用 dock-pane + 分割条 */
-const workbenchStackPanel1Class = computed(() =>
-  props.workbenchDockEmbed
-    ? 'dock-right-stack-block'
-    : ['dock-pane', 'dock-pane--right-third', { 'dock-pane--v-collapsed': !uiOpen.value }],
-)
-const workbenchStackPanel2Class = computed(() =>
-  props.workbenchDockEmbed
-    ? 'dock-right-stack-block'
-    : ['dock-pane', 'dock-pane--right-third', { 'dock-pane--v-collapsed': !treeOpen.value }],
-)
-const workbenchStackPanel3Class = computed(() =>
-  props.workbenchDockEmbed
-    ? 'dock-right-stack-block'
-    : [
-        'dock-pane',
-        'dock-pane--right-third',
-        {
-          'dock-pane--fill': svgOpen.value,
-          'dock-pane--v-collapsed': !svgOpen.value,
-        },
-      ],
-)
+/** 独立 dock：三块外层 dock-pane；workbench 嵌入由 OptionalDockPaneWrap 省略该层 */
+const workbenchStackPanel1Class = computed(() => [
+  'dock-pane',
+  'dock-pane--right-third',
+  { 'dock-pane--v-collapsed': !uiOpen.value },
+])
+const workbenchStackPanel2Class = computed(() => [
+  'dock-pane',
+  'dock-pane--right-third',
+  { 'dock-pane--v-collapsed': !treeOpen.value },
+])
+const workbenchStackPanel3Class = computed(() => [
+  'dock-pane',
+  'dock-pane--right-third',
+  {
+    'dock-pane--fill': svgOpen.value,
+    'dock-pane--v-collapsed': !svgOpen.value,
+  },
+])
 
-/** workbench：每块即独立 dock section（与 App 左 dock stack 命名对齐） */
+/**
+ * workbench：与左侧 dock-scroll--left-stack 一致 — section.dock-section.dock-right-stack-section；
+ * 外观类仍挂在同一 section 上。
+ */
+const WORKBENCH_EMBED_SURFACE_CLASS =
+  'dock-section dock-right-stack-section dock-uisvg-embed dock-uisvg-embed--right dock-uisvg-design-dock'
+
+/** workbench：每块即独立 dock section */
 const workbenchUiPropsRootClass = computed(() =>
   props.workbenchDockEmbed
-    ? 'panel-section ui-props-section dock-right-stack-section dock-right-stack-section--natural'
+    ? `panel-section ui-props-section dock-right-stack-section--natural ${WORKBENCH_EMBED_SURFACE_CLASS}`
     : 'panel-section ui-props-section',
 )
 const workbenchTreeRootClass = computed(() =>
   props.workbenchDockEmbed
-    ? 'tree-block dock-right-stack-section dock-right-stack-section--natural dock-right-stack-section--svg-tree'
+    ? `tree-block dock-right-stack-section--natural dock-right-stack-section--svg-tree ${WORKBENCH_EMBED_SURFACE_CLASS}`
     : 'tree-block',
 )
 const workbenchSvgPropsRootClass = computed(() =>
   props.workbenchDockEmbed
-    ? 'panel-section svg-props-section dock-right-stack-section dock-right-stack-section--natural'
+    ? `panel-section svg-props-section dock-right-stack-section--natural ${WORKBENCH_EMBED_SURFACE_CLASS}`
     : 'panel-section svg-props-section',
 )
 
@@ -188,7 +198,7 @@ function onRightDockSplit(which: 1 | 2, e: MouseEvent) {
   const startY = e.clientY
   const start1 = rightPane1H.value
   const start2 = rightPane2H.value
-  const el = dataPanelRootRef.value
+  const el = splitHostEl()
   if (!el) return
   const SPLIT = 5
   const min1 = 72
@@ -385,24 +395,22 @@ defineExpose({ expandAllRails })
 </script>
 
 <template>
-  <div
-    ref="dataPanelRootRef"
-    class="data-panel"
-    :class="{
-      'data-panel--all-rail-tabs': allRightRailsCollapsed,
-      'data-panel--workbench-embed': workbenchDockEmbed,
-    }"
+  <OptionalDataPanelRoot
+    ref="panelShellRef"
+    :bare="workbenchDockEmbed"
+    :all-rails-collapsed="allRightRailsCollapsed"
   >
-    <!-- 展开中的 dock：主列，与收起的边条列分离 -->
-    <div
-      class="data-panel__main"
-      :class="{
-        'data-panel__main--empty': allRightRailsCollapsed,
-        'data-panel__main--workbench-stack': workbenchDockEmbed,
-      }"
+    <!-- 展开中的 dock：主列，与收起的边条列分离（workbench 嵌入则省略 main 包裹） -->
+    <OptionalDataPanelMainColumn
+      :hoist-main="workbenchDockEmbed"
+      :empty-main="allRightRailsCollapsed"
     >
       <template v-if="embedUiPropsOuterVisible">
-        <div :class="workbenchStackPanel1Class" :style="workbenchDockEmbed ? undefined : pane1Style">
+        <OptionalDockPaneWrap
+          :wrap="!workbenchDockEmbed"
+          :wrap-class="workbenchStackPanel1Class"
+          :wrap-style="pane1Style"
+        >
           <DockFoldSection
             v-model="uiOpen"
             v-model:railOpen="uiRailOpen"
@@ -521,7 +529,7 @@ defineExpose({ expandAllRails })
         </div>
       </div>
           </DockFoldSection>
-        </div>
+        </OptionalDockPaneWrap>
       </template>
 
       <div
@@ -535,7 +543,11 @@ defineExpose({ expandAllRails })
       />
 
       <template v-if="embedSvgTreeOuterVisible">
-        <div :class="workbenchStackPanel2Class" :style="workbenchDockEmbed ? undefined : pane2Style">
+        <OptionalDockPaneWrap
+          :wrap="!workbenchDockEmbed"
+          :wrap-class="workbenchStackPanel2Class"
+          :wrap-style="pane2Style"
+        >
           <DockFoldSection
             v-model="treeOpen"
             v-model:railOpen="treeRailOpen"
@@ -550,7 +562,7 @@ defineExpose({ expandAllRails })
               <SvgDomTree :svg-markup="svgMarkup" :selected-id="selectedId" @select="onTreeSelect" />
             </div>
           </DockFoldSection>
-        </div>
+        </OptionalDockPaneWrap>
       </template>
 
       <div
@@ -564,7 +576,7 @@ defineExpose({ expandAllRails })
       />
 
       <template v-if="embedSvgObjectOuterVisible">
-        <div :class="workbenchStackPanel3Class">
+        <OptionalDockPaneWrap :wrap="!workbenchDockEmbed" :wrap-class="workbenchStackPanel3Class">
           <DockFoldSection
             v-model="svgOpen"
             v-model:railOpen="svgRailOpen"
@@ -668,9 +680,9 @@ defineExpose({ expandAllRails })
       </div>
       </template>
           </DockFoldSection>
-        </div>
+        </OptionalDockPaneWrap>
       </template>
-    </div>
+    </OptionalDataPanelMainColumn>
 
     <!-- 收起 dock 独占右侧窄条列，不与主列混排 -->
     <aside
@@ -697,7 +709,7 @@ defineExpose({ expandAllRails })
         @click="svgRailOpen = true"
       />
     </aside>
-  </div>
+  </OptionalDataPanelRoot>
 </template>
 
 <style scoped>
@@ -711,15 +723,6 @@ defineExpose({ expandAllRails })
   overflow: hidden;
 }
 
-.data-panel--workbench-embed {
-  flex-direction: column;
-}
-
-.data-panel--workbench-embed .data-panel__main {
-  width: 100%;
-  max-width: 100%;
-}
-
 /** 展开区：与右侧收起窄条列分离 */
 .data-panel__main {
   flex: 1 1 auto;
@@ -730,46 +733,41 @@ defineExpose({ expandAllRails })
   overflow: hidden;
 }
 
-/**
- * 主窗口右侧嵌入：三块各自为独立 dock（纵向堆叠），
- * 不再使用 dock-pane + 分割条 + 固定高度比例（那是「单窗格三联」模型）。
- */
-.data-panel__main--workbench-stack {
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-/**
- * 包装层不参与布局：三个 section.dock-section 直接作为本列 flex 子项，
- * DOM/无障碍结构仍可有中间 div，但不会出现「block 套 section」的双层 dock 壳。
- */
-.data-panel__main--workbench-stack > .dock-right-stack-block {
-  display: contents;
-}
-.data-panel__main--workbench-stack section.dock-right-stack-section {
+/** workbench：三块 section.dock-section.dock-right-stack-section，与 App.vue 右侧 stack 约定一致 */
+:deep(section.dock-section.dock-uisvg-design-dock) {
   align-self: stretch;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  overflow-x: hidden;
 }
-.data-panel__main--workbench-stack section.dock-right-stack-section--svg-tree {
+:deep(section.dock-section.dock-right-stack-section--svg-tree) {
   min-height: min(168px, 32vh);
 }
+/** 与左侧 dock 一致：每块有最小高度，矮视口仍可读；整列超出时仅外层一条滚动条 */
+:deep(section.dock-section.ui-props-section.dock-uisvg-design-dock) {
+  min-height: min(112px, 22vh);
+}
+:deep(section.dock-section.svg-props-section.dock-uisvg-design-dock) {
+  min-height: min(100px, 20vh);
+}
 /** 与主壳「属性」卡片一致：去掉 panel-section 底部分割线（卡片自有边框） */
-.data-panel__main--workbench-stack section.dock-special-panel.panel-section {
+:deep(section.dock-section.dock-uisvg-design-dock.dock-special-panel.panel-section) {
   border-bottom: none;
 }
-.data-panel__main--workbench-stack .ui-props-section,
-.data-panel__main--workbench-stack .tree-block,
-.data-panel__main--workbench-stack .svg-props-section {
+:deep(section.dock-section.ui-props-section.dock-uisvg-design-dock),
+:deep(section.dock-section.tree-block.dock-uisvg-design-dock),
+:deep(section.dock-section.svg-props-section.dock-uisvg-design-dock) {
   flex: 0 0 auto !important;
   flex-grow: 0 !important;
   height: auto !important;
 }
-.data-panel__main--workbench-stack .ui-props-body {
+:deep(section.dock-section.dock-uisvg-design-dock) .ui-props-body {
   flex: 0 1 auto;
   overflow: visible;
 }
-.data-panel__main--workbench-stack .tree-scroll {
+:deep(section.dock-section.dock-uisvg-design-dock) .tree-scroll {
   flex: 0 1 auto;
   max-height: min(38vh, 360px);
 }

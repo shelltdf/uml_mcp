@@ -1812,6 +1812,17 @@ const activeCanvasBlock = computed((): ParsedFenceBlock | null => {
   return blocks.find((b) => b.payload.id === tab.blockId) ?? null;
 });
 
+/** 从当前工作区 Markdown 解析 mv-view 子类型（标签上缺少 mvViewKind 或围栏 id 刚变更时的回退） */
+function resolveMvViewKindForCanvasTab(tab: CanvasTabSpec): MvViewPayload['kind'] | undefined {
+  if (tab.mvViewKind) return tab.mvViewKind;
+  const md = files.value.get(tab.relPath);
+  if (!md) return undefined;
+  const { blocks } = parseMarkdownBlocks(md);
+  const hit = blocks.find((b) => b.payload.id === tab.blockId);
+  if (hit?.kind === 'mv-view') return (hit.payload as MvViewPayload).kind;
+  return undefined;
+}
+
 /** 当前画布标签是否应在 Properties 展示「画布内选中对象」明细（codespace / 部分 mv-view） */
 function canvasTabSupportsSelectionDock(tab: CanvasTabSpec, parsed: ParsedFenceBlock | null): boolean {
   const match = parsed && parsed.payload.id === tab.blockId ? parsed : null;
@@ -1824,12 +1835,10 @@ function canvasTabSupportsSelectionDock(tab: CanvasTabSpec, parsed: ParsedFenceB
     return false;
   }
   if (tab.fenceKind === 'mv-model-codespace') return true;
-  if (tab.fenceKind === 'mv-view' && tab.mvViewKind) {
-    return (
-      tab.mvViewKind === 'mindmap-ui' ||
-      tab.mvViewKind === 'uml-class' ||
-      tab.mvViewKind === 'mermaid-class'
-    );
+  if (tab.fenceKind === 'mv-view') {
+    const vk = resolveMvViewKindForCanvasTab(tab);
+    if (!vk) return false;
+    return vk === 'mindmap-ui' || vk === 'uml-class' || vk === 'mermaid-class';
   }
   return false;
 }
@@ -1861,11 +1870,16 @@ const codespaceDockCanvasLines = computed((): CodespaceDockPropLine[] => {
 });
 
 function onCodespaceDockContext(ctx: CodespaceDockContextPayload) {
-  const tab = activeCanvasSession.value;
-  if (!tab) return;
-  canvasTabs.value = canvasTabs.value.map((t) =>
-    t.id === tab.id ? { ...t, codespaceDockSummary: ctx.summary, codespaceDockLines: ctx.lines } : t,
-  );
+  const path = ctx.dockSourceRelPath;
+  const bid = ctx.dockSourceBlockId;
+  const active = activeCanvasSession.value;
+  canvasTabs.value = canvasTabs.value.map((t) => {
+    const isTarget =
+      path !== undefined && bid !== undefined
+        ? t.relPath === path && t.blockId === bid
+        : active !== null && t.id === active.id;
+    return isTarget ? { ...t, codespaceDockSummary: ctx.summary, codespaceDockLines: ctx.lines } : t;
+  });
 }
 
 function onMindmapDockState(ctx: MindmapDockState) {
@@ -2874,7 +2888,10 @@ onUnmounted(() => {
           >
                 <div v-if="showRightDockView" class="dock-view dock-view--right-stack">
                   <div class="dock-scroll dock-scroll--right-stack">
-                  <section v-if="propertiesDockVisibleInView" class="dock-special-panel">
+                  <section
+                    v-if="propertiesDockVisibleInView"
+                    class="dock-section dock-right-stack-section dock-right-stack-section--natural dock-special-panel"
+                  >
                     <div class="dock-special-head">
                       <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Properties' : '属性' }}</h3>
                       <div class="dock-special-head-actions">
@@ -2980,27 +2997,24 @@ onUnmounted(() => {
                     </template>
                   </section>
 
-                  <div
+                  <DataPanel
                     v-if="designDockAnyPanelInScroll"
-                    class="dock-right-stack-host dock-right-stack-host--ui-design"
-                  >
-                    <div class="dock-uisvg-embed dock-uisvg-embed--right dock-scroll dock-scroll--right-uisvg">
-                      <DataPanel
-                        workbench-dock-embed
-                        :show-ui-props-dock="rightDockDesignUiPropsShown"
-                        :show-svg-tree-dock="rightDockDesignSvgTreeShown"
-                        :show-svg-object-dock="rightDockDesignSvgObjectShown"
-                        :svg-markup="activeUiDesignDockState?.svgMarkup ?? ''"
-                        :selected-id="activeUiDesignDockState?.selectedIds?.[0] ?? null"
-                        @update:svg="sendUiDesignDockCommand('update-svg', $event)"
-                        @update:selected-id="
-                          sendUiDesignDockCommand('update-selected-id', $event ?? '')
-                        "
-                      />
-                    </div>
-                  </div>
+                    workbench-dock-embed
+                    :show-ui-props-dock="rightDockDesignUiPropsShown"
+                    :show-svg-tree-dock="rightDockDesignSvgTreeShown"
+                    :show-svg-object-dock="rightDockDesignSvgObjectShown"
+                    :svg-markup="activeUiDesignDockState?.svgMarkup ?? ''"
+                    :selected-id="activeUiDesignDockState?.selectedIds?.[0] ?? null"
+                    @update:svg="sendUiDesignDockCommand('update-svg', $event)"
+                    @update:selected-id="
+                      sendUiDesignDockCommand('update-selected-id', $event ?? '')
+                    "
+                  />
 
-                  <section v-if="mindmapFormatDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
+                  <section
+                    v-if="mindmapFormatDockVisibleInView"
+                    class="dock-section dock-right-stack-section dock-right-stack-section--natural dock-special-panel dock-special-panel--mindmap"
+                  >
                     <div class="dock-special-head">
                       <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Format' : '格式' }}</h3>
                       <div class="dock-special-head-actions">
@@ -3156,7 +3170,10 @@ onUnmounted(() => {
                     </template>
                   </section>
 
-                  <section v-if="mindmapIconDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
+                  <section
+                    v-if="mindmapIconDockVisibleInView"
+                    class="dock-section dock-right-stack-section dock-right-stack-section--natural dock-special-panel dock-special-panel--mindmap"
+                  >
                     <div class="dock-special-head">
                       <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Icon' : '图标' }}</h3>
                       <div class="dock-special-head-actions">
@@ -3185,7 +3202,10 @@ onUnmounted(() => {
                     </template>
                   </section>
 
-                  <section v-if="mindmapThemeDockVisibleInView" class="dock-special-panel dock-special-panel--mindmap">
+                  <section
+                    v-if="mindmapThemeDockVisibleInView"
+                    class="dock-section dock-right-stack-section dock-right-stack-section--natural dock-special-panel dock-special-panel--mindmap"
+                  >
                     <div class="dock-special-head">
                       <h3 class="dock-subh dock-subh--special">{{ locale === 'en' ? 'Theme' : '主题' }}</h3>
                       <div class="dock-special-head-actions">
@@ -3728,6 +3748,8 @@ onUnmounted(() => {
   align-items: stretch;
   min-height: 0;
   min-width: 0;
+  /** 限制行高在视口内，否则右侧 .dock-scroll--right-stack 拿不到高度上限、不出现滚动条 */
+  overflow: hidden;
 }
 /** 左右 Dock 之间的中间列：顶为文档标签，下为 Markdown（及画布子标签时的嵌入画布） */
 .editor-column {
@@ -3736,6 +3758,7 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 .editor-column > .doc-tabs {
   flex-shrink: 0;
@@ -4204,10 +4227,6 @@ onUnmounted(() => {
   background: #f8fafc;
   overflow: hidden;
 }
-.dock-scroll--right-uisvg .data-panel {
-  flex: 1 1 auto;
-  min-height: 0;
-}
 .dock-special-head {
   display: flex;
   align-items: center;
@@ -4253,14 +4272,20 @@ onUnmounted(() => {
 .dock-area-right {
   display: flex;
   flex-direction: row;
+  align-self: stretch;
   min-height: 0;
+  max-height: 100%;
   gap: 0;
+  overflow: hidden;
 }
 .dock-area-left {
   display: flex;
   flex-direction: row;
+  align-self: stretch;
   min-height: 0;
+  max-height: 100%;
   gap: 0;
+  overflow: hidden;
 }
 .dock-area-left--buttons-only {
   width: 48px;
@@ -4294,32 +4319,41 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   padding-right: 8px;
+  /**
+   * flex-basis:auto 会按内容撑高整列，侧栏突破视口、底部面板「悬在窗口外」；
+   * 置 0% 后高度由 workspace-row 约束，长内容仅在 .dock-scroll--right-stack 内滚动。
+   */
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
 }
 .dock-scroll--right-stack {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 0;
   display: flex;
   flex-direction: column;
+  /** 与左侧 .dock-scroll--left-stack 一致，用 gap 代替各块 margin-top 堆叠 */
+  gap: 10px;
 }
 .dock-scroll--right-stack > :first-child {
   margin-top: 0;
 }
-/** ui-design：三块为独立 dock；此容器仅占满剩余高度 */
-.dock-right-stack-host--ui-design {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+/** 与左侧同构：每块为 section.dock-section.dock-right-stack-section，取消 .dock-special-panel 的全局 margin-top */
+.dock-scroll--right-stack > .dock-section {
+  margin-top: 0;
 }
-.dock-right-stack-host--ui-design .dock-scroll--right-uisvg {
-  flex: 1 1 auto;
+/** 各 stack 子项（属性 / ui-design 三块 / 脑图等） */
+.dock-scroll--right-stack > :deep(section.dock-section.dock-right-stack-section) {
+  flex: 0 0 auto;
   min-height: 0;
-  padding: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: visible;
 }
 /** 左侧多面板：仅内容区滚动，无单独 DockView 顶栏 */
 .dock-view--left-stack {
@@ -4334,9 +4368,17 @@ onUnmounted(() => {
   padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 10px;
 }
 .dock-left-stack-section {
   margin-bottom: 0;
+}
+/** 右侧 stack：与 dock-left-stack-section 对称呼应 */
+.dock-right-stack-section {
+  margin-bottom: 0;
+}
+.dock-right-stack-section--natural {
+  flex: 0 0 auto;
 }
 .dock-left-stack-section--natural {
   flex: 0 0 auto;
@@ -4909,25 +4951,18 @@ onUnmounted(() => {
   min-height: 160px;
 }
 
-.dock-uisvg-embed--right .data-panel {
-  min-height: 220px;
-}
-
 /**
  * 嵌入 DataPanel（右侧 ui-design）：三块 Dock 与「属性」dock-special-panel 同款外观；
  * DockFoldSection 在主壳 scoped 之外，需在非 scoped 中镜像关键样式。
  */
-.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench {
-  margin-top: 10px;
+.dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench {
+  margin-top: 0;
   border: 1px solid #c5c9d4;
   border-radius: 6px;
   background: #f8fafc;
   overflow: hidden;
 }
-.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench:first-child {
-  margin-top: 0;
-}
-.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench > .dock-special-head {
+.dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench > .dock-special-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4937,17 +4972,17 @@ onUnmounted(() => {
   border-bottom: 1px solid #c5c9d4;
   border-radius: 6px 6px 0 0;
 }
-.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench .dock-subh.dock-subh--special {
+.dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench .dock-subh.dock-subh--special {
   margin: 0;
   color: #1e293b;
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
-.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench > .dock-fold-workbench__body {
+.dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench > .dock-fold-workbench__body {
   padding: 8px 10px 10px;
 }
-.dock-scroll--right-uisvg .dock-special-panel.dock-fold-workbench .dock-special-toggle {
+.dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench .dock-special-toggle {
   border: 1px solid #cbd5e1;
   background: #fff;
   color: #475569;

@@ -318,8 +318,21 @@ function setViewPayloadText(text: string): void {
   v.payload = fromViewPayloadText(v.kind, text);
 }
 
+/** 带上源文档与 block id，供 App 写入正确的画布标签（codespace / mindmap / 类图等共用） */
+function wrapDockContextPayload(ctx: CodespaceDockContextPayload): CodespaceDockContextPayload {
+  return {
+    ...ctx,
+    dockSourceRelPath: props.relPath,
+    dockSourceBlockId: props.blockId,
+  };
+}
+
+function onEmbeddedCodespaceDockContext(ctx: CodespaceDockContextPayload): void {
+  emit('codespaceDockContext', wrapDockContextPayload(ctx));
+}
+
 function onMindmapDockContext(ctx: CodespaceDockContextPayload): void {
-  emit('codespaceDockContext', ctx);
+  emit('codespaceDockContext', wrapDockContextPayload(ctx));
 }
 function onMindmapDockState(ctx: MindmapDockState): void {
   emit('mindmapDockState', ctx);
@@ -2195,7 +2208,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
             :model-value="codespaceDraft"
             :compact-layout="embedded"
             @update:model-value="setCodespaceDraft"
-            @codespace-dock-context="(c) => emit('codespaceDockContext', c)"
+            @codespace-dock-context="onEmbeddedCodespaceDockContext"
           />
         </template>
 

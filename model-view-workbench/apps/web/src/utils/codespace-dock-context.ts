@@ -17,6 +17,9 @@ export interface CodespaceDockPropLine {
 export interface CodespaceDockContextPayload {
   summary: string;
   lines: CodespaceDockPropLine[];
+  /** 嵌入画布所在文档路径与围栏 id；主窗口据此写入对应 canvas tab，避免仅依赖当前激活会话时丢失更新 */
+  dockSourceRelPath?: string;
+  dockSourceBlockId?: string;
 }
 
 export type CsDockSelection = { t: 'meta' } | CodespaceSvgPick;
