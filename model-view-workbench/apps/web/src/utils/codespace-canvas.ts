@@ -4,6 +4,8 @@ import type {
   MvModelCodespacePayload,
 } from '@mvwb/core';
 
+export const CODESPACE_ROOT_NAMESPACE_NAME = '';
+
 function walkNamespaces(nodes: MvCodespaceNamespaceNode[] | undefined, visit: (n: MvCodespaceNamespaceNode) => void) {
   if (!nodes) return;
   for (const n of nodes) {
@@ -154,6 +156,41 @@ export function ensureModuleNamespaces(m: MvModelCodespaceModule): MvCodespaceNa
   return m.namespaces;
 }
 
+/** 每个 module 保证存在且仅依赖首个根命名空间 `.` 作为固定入口。 */
+export function ensureModuleRootNamespace(
+  m: MvModelCodespaceModule,
+  payload?: MvModelCodespacePayload,
+): MvCodespaceNamespaceNode {
+  const arr = ensureModuleNamespaces(m);
+  const roots = arr.filter((n) => (n.name ?? '').trim() === CODESPACE_ROOT_NAMESPACE_NAME);
+  const root =
+    roots[0] ??
+    ({
+      id: payload ? newCodespaceUniqueId('ns', payload) : 'ns_root',
+      name: CODESPACE_ROOT_NAMESPACE_NAME,
+      namespaces: [],
+    } satisfies MvCodespaceNamespaceNode);
+  root.name = CODESPACE_ROOT_NAMESPACE_NAME;
+  if (!root.namespaces) root.namespaces = [];
+  // 统一约束：module 顶层仅保留一个 "." 根空间，其它顶层都迁入 root.namespaces。
+  const toMove: MvCodespaceNamespaceNode[] = [];
+  for (const n of arr) {
+    if (n === root) continue;
+    if ((n.name ?? '').trim() === CODESPACE_ROOT_NAMESPACE_NAME) {
+      // 额外 root 合并其子树
+      for (const ch of n.namespaces ?? []) toMove.push(ch);
+      continue;
+    }
+    toMove.push(n);
+  }
+  if (toMove.length) {
+    if (!root.namespaces) root.namespaces = [];
+    root.namespaces.push(...toMove);
+  }
+  m.namespaces = [root];
+  return root;
+}
+
 /** `path` 为从 `module.namespaces` 起的下标链；返回该节点；`path` 空返回 null（表示模块根，非节点） */
 export function getNamespaceAtPath(
   draft: MvModelCodespacePayload,
@@ -196,6 +233,7 @@ export function insertNamespaceChild(
 export function removeNamespaceAtPath(draft: MvModelCodespacePayload, mi: number, path: number[]) {
   const m = draft.modules[mi];
   if (!m?.namespaces) return;
+  if (path.length === 1 && path[0] === 0) return;
   if (path.length === 1) {
     m.namespaces.splice(path[0]!, 1);
     return;

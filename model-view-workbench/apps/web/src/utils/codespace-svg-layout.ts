@@ -10,6 +10,7 @@ export type CodespaceSvgPick =
   | { t: 'module'; mi: number }
   | { t: 'ns'; mi: number; path: number[] }
   | { t: 'class'; mi: number; path: number[]; ci: number; classPath?: number[] }
+  | { t: 'enum'; mi: number; path: number[]; eni: number }
   | { t: 'var'; mi: number; path: number[]; vi: number }
   | { t: 'fn'; mi: number; path: number[]; fi: number }
   | { t: 'macro'; mi: number; path: number[]; maci: number };
@@ -40,6 +41,7 @@ export interface CodespaceLayoutLabelFns {
   moduleBar: (name: string) => string;
   nsHeader: (name: string) => string;
   classRow: (name: string) => string;
+  enumRow: (name: string) => string;
   varRow: (name: string) => string;
   fnRow: (name: string) => string;
   macroRow: (name: string) => string;
@@ -245,6 +247,7 @@ function measureLrSubtree(ns: MvCodespaceNamespaceNode, lbl: CodespaceLayoutLabe
 
   const leafLabels: string[] = [];
   (ns.classes ?? []).forEach((c) => leafLabels.push(lbl.classRow(c.name)));
+  (ns.enums ?? []).forEach((e) => leafLabels.push(lbl.enumRow(e.name)));
   (ns.variables ?? []).forEach((v) => leafLabels.push(lbl.varRow(v.name)));
   (ns.functions ?? []).forEach((f) => leafLabels.push(lbl.fnRow(f.name)));
   (ns.macros ?? []).forEach((m) => leafLabels.push(lbl.macroRow(m.name)));
@@ -380,6 +383,12 @@ function layoutNsTreeLR(
     .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
     .forEach(({ x, i }) => {
       rowItems.push({ pick: { t: 'var', mi, path, vi: i }, label: lbl.varRow(x.name) });
+    });
+  (ns.enums ?? [])
+    .map((x, i) => ({ x, i }))
+    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
+    .forEach(({ x, i }) => {
+      rowItems.push({ pick: { t: 'enum', mi, path, eni: i }, label: lbl.enumRow(x.name) });
     });
   (ns.functions ?? [])
     .map((x, i) => ({ x, i }))
@@ -730,6 +739,7 @@ function appendTreeEdgesFromFinalNodes(
   const nsNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'ns' }> } => n.pick.t === 'ns');
   const classTopNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class' && (n.pick.classPath?.length ?? 0) === 0);
   const varNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'var' }> } => n.pick.t === 'var');
+  const enumNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'enum' }> } => n.pick.t === 'enum');
   const fnNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'fn' }> } => n.pick.t === 'fn');
   const macroNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'macro' }> } => n.pick.t === 'macro');
 
@@ -748,15 +758,16 @@ function appendTreeEdgesFromFinalNodes(
     pushTreeEdgeSimple(edges, bounds, s.x - EDGE_INSET, s.y, t.x + EDGE_INSET, t.y);
   }
 
-  // namespace -> direct children (ns/class/var/fn/macro)
+  // namespace -> direct children (ns/class/enum/var/fn/macro)
   for (const ns of nsNodes) {
     const p = ns.pick.path;
     const directNs = nsNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length + 1 && x.pick.path.slice(0, p.length).every((v, i) => v === p[i]));
     const directClass = classTopNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
+    const directEnums = enumNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
     const directVars = varNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
     const directFns = fnNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
     const directMacros = macroNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
-    const targets = [...directNs, ...directClass, ...directVars, ...directFns, ...directMacros].sort((a, b) => a.y - b.y);
+    const targets = [...directNs, ...directClass, ...directEnums, ...directVars, ...directFns, ...directMacros].sort((a, b) => a.y - b.y);
     const s = rightMid({ x: ns.x, y: ns.y, w: ns.w, h: ns.h });
     for (const tNode of targets) {
       const t = leftMid({ x: tNode.x, y: tNode.y, w: tNode.w, h: tNode.h });

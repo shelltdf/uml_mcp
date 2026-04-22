@@ -255,6 +255,7 @@ export interface MvCodespaceNamespaceNode {
   notes?: string;
   namespaces?: MvCodespaceNamespaceNode[];
   classes?: MvCodespaceClassifier[];
+  enums?: MvCodespaceClassEnum[];
   variables?: MvCodespaceVariable[];
   functions?: MvCodespaceFunction[];
   macros?: MvCodespaceMacro[];

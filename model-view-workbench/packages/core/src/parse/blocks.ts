@@ -303,6 +303,7 @@ const CODESPACE_METHOD_PARAM_PASS_MODES = new Set(['value', 'reference', 'pointe
 const CODESPACE_FIELD_ACCESSORS = new Set(['none', 'get', 'set', 'getset']);
 const CODESPACE_ACCESSOR_VIS = new Set(['public', 'protected', 'private', 'package']);
 const CODESPACE_ENGLISH_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const CODESPACE_ROOT_NAMESPACE_NAME = '';
 const CODESPACE_ASSOCIATION_KINDS = new Set([
   'association',
   'aggregation',
@@ -532,13 +533,19 @@ function validateCodespaceNamespaceNode(
   const n = node as Record<string, unknown>;
   const idRes = codespaceAddUniqueId(ctx, n.id, `${path}.id`);
   if (!idRes.ok) return idRes;
-  if (typeof n.name !== 'string' || !n.name.trim()) {
+  if (typeof n.name !== 'string') {
+    return { ok: false, message: `${path}.name must be a string` };
+  }
+  const nsName = n.name.trim();
+  const isModuleRootNs = /modules\[\d+\]\.namespaces\[0\]$/.test(path);
+  const isRootNs = isModuleRootNs && nsName === CODESPACE_ROOT_NAMESPACE_NAME;
+  if (!isRootNs && !nsName) {
     return { ok: false, message: `${path}.name must be a non-empty string` };
   }
-  if (!CODESPACE_ENGLISH_NAME.test(n.name)) {
+  if (!isRootNs && !CODESPACE_ENGLISH_NAME.test(nsName)) {
     return {
       ok: false,
-      message: `${path}.name must use English letters/digits/underscore and start with a letter or underscore`,
+      message: `${path}.name must use English letters/digits/underscore and start with a letter or underscore (or empty string for module root namespace)`,
     };
   }
   const os = validateCodespaceOptionalString(n, path, ['qualifiedName', 'notes']);
@@ -723,6 +730,17 @@ function validateCodespaceNamespaceNode(
           }
         }
       }
+    }
+  }
+
+  if ('enums' in n && n.enums !== undefined) {
+    if (!Array.isArray(n.enums)) {
+      return { ok: false, message: `${path}.enums must be an array when present` };
+    }
+    for (let i = 0; i < n.enums.length; i++) {
+      const ep = `${path}.enums[${i}]`;
+      const er = validateCodespaceClassifierEnum(n.enums[i], ep);
+      if (!er.ok) return er;
     }
   }
 

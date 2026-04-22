@@ -3,7 +3,6 @@
  */
 import {
   parseMarkdownBlocks,
-  slug,
   type MvCodespaceClassEnum,
   type MvCodespaceClassMember,
   type MvCodespaceClassMethod,
@@ -13,6 +12,7 @@ import {
   type MvModelCodespacePayload,
   type ParsedFenceBlock,
 } from '@mvwb/core';
+import { slug } from '@mvwb/mermaid';
 
 function walkClassifiers(
   p: MvModelCodespacePayload,

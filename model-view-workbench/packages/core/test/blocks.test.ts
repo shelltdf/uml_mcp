@@ -641,6 +641,26 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('must use English letters'))).toBe(true);
   });
 
+  it('accepts mv-model-codespace root namespace empty string', () => {
+    const md =
+      '```mv-model-codespace\n' +
+      JSON.stringify({
+        id: 'cs_root_dot',
+        modules: [
+          {
+            id: 'm1',
+            name: 'Core',
+            namespaces: [{ id: 'n_root', name: '', namespaces: [{ id: 'n_core', name: 'Core' }] }],
+          },
+        ],
+      }) +
+      '\n```\n';
+    const r = parseMarkdownBlocks(md);
+    expect(r.errors).toHaveLength(0);
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0]?.kind).toBe('mv-model-codespace');
+  });
+
   it('rejects mv-model-codespace methods accessor not allowed', () => {
     const md =
       '\`\`\`mv-model-codespace\n' +

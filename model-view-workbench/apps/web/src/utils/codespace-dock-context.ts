@@ -80,6 +80,10 @@ function formatSummary(s: CsDockSelection, p: MvModelCodespacePayload, M: Codesp
     const c = resolveClassBySelection(p, s);
     return c ? M.formatClassLabel(c.name) : M.dockSummaryClassBare;
   }
+  if (s.t === 'enum') {
+    const e = getNamespaceAtPath(p, s.mi, s.path)?.enums?.[s.eni];
+    return e ? M.formatEnumLabel(e.name) : M.dockSummaryEnumBare;
+  }
   if (s.t === 'var') {
     const v = getNamespaceAtPath(p, s.mi, s.path)?.variables?.[s.vi];
     return v ? M.formatVarLabel(v.name) : M.dockSummaryVarBare;
@@ -190,6 +194,22 @@ function formatLines(s: CsDockSelection, p: MvModelCodespacePayload, M: Codespac
     push('name', v.name);
     push('type', emptyLabel(v.type, M.dockUnset));
     push('notes', emptyLabel(v.notes, M.dockUnset));
+    return lines;
+  }
+
+  if (s.t === 'enum') {
+    const e = ns.enums?.[s.eni];
+    push(M.dockNodeType, M.dockSummaryEnumBare);
+    push(M.dockHierarchy, namespaceBreadcrumb(p, s.mi, s.path, M));
+    if (!e) {
+      push(M.dockError, M.dockInvalidEnumIndex(s.eni));
+      return lines;
+    }
+    push('name', e.name);
+    push('enumGroup', emptyLabel(e.enumGroup, M.dockUnset));
+    push('value', emptyLabel(e.value, M.dockUnset));
+    push('type', emptyLabel(e.type, M.dockUnset));
+    push('notes', emptyLabel(e.notes, M.dockUnset));
     return lines;
   }
 

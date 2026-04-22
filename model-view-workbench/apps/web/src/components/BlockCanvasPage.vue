@@ -12,13 +12,11 @@ import type { UiDesignDockCommand, UiDesignDockState } from './UiDesignCanvas.vu
 import { normalizeUiDesignPayloadFromFence } from '../uisvg/uiDesignPayload';
 import {
   MV_UML_KIND_DIAGRAM_TYPE,
-  parseViewPayloadClassDiagram,
   isMermaidViewKind,
   isUmlViewKind,
   normalizeRelPath,
   parseMarkdownBlocks,
   replaceBlockInnerById,
-  slug,
   type MvCodespaceAssociation,
   type MvCodespaceClassifierBase,
   type MvCodespaceNamespaceNode,
@@ -32,6 +30,7 @@ import {
   type MvViewPayload,
   type ParsedFenceBlock,
 } from '@mvwb/core';
+import { parseViewPayloadClassDiagram, slug } from '@mvwb/mermaid';
 import {
   mergeInheritIntoClassDiagramPayload,
   parseViewPayloadClassDiagram as parseUmlClassDiagramPayload,
@@ -1728,11 +1727,11 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
   if (!payload) return;
 
   if (!payload.modules || payload.modules.length === 0) {
-    payload.modules = [{ id: 'core', name: 'Core', namespaces: [] }];
+    payload.modules = [{ id: 'core', name: 'Core', namespaces: [{ id: 'ns_root', name: '', classes: [] }] }];
   }
   const m0 = payload.modules[0]!;
   if (!m0.namespaces || m0.namespaces.length === 0) {
-    m0.namespaces = [{ id: 'ns_root', name: 'Root', classes: [] }];
+    m0.namespaces = [{ id: 'ns_root', name: '', classes: [] }];
   }
   const ns0 = m0.namespaces[0]!;
   if (!ns0.classes) ns0.classes = [];

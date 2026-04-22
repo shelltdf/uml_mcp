@@ -13,9 +13,17 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  select: [CodespaceSvgPick];
+  select: [CodespaceSvgPick | null];
   openDefinition: [CodespaceSvgPick];
   addModule: [];
+  addTopLevelNs: [mi: number];
+  addChildNs: [mi: number, path: number[]];
+  addClass: [mi: number, path: number[]];
+  addEnum: [mi: number, path: number[]];
+  addVar: [mi: number, path: number[]];
+  addFn: [mi: number, path: number[]];
+  addMacro: [mi: number, path: number[]];
+  requestDeletePick: [pick: CodespaceSvgPick];
 }>();
 
 const viewportRef = ref<HTMLElement | null>(null);
@@ -97,6 +105,7 @@ function pickKey(p: CodespaceSvgPick): string {
   if (p.t === 'module') return `m-${p.mi}`;
   if (p.t === 'ns') return `ns-${p.mi}-${p.path.join('.')}`;
   if (p.t === 'class') return `c-${p.mi}-${p.path.join('.')}-${p.ci}-${(p.classPath ?? []).join('.')}`;
+  if (p.t === 'enum') return `e-${p.mi}-${p.path.join('.')}-${p.eni}`;
   if (p.t === 'var') return `v-${p.mi}-${p.path.join('.')}-${p.vi}`;
   if (p.t === 'fn') return `f-${p.mi}-${p.path.join('.')}-${p.fi}`;
   return `mac-${p.mi}-${p.path.join('.')}-${p.maci}`;
@@ -128,10 +137,17 @@ function onNodeDblClick(n: CodespaceLayoutNode, e: MouseEvent) {
   emit('openDefinition', n.pick);
 }
 
+function onViewportClick(e: MouseEvent) {
+  if (e.defaultPrevented) return;
+  closeCtxMenu();
+  emit('select', null);
+}
+
 function fillFor(n: CodespaceLayoutNode): string {
   if (n.pick.t === 'module') return '#e0e7ff';
   if (n.pick.t === 'ns') return '#f1f5f9';
   if (n.pick.t === 'class') return '#fef9c3';
+  if (n.pick.t === 'enum') return '#f3e8ff';
   if (n.pick.t === 'var') return '#ecfccb';
   if (n.pick.t === 'fn') return '#dbeafe';
   return '#fce7f3';
@@ -189,23 +205,115 @@ function mountedFit() {
 const ctxMenuOpen = ref(false);
 const ctxMenuX = ref(0);
 const ctxMenuY = ref(0);
+type CtxMenuItem = {
+  key: string;
+  label: string;
+  title?: string;
+  danger?: boolean;
+  run: () => void;
+};
+const ctxMenuItems = ref<CtxMenuItem[]>([]);
 
 function closeCtxMenu() {
   ctxMenuOpen.value = false;
+  ctxMenuItems.value = [];
+}
+
+function openCtxMenu(e: MouseEvent, items: CtxMenuItem[]) {
+  const pad = 8;
+  const mw = 220;
+  const mh = Math.max(44, items.length * 36 + 8);
+  ctxMenuX.value = Math.min(e.clientX, window.innerWidth - mw - pad);
+  ctxMenuY.value = Math.min(e.clientY, window.innerHeight - mh - pad);
+  ctxMenuItems.value = items;
+  ctxMenuOpen.value = true;
 }
 
 function onViewportContextMenu(e: MouseEvent) {
   e.preventDefault();
-  const pad = 8;
-  const mw = 168;
-  const mh = 44;
-  ctxMenuX.value = Math.min(e.clientX, window.innerWidth - mw - pad);
-  ctxMenuY.value = Math.min(e.clientY, window.innerHeight - mh - pad);
-  ctxMenuOpen.value = true;
+  openCtxMenu(e, [
+    {
+      key: 'add-module',
+      label: csMsg.value.svgCtxAddModuleLabel,
+      title: csMsg.value.svgCtxAddModuleTitle,
+      run: () => emit('addModule'),
+    },
+  ]);
 }
 
-function onAddModuleFromMenu() {
-  emit('addModule');
+function onNodeContextMenu(n: CodespaceLayoutNode, e: MouseEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+  emit('select', n.pick);
+  const p = n.pick;
+  const items: CtxMenuItem[] = [
+    {
+      key: 'edit',
+      label: '编辑',
+      title: '打开属性窗口',
+      run: () => emit('openDefinition', p),
+    },
+  ];
+  if (p.t === 'module') {
+    items.push({
+      key: 'add-ns',
+      label: csMsg.value.flModAddRootNsLabel,
+      title: csMsg.value.flModAddRootNsTitle,
+      run: () => emit('addTopLevelNs', p.mi),
+    });
+  }
+  if (p.t === 'ns') {
+    items.push(
+      {
+        key: 'add-child-ns',
+        label: csMsg.value.flNsAddChildNsLabel,
+        title: csMsg.value.flNsAddChildNsTitle,
+        run: () => emit('addChildNs', p.mi, p.path),
+      },
+      {
+        key: 'add-class',
+        label: csMsg.value.flNsAddClassLabel,
+        title: csMsg.value.flNsAddClassTitle,
+        run: () => emit('addClass', p.mi, p.path),
+      },
+      {
+        key: 'add-enum',
+        label: csMsg.value.flNsAddEnumLabel,
+        title: csMsg.value.flNsAddEnumTitle,
+        run: () => emit('addEnum', p.mi, p.path),
+      },
+      {
+        key: 'add-var',
+        label: csMsg.value.flNsAddVarLabel,
+        title: csMsg.value.flNsAddVarTitle,
+        run: () => emit('addVar', p.mi, p.path),
+      },
+      {
+        key: 'add-fn',
+        label: csMsg.value.flNsAddFnLabel,
+        title: csMsg.value.flNsAddFnTitle,
+        run: () => emit('addFn', p.mi, p.path),
+      },
+      {
+        key: 'add-macro',
+        label: csMsg.value.flNsAddMacroLabel,
+        title: csMsg.value.flNsAddMacroTitle,
+        run: () => emit('addMacro', p.mi, p.path),
+      },
+    );
+  }
+  items.push({
+    key: 'delete',
+    label: '删除',
+    title: '删除当前对象',
+    danger: true,
+    run: () => emit('requestDeletePick', p),
+  });
+  openCtxMenu(e, items);
+}
+
+function onCtxMenuItemClick(item: CtxMenuItem) {
+  item.run();
   closeCtxMenu();
 }
 
@@ -240,6 +348,7 @@ onUnmounted(() => {
       @pointerup="vp.onPointerUp"
       @pointerleave="vp.onPointerUp"
       @pointercancel="vp.onPointerUp"
+      @click="onViewportClick"
       @contextmenu="onViewportContextMenu"
     >
       <div class="cs-svg-world" :style="worldDivStyle">
@@ -294,6 +403,7 @@ onUnmounted(() => {
               :aria-label="n.label"
               vector-effect="non-scaling-stroke"
               @click="onNodeClick(n, $event)"
+              @contextmenu="onNodeContextMenu(n, $event)"
               @dblclick="onNodeDblClick(n, $event)"
               @keydown.enter.prevent="emit('openDefinition', n.pick)"
             />
@@ -356,13 +466,16 @@ onUnmounted(() => {
           @click.stop
         >
           <button
+            v-for="item in ctxMenuItems"
+            :key="'ctx-' + item.key"
             type="button"
             class="cs-ctx-menu-item"
+            :class="{ 'cs-ctx-menu-item--danger': item.danger }"
             role="menuitem"
-            :title="csMsg.svgCtxAddModuleTitle"
-            @click="onAddModuleFromMenu"
+            :title="item.title ?? item.label"
+            @click="onCtxMenuItemClick(item)"
           >
-            {{ csMsg.svgCtxAddModuleLabel }}
+            {{ item.label }}
           </button>
         </div>
       </template>
@@ -503,5 +616,11 @@ onUnmounted(() => {
 }
 .cs-ctx-menu-item:hover {
   background: #f1f5f9;
+}
+.cs-ctx-menu-item--danger {
+  color: #b91c1c;
+}
+.cs-ctx-menu-item--danger:hover {
+  background: #fef2f2;
 }
 </style>

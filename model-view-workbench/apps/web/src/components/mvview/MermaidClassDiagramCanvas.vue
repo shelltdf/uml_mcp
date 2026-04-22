@@ -10,7 +10,7 @@ import {
   diagramBounds,
   parseViewPayloadClassDiagram,
   slug,
-} from '@mvwb/core';
+} from '@mvwb/mermaid';
 import { useAppLocale } from '../../composables/useAppLocale';
 import { classDiagramCanvasMessages } from '../../i18n/class-diagram-canvas-messages';
 import type { CodespaceClassTreeItem } from '../../utils/class-canvas-codespace-bridge';

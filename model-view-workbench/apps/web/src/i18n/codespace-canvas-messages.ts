@@ -17,6 +17,7 @@ export interface CodespaceCanvasMessages {
   formatModuleLabel: (name: string) => string;
   formatNsLabel: (name: string) => string;
   formatClassLabel: (name: string) => string;
+  formatEnumLabel: (name: string) => string;
   formatVarLabel: (name: string) => string;
   formatFnLabel: (name: string) => string;
   formatMacroLabel: (name: string) => string;
@@ -25,6 +26,7 @@ export interface CodespaceCanvasMessages {
   dockSummaryModuleBare: string;
   dockSummaryNsBare: string;
   dockSummaryClassBare: string;
+  dockSummaryEnumBare: string;
   dockSummaryVarBare: string;
   dockSummaryFnBare: string;
   dockSummaryMacroBare: string;
@@ -56,6 +58,7 @@ export interface CodespaceCanvasMessages {
   dockParentNsInvalid: string;
   dockClassifierNode: string;
   dockInvalidClassIndex: (ci: number) => string;
+  dockInvalidEnumIndex: (eni: number) => string;
   dockInvalidVarIndex: (vi: number) => string;
   dockInvalidFnIndex: (fi: number) => string;
   dockInvalidMacroIndex: (maci: number) => string;
@@ -108,6 +111,7 @@ export interface CodespaceCanvasMessages {
   newNsName: string;
   newChildNsName: string;
   newClassName: string;
+  newEnumName: string;
   newVarName: string;
   newFnName: string;
   newMacroName: string;
@@ -142,6 +146,8 @@ export interface CodespaceCanvasMessages {
   flNsAddChildNsLabel: string;
   flNsAddClassTitle: string;
   flNsAddClassLabel: string;
+  flNsAddEnumTitle: string;
+  flNsAddEnumLabel: string;
   flNsAddVarTitle: string;
   flNsAddVarLabel: string;
   flNsAddFnTitle: string;
@@ -225,6 +231,7 @@ export const codespaceCanvasMessagesEn: CodespaceCanvasMessages = {
   formatModuleLabel: (name) => `Module${sep}${name}`,
   formatNsLabel: (name) => `NS${sep}${name}`,
   formatClassLabel: (name) => `Class${sep}${name}`,
+  formatEnumLabel: (name) => `Enum${sep}${name}`,
   formatVarLabel: (name) => `Variable${sep}${name}`,
   formatFnLabel: (name) => `Function${sep}${name}`,
   formatMacroLabel: (name) => `Macro${sep}${name}`,
@@ -233,6 +240,7 @@ export const codespaceCanvasMessagesEn: CodespaceCanvasMessages = {
   dockSummaryModuleBare: 'Module',
   dockSummaryNsBare: 'Namespace',
   dockSummaryClassBare: 'Class',
+  dockSummaryEnumBare: 'Enum',
   dockSummaryVarBare: 'Variable',
   dockSummaryFnBare: 'Function',
   dockSummaryMacroBare: 'Macro',
@@ -264,6 +272,7 @@ export const codespaceCanvasMessagesEn: CodespaceCanvasMessages = {
   dockParentNsInvalid: 'Parent namespace invalid',
   dockClassifierNode: 'Classifier (class / interface / struct)',
   dockInvalidClassIndex: (ci) => `Invalid class index ${ci}`,
+  dockInvalidEnumIndex: (eni) => `Invalid enum index ${eni}`,
   dockInvalidVarIndex: (vi) => `Invalid variable index ${vi}`,
   dockInvalidFnIndex: (fi) => `Invalid function index ${fi}`,
   dockInvalidMacroIndex: (maci) => `Invalid macro index ${maci}`,
@@ -318,6 +327,7 @@ Right-click: canvas menu (add module, etc.)`,
   newNsName: 'NewNamespace',
   newChildNsName: 'ChildNamespace',
   newClassName: 'NewClass',
+  newEnumName: 'NewEnum',
   newVarName: 'newVariable',
   newFnName: 'newFunction',
   newMacroName: 'newMacro',
@@ -351,6 +361,8 @@ Right-click: canvas menu (add module, etc.)`,
   flNsAddChildNsLabel: '＋ Child namespace',
   flNsAddClassTitle: 'Class — no global shortcut',
   flNsAddClassLabel: '＋ Class',
+  flNsAddEnumTitle: 'Enum literal — no global shortcut',
+  flNsAddEnumLabel: '＋ Enum literal',
   flNsAddVarTitle: 'Variable — no global shortcut',
   flNsAddVarLabel: '＋ Variable',
   flNsAddFnTitle: 'Function — no global shortcut',
@@ -437,6 +449,7 @@ const codespaceCanvasZhOverrides: Partial<CodespaceCanvasMessages> = {
   dockCannotResolveNs: '无法解析该命名空间节点',
   dockParentNsInvalid: '父命名空间无效',
   dockInvalidClassIndex: (ci) => `类索引 ${ci} 无效`,
+  dockInvalidEnumIndex: (eni) => `枚举索引 ${eni} 无效`,
   dockInvalidVarIndex: (vi) => `变量索引 ${vi} 无效`,
   dockInvalidFnIndex: (fi) => `函数索引 ${fi} 无效`,
   dockInvalidMacroIndex: (maci) => `宏索引 ${maci} 无效`,
@@ -520,6 +533,8 @@ const codespaceCanvasZhOverrides: Partial<CodespaceCanvasMessages> = {
   flClsAddMethodLabel: '＋ 方法',
   flClsAddEnumLiteralTitle: '添加枚举字面量 — 无全局快捷键',
   flClsAddEnumLiteralLabel: '＋ 枚举字面量',
+  flNsAddEnumTitle: '添加枚举字面量 — 无全局快捷键',
+  flNsAddEnumLabel: '＋ 枚举字面量',
   flClsRemoveClassTitle: '删除该类 — 无全局快捷键',
   flClsRemoveClassLabel: '删除类',
   flClsIdTitle: '类 id（只读）',
@@ -542,6 +557,7 @@ export function makeCodespaceLayoutLabels(M: CodespaceCanvasMessages): Codespace
     moduleBar: M.formatModuleLabel,
     nsHeader: M.formatNsLabel,
     classRow: M.formatClassLabel,
+    enumRow: M.formatEnumLabel,
     varRow: M.formatVarLabel,
     fnRow: M.formatFnLabel,
     macroRow: M.formatMacroLabel,

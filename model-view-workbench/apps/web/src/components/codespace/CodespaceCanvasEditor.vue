@@ -4,6 +4,7 @@ import type { MvModelCodespacePayload } from '@mvwb/core';
 import { useAppLocale } from '../../composables/useAppLocale';
 import { CS_CANVAS_MSG_KEY, codespaceCanvasMessages } from '../../i18n/codespace-canvas-messages';
 import {
+  ensureModuleRootNamespace,
   getNamespaceAtPath,
   insertNamespaceChild,
   newCodespaceUniqueId,
@@ -71,13 +72,27 @@ function ensureUniqueName(preferred: string, usedNames: string[]): string {
 
 function patch(updater: (d: MvModelCodespacePayload) => void) {
   const d = JSON.parse(JSON.stringify(props.modelValue)) as MvModelCodespacePayload;
+  for (const m of d.modules ?? []) ensureModuleRootNamespace(m, d);
   updater(d);
+  for (const m of d.modules ?? []) ensureModuleRootNamespace(m, d);
   emit('update:modelValue', d);
 }
 
 watch(
   () => props.modelValue,
   () => {
+    let needsNormalize = false;
+    for (const m of props.modelValue.modules ?? []) {
+      const ns = m.namespaces ?? [];
+      if (ns.length !== 1 || (ns[0]?.name ?? '').trim() !== '') {
+        needsNormalize = true;
+        break;
+      }
+    }
+    if (needsNormalize) {
+      patch(() => {});
+      return;
+    }
     if (advancedJsonOpen.value) {
       advancedJsonText.value = JSON.stringify(props.modelValue, null, 2);
     }
@@ -112,7 +127,11 @@ const canvasSelection = computed((): CodespaceSvgPick | null => {
   return s as CodespaceSvgPick;
 });
 
-function onCanvasSelect(p: CodespaceSvgPick) {
+function onCanvasSelect(p: CodespaceSvgPick | null) {
+  if (!p) {
+    selection.value = { t: 'meta' };
+    return;
+  }
   selection.value = p as Exclude<CsDockSelection, { t: 'meta' }>;
 }
 
@@ -146,6 +165,13 @@ function addModule() {
     d.modules.push({
       id: newCodespaceUniqueId('mod', d),
       name,
+      namespaces: [
+        {
+          id: newCodespaceUniqueId('ns', d),
+          name: '',
+          namespaces: [],
+        },
+      ],
     });
   });
 }
@@ -187,6 +213,10 @@ function confirmDeleteNs() {
   const ctx = nsDeleteCtx.value;
   nsDeleteCtx.value = null;
   if (!ctx) return;
+  if (ctx.path.length === 1 && ctx.path[0] === 0) {
+    window.alert(locale.value === 'en' ? 'Root namespace cannot be deleted.' : '根命名空间不允许删除。');
+    return;
+  }
   patch((d) => {
     removeNamespaceAtPath(d, ctx.mi, ctx.path);
   });
@@ -201,12 +231,13 @@ function addTopLevelNs(mi: number) {
   patch((d) => {
     const mod = d.modules[mi];
     if (!mod) return;
-    const siblings = mod.namespaces ?? [];
+    const root = ensureModuleRootNamespace(mod, d);
+    const siblings = root.namespaces ?? [];
     const name = ensureUniqueName(
       csCanvasMsg.value.newNsName,
       siblings.map((n) => n.name ?? ''),
     );
-    insertNamespaceChild(d, mi, [], {
+    insertNamespaceChild(d, mi, [0], {
       id: newCodespaceUniqueId('ns', d),
       name,
       namespaces: [],
@@ -251,6 +282,22 @@ function addClass(mi: number, path: number[]) {
   });
 }
 
+function addEnum(mi: number, path: number[]) {
+  patch((d) => {
+    const n = getNamespaceAtPath(d, mi, path);
+    if (!n) return;
+    if (!n.enums) n.enums = [];
+    const name = ensureUniqueName(
+      csCanvasMsg.value.newEnumName,
+      n.enums.map((e) => e.name ?? ''),
+    );
+    n.enums.push({
+      id: newCodespaceUniqueId('enum', d),
+      name,
+    });
+  });
+}
+
 function addVar(mi: number, path: number[]) {
   patch((d) => {
     const n = getNamespaceAtPath(d, mi, path);
@@ -276,6 +323,59 @@ function addMacro(mi: number, path: number[]) {
     if (!n.macros) n.macros = [];
     n.macros.push({ id: newCodespaceUniqueId('mac', d), name: csCanvasMsg.value.newMacroName });
   });
+}
+
+function deleteClassByPick(p: Extract<CodespaceSvgPick, { t: 'class' }>) {
+  patch((d) => {
+    const n = getNamespaceAtPath(d, p.mi, p.path);
+    if (!n?.classes || p.ci < 0 || p.ci >= n.classes.length) return;
+    const classPath = p.classPath ?? [];
+    if (!classPath.length) {
+      n.classes.splice(p.ci, 1);
+      rebuildPathIdsForModule(d, p.mi);
+      return;
+    }
+    let parent = n.classes[p.ci];
+    for (let i = 0; i < classPath.length - 1; i++) {
+      parent = parent?.classes?.[classPath[i]!] as typeof parent;
+      if (!parent) return;
+    }
+    const last = classPath[classPath.length - 1];
+    if (last === undefined || !parent?.classes || last < 0 || last >= parent.classes.length) return;
+    parent.classes.splice(last, 1);
+    rebuildPathIdsForModule(d, p.mi);
+  });
+  selection.value = { t: 'meta' };
+  closeFloat();
+}
+
+function deleteLeafByPick(p: Extract<CodespaceSvgPick, { t: 'enum' | 'var' | 'fn' | 'macro' }>) {
+  patch((d) => {
+    const n = getNamespaceAtPath(d, p.mi, p.path);
+    if (!n) return;
+    if (p.t === 'enum' && n.enums) n.enums.splice(p.eni, 1);
+    if (p.t === 'var' && n.variables) n.variables.splice(p.vi, 1);
+    if (p.t === 'fn' && n.functions) n.functions.splice(p.fi, 1);
+    if (p.t === 'macro' && n.macros) n.macros.splice(p.maci, 1);
+  });
+  selection.value = { t: 'meta' };
+  closeFloat();
+}
+
+function requestDeletePick(p: CodespaceSvgPick) {
+  if (p.t === 'module') {
+    tryRequestDeleteModule(p.mi);
+    return;
+  }
+  if (p.t === 'ns') {
+    requestDeleteNs(p.mi, p.path);
+    return;
+  }
+  if (p.t === 'class') {
+    deleteClassByPick(p);
+    return;
+  }
+  deleteLeafByPick(p);
 }
 
 function patchMetaTitle(title: string) {
@@ -334,6 +434,14 @@ function patchMetaRoot(root: string) {
       @select="onCanvasSelect"
       @open-definition="openDefinition"
       @add-module="addModule"
+      @add-top-level-ns="addTopLevelNs"
+      @add-child-ns="addChildNs"
+      @add-class="addClass"
+      @add-enum="addEnum"
+      @add-var="addVar"
+      @add-fn="addFn"
+      @add-macro="addMacro"
+      @request-delete-pick="requestDeletePick"
     />
 
     <CodespaceModuleFloat
@@ -356,6 +464,7 @@ function patchMetaRoot(root: string) {
       @close="closeFloat"
       @add-child-ns="addChildNs"
       @add-class="addClass"
+      @add-enum="addEnum"
       @add-var="addVar"
       @add-fn="addFn"
       @add-macro="addMacro"

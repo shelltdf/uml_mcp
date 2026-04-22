@@ -14,7 +14,7 @@ import type {
   MvCodespaceProperty,
   MvModelCodespacePayload,
 } from '@mvwb/core';
-import { slug } from '@mvwb/core';
+import { slug } from '@mvwb/mermaid';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import {
   collectClassifierIds,
@@ -105,14 +105,34 @@ function resolveSelectedClass(payload: MvModelCodespacePayload): MvCodespaceClas
 
 const selectedClass = computed((): MvCodespaceClassifier | null => resolveSelectedClass(props.modelValue));
 const selectedNamespace = computed(() => getNamespaceAtPath(props.modelValue, props.mi, props.path));
+function moduleLabel(mi: number): string {
+  const raw = (props.modelValue.modules?.[mi]?.name ?? '').trim();
+  return raw ? raw : `Module#${mi + 1}`;
+}
+function resolveNamespacePathLabel(payload: MvModelCodespacePayload, mi: number, path: number[]): string {
+  const mod = payload.modules?.[mi];
+  const names: string[] = [];
+  let nodes = mod?.namespaces ?? [];
+  for (const idx of path) {
+    const n = nodes?.[idx];
+    if (!n) break;
+    const name = (n.name ?? '').trim();
+    if (name) names.push(name);
+    nodes = n.namespaces ?? [];
+  }
+  return names.length ? `.${names.join('.')}` : '.';
+}
+function appendNsChain(parent: string, name: string): string {
+  if (!parent) return name;
+  return `${parent}.${name}`;
+}
 const currentClassParentKey = computed(() => {
   const cp = props.classPath ?? [];
-  if (!cp.length) return `ns:${props.path.join('.')}`;
-  return `cls:${props.path.join('.')}|${props.ci}|${cp.slice(0, -1).join('.')}`;
+  if (!cp.length) return `ns:${props.mi}:${props.path.join('.')}`;
+  return `cls:${props.mi}:${props.path.join('.')}|${props.ci}|${cp.slice(0, -1).join('.')}`;
 });
 const classParentOptions = computed(() => {
-  const out: Array<{ key: string; label: string }> = [];
-  const mod = props.modelValue.modules?.[props.mi];
+  const out: Array<{ key: string; label: string; mi: number }> = [];
   const self = selectedClass.value;
   const selfId = self?.id;
   const descendantIds = new Set<string>();
@@ -125,38 +145,69 @@ const classParentOptions = computed(() => {
   collectDescendantIds(self ?? undefined);
   const walkClasses = (
     classes: MvCodespaceClassifier[] | undefined,
-    prefix: string,
+    mi: number,
     nsPath: number[],
     rootCi: number,
     classPath: number[],
+    classChain: string,
   ) => {
     if (!classes) return;
     for (let i = 0; i < classes.length; i++) {
       const c = classes[i]!;
       const p = [...classPath, i];
-      const key = `cls:${nsPath.join('.')}|${rootCi}|${p.join('.')}`;
-      if (c.id !== selfId && !descendantIds.has(c.id)) out.push({ key, label: `Class · ${prefix}${c.name}` });
-      walkClasses(c.classes, `${prefix}${c.name}::`, nsPath, rootCi, p);
+      const key = `cls:${mi}:${nsPath.join('.')}|${rootCi}|${p.join('.')}`;
+      if (c.id !== selfId && !descendantIds.has(c.id)) {
+        out.push({
+          key,
+          mi,
+          label: `${classChain}.${c.name}`,
+        });
+      }
+      walkClasses(c.classes, mi, nsPath, rootCi, p, `${classChain}.${c.name}`);
     }
   };
-  const walkNs = (nodes: MvCodespaceNamespaceNode[] | undefined, path: number[], chain: string) => {
+  const walkNs = (
+    nodes: MvCodespaceNamespaceNode[] | undefined,
+    mi: number,
+    path: number[],
+    nsChain: string,
+  ) => {
     if (!nodes) return;
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i]!;
       const p = [...path, i];
-      out.push({ key: `ns:${p.join('.')}`, label: `NS · ${chain}${n.name}` });
+      const nextNsChain = appendNsChain(nsChain, n.name);
+      out.push({
+        key: `ns:${mi}:${p.join('.')}`,
+        mi,
+        label: `${moduleLabel(mi)}.${nextNsChain}`,
+      });
       for (let ci = 0; ci < (n.classes?.length ?? 0); ci++) {
         const c = n.classes![ci]!;
+        const classChain = `${nextNsChain}.${c.name}`;
         if (c.id !== selfId && !descendantIds.has(c.id)) {
-          out.push({ key: `cls:${p.join('.')}|${ci}|`, label: `Class · ${chain}${n.name}::${c.name}` });
+          out.push({
+            key: `cls:${mi}:${p.join('.')}|${ci}|`,
+            mi,
+            label: `${moduleLabel(mi)}.${classChain}`,
+          });
         }
-        walkClasses(c.classes, `${chain}${n.name}::${c.name}::`, p, ci, []);
+        walkClasses(c.classes, mi, p, ci, [], classChain);
       }
-      walkNs(n.namespaces, p, `${chain}${n.name}::`);
+      walkNs(n.namespaces, mi, p, nextNsChain);
     }
   };
-  walkNs(mod?.namespaces, [], '');
-  return out;
+  for (let mi = 0; mi < (props.modelValue.modules?.length ?? 0); mi++) {
+    const mod = props.modelValue.modules?.[mi];
+    walkNs(mod?.namespaces, mi, [], '');
+  }
+  const current: Array<{ key: string; label: string; mi: number }> = [];
+  const cross: Array<{ key: string; label: string; mi: number }> = [];
+  for (const opt of out) {
+    if (opt.key.startsWith(`ns:${props.mi}:`) || opt.key.startsWith(`cls:${props.mi}:`)) current.push(opt);
+    else cross.push(opt);
+  }
+  return [...current, ...cross].map((opt) => ({ key: opt.key, label: opt.label }));
 });
 
 const classifierOptions = computed(() => collectClassifierIds(props.modelValue));
@@ -169,7 +220,52 @@ const methodRows = computed(() => (selectedClass.value?.methods ?? []).map((mem,
 const enumRows = computed(() => (selectedClass.value?.enums ?? []).map((mem, idx) => ({ mem, idx })));
 const propertyRows = computed(() => selectedClass.value?.properties ?? []);
 const specialMethodPickerOpen = ref(false);
+const parentPickerOpen = ref(false);
+const parentSearch = ref('');
+const pendingParentKey = ref('');
 const activeTab = ref<ClassifierTabKey>('basic');
+const currentClassParentLabel = computed(() => {
+  const hit = classParentOptions.value.find((o) => o.key === currentClassParentKey.value);
+  return hit?.label ?? currentClassParentKey.value;
+});
+const currentClassParentKind = computed<'namespace' | 'class'>(() =>
+  currentClassParentKey.value.startsWith('cls:') ? 'class' : 'namespace',
+);
+const currentClassNamespacePathLabel = computed(() =>
+  resolveNamespacePathLabel(props.modelValue, props.mi, props.path),
+);
+const filteredClassParentOptions = computed(() => {
+  const q = parentSearch.value.trim().toLowerCase();
+  if (!q) return classParentOptions.value;
+  return classParentOptions.value.filter((o) => o.label.toLowerCase().includes(q));
+});
+const groupedClassParentOptions = computed(() => {
+  const groups = new Map<number, Array<{ key: string; label: string }>>();
+  for (const opt of filteredClassParentOptions.value) {
+    const mi = opt.key.startsWith('ns:')
+      ? Number(opt.key.slice(3).split(':')[0] ?? '-1')
+      : Number(opt.key.slice(4).split(':')[0] ?? '-1');
+    const arr = groups.get(mi) ?? [];
+    arr.push(opt);
+    groups.set(mi, arr);
+  }
+  return [...groups.entries()].sort((a, b) => {
+    if (a[0] === props.mi) return -1;
+    if (b[0] === props.mi) return 1;
+    return a[0] - b[0];
+  });
+});
+function treeItemLabel(label: string, mi: number): string {
+  const mod = moduleLabel(mi);
+  const p1 = `${mod} (current).`;
+  const p2 = `${mod}.`;
+  if (label.startsWith(p1)) return label.slice(p1.length);
+  if (label.startsWith(p2)) return label.slice(p2.length);
+  return label;
+}
+function classParentItemKind(key: string): 'namespace' | 'class' {
+  return key.startsWith('cls:') ? 'class' : 'namespace';
+}
 const specialMethodTemplateGroups = computed(() => {
   const groups = new Map<string, SpecialMethodTemplate[]>();
   for (const t of SPECIAL_METHOD_TEMPLATES) {
@@ -350,18 +446,24 @@ function moveClassParent(targetKey: string): void {
   props.runPatch((d) => {
     const moved = resolveSelectedClass(d);
     if (!moved) return;
+    const sourceMi = props.mi;
     // 先从原父容器移除
     removeSelectedClassMutable(d);
+    let targetMi = sourceMi;
     if (targetKey.startsWith('ns:')) {
-      const nsKey = targetKey.slice(3);
+      const body = targetKey.slice(3);
+      const [miRaw, nsKey] = body.split(':');
+      targetMi = Number(miRaw ?? `${sourceMi}`);
       const nsPath = nsKey ? nsKey.split('.').map((x) => Number(x)) : [];
-      const ns = getNamespaceAtPath(d, props.mi, nsPath);
+      const ns = getNamespaceAtPath(d, targetMi, nsPath);
       if (!ns) return;
       if (!ns.classes) ns.classes = [];
       ns.classes.push(moved);
     } else if (targetKey.startsWith('cls:')) {
       const body = targetKey.slice(4);
-      const [nsKey, rootCiRaw, classPathRaw] = body.split('|');
+      const [miAndNsKey, rootCiRaw, classPathRaw] = body.split('|');
+      const [miRaw, nsKey] = (miAndNsKey ?? '').split(':');
+      targetMi = Number(miRaw ?? `${sourceMi}`);
       const nsPath = nsKey ? nsKey.split('.').map((x) => Number(x)) : [];
       const rootCi = Number(rootCiRaw ?? '0');
       const classPath = (classPathRaw ?? '')
@@ -369,15 +471,28 @@ function moveClassParent(targetKey: string): void {
         .map((x) => x.trim())
         .filter(Boolean)
         .map((x) => Number(x));
-      let parent = getNamespaceAtPath(d, props.mi, nsPath)?.classes?.[rootCi];
+      let parent = getNamespaceAtPath(d, targetMi, nsPath)?.classes?.[rootCi];
       for (const idx of classPath) parent = parent?.classes?.[idx];
       if (!parent) return;
       if (!parent.classes) parent.classes = [];
       parent.classes.push(moved);
     }
-    rebuildPathIdsForModule(d, props.mi);
+    rebuildPathIdsForModule(d, sourceMi);
+    if (targetMi !== sourceMi) rebuildPathIdsForModule(d, targetMi);
   });
   emit('close');
+}
+
+function openParentPicker(): void {
+  pendingParentKey.value = currentClassParentKey.value;
+  parentSearch.value = '';
+  parentPickerOpen.value = true;
+}
+
+function applyParentPicker(): void {
+  const target = pendingParentKey.value || currentClassParentKey.value;
+  parentPickerOpen.value = false;
+  moveClassParent(target);
 }
 
 function patchClassField(key: keyof MvCodespaceClassifier, value: unknown) {
@@ -825,6 +940,8 @@ watch(
   (next) => {
     if (!next) {
       specialMethodPickerOpen.value = false;
+      parentPickerOpen.value = false;
+      parentSearch.value = '';
       activeTab.value = 'basic';
     }
   },
@@ -852,21 +969,42 @@ watch(
         <h4 class="cde-section-title">基础信息</h4>
         <label class="field">
           <span>parentContainer</span>
-          <select
-            class="wide"
-            :value="currentClassParentKey"
-            title="Move this class under another namespace or class"
-            @change="moveClassParent(($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="opt in classParentOptions" :key="'pc-' + opt.key" :value="opt.key">
-              {{ opt.label }}
-            </option>
-          </select>
+          <div class="cs-parent-picker-inline">
+            <span
+              class="cs-parent-inline-kind cs-node-kind"
+              :class="{
+                'cs-node-kind--cls': currentClassParentKind === 'class',
+                'cs-node-kind--ns': currentClassParentKind === 'namespace',
+              }"
+            >
+              {{ currentClassParentKind === 'class' ? 'C' : 'N' }}
+            </span>
+            <input
+              type="text"
+              class="wide"
+              :value="currentClassParentLabel"
+              title="Current parent container"
+              readonly
+            />
+            <button type="button" class="cs-parent-picker-btn" title="Pick parent container" @click="openParentPicker">
+              修改
+            </button>
+          </div>
         </label>
         <label class="field">
           <span>id</span>
           <input type="text" class="wide" :value="selectedClass.id" :title="csMsg.flClsIdTitle" readonly />
           <p class="cs-field-hint">{{ csMsg.flClsIdReadonlyHint }}</p>
+        </label>
+        <label class="field">
+          <span>namespacePath</span>
+          <input
+            type="text"
+            class="wide"
+            :value="currentClassNamespacePathLabel"
+            title="Absolute namespace path"
+            readonly
+          />
         </label>
         <label class="field">
           <span>name</span>
@@ -1337,6 +1475,53 @@ watch(
         </div>
       </dialog>
 
+      <dialog v-if="parentPickerOpen" open class="cs-parent-picker-dialog">
+        <div class="cs-special-picker">
+          <div class="cs-special-picker__header">
+            <strong>选择父容器</strong>
+            <button type="button" class="link-btn" @click="parentPickerOpen = false">Close</button>
+          </div>
+          <label class="field">
+            <span>搜索</span>
+            <input v-model="parentSearch" type="text" class="wide" placeholder="搜索 namespace/class..." />
+          </label>
+          <div class="cs-parent-tree" role="tree" aria-label="Parent container tree">
+            <details v-for="[mi, items] in groupedClassParentOptions" :key="'pcg-' + mi" open>
+              <summary role="treeitem">
+                <span class="cs-node-kind cs-node-kind--module">M</span>
+                {{ moduleLabel(mi) }}{{ mi === props.mi ? ' (current)' : '' }}
+              </summary>
+              <div role="group">
+                <button
+                  v-for="opt in items"
+                  :key="'pct-' + opt.key"
+                  type="button"
+                  role="treeitem"
+                  class="cs-parent-tree__item"
+                  :class="{ 'cs-parent-tree__item--active': pendingParentKey === opt.key }"
+                  @click="pendingParentKey = opt.key"
+                >
+                  <span
+                    class="cs-node-kind"
+                    :class="{
+                      'cs-node-kind--ns': classParentItemKind(opt.key) === 'namespace',
+                      'cs-node-kind--cls': classParentItemKind(opt.key) === 'class',
+                    }"
+                  >
+                    {{ classParentItemKind(opt.key) === 'class' ? 'C' : 'N' }}
+                  </span>
+                  {{ treeItemLabel(opt.label, mi) }}
+                </button>
+              </div>
+            </details>
+          </div>
+          <div class="cs-actions">
+            <button type="button" class="add-row" @click="applyParentPicker">确定</button>
+            <button type="button" class="link-btn" @click="parentPickerOpen = false">取消</button>
+          </div>
+        </div>
+      </dialog>
+
       <section v-if="activeTab === 'enums'" class="cde-section-card">
         <h4 class="cde-section-title">{{ csMsg.flClsEnumLiteralsHeading }}</h4>
         <table class="cs-table">
@@ -1443,6 +1628,112 @@ watch(
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 0 4px;
+}
+.cs-parent-picker-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+.cs-parent-inline-kind {
+  flex: 0 0 auto;
+}
+.cs-parent-picker-inline .wide {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cs-parent-picker-btn {
+  flex: 0 0 auto;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cs-parent-picker-dialog {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  width: min(760px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0;
+  overflow: hidden;
+}
+.cs-parent-picker-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.38);
+}
+.cs-parent-tree {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  max-height: min(320px, calc(100vh - 260px));
+  overflow: auto;
+  padding: 6px;
+  background: #fff;
+}
+.cs-parent-tree details {
+  margin-bottom: 6px;
+}
+.cs-parent-tree summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #334155;
+  margin: 2px 0 4px;
+}
+.cs-parent-tree__item {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cs-parent-tree__item:hover {
+  background: #f8fafc;
+}
+.cs-parent-tree__item--active {
+  background: #e2e8f0;
+}
+.cs-node-kind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+  flex: 0 0 auto;
+}
+.cs-node-kind--module {
+  border-color: #93c5fd;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.cs-node-kind--ns {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #15803d;
+}
+.cs-node-kind--cls {
+  border-color: #fcd34d;
+  background: #fef3c7;
+  color: #92400e;
 }
 .cs-inline-pair {
   display: flex;

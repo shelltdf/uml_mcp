@@ -4,7 +4,7 @@ import {
   extractClassDiagramSourceFromPayload,
   parseViewPayloadClassDiagram,
   serializeClassDiagramBody,
-} from '../src/mermaid/classDiagramModel.js';
+} from '../src/classDiagramModel.js';
 
 describe('parseViewPayloadClassDiagram', () => {
   it('parses bare classDiagram body', () => {

@@ -79,30 +79,3 @@ export { JsonViewPayloadCodec } from './infrastructure/codecs/JsonViewPayloadCod
 export { CoreModelRefResolver } from './infrastructure/refs/CoreModelRefResolver.js';
 export { MarkdownBlockParser } from './infrastructure/parsers/MarkdownBlockParser.js';
 
-export type {
-  ClassDef,
-  ClassDiagramState,
-  ClassLink,
-  ClassPositions,
-  ClassDiagramEdgeVisibility,
-  ParsedClassLayout,
-} from './mermaid/classDiagramModel.js';
-export {
-  slug,
-  stripMermaidMemberModifiers,
-  isClassMemberMethodLine,
-  emptyDiagram,
-  parseLayoutComment,
-  extractFirstMermaidBlock,
-  parseClassDiagramBody,
-  serializeClassDiagramBody,
-  mergePositions,
-  buildClassDiagramMarkdown,
-  parseOrDefault,
-  classDiagramHeaderHeight,
-  estimateClassSize,
-  diagramBounds,
-  extractClassDiagramSourceFromPayload,
-  parseViewPayloadClassDiagram,
-  buildClassDiagramViewPayload,
-} from './mermaid/classDiagramModel.js';

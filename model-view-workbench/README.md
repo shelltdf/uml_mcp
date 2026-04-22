@@ -52,6 +52,7 @@
 | 路径 | 说明 |
 |------|------|
 | `packages/core` | 解析 `mv-model-sql` / `mv-model-kv` / `mv-model-struct` / `mv-model-codespace` / `mv-model-interface` / `mv-view` / `mv-map`、块回写、引用工具（纯 TS） |
+| `packages/mermaid` | Mermaid 类图（`classDiagram`）解析/序列化与布局注释能力（扩展包，与 core 解耦） |
 | `apps/web` | Vue3 + Vite 工作区 UI |
 | `apps/electron` | Electron 壳（磁盘工作区、独立块窗口） |
 | `vscode-extension` | VS Code/Cursor 扩展（加载 `media/app` 静态资源） |
@@ -70,11 +71,17 @@
 npm install
 npm test
 npm run build
-npm run dev:web          # 先 build @mvwb/core 再 Vite 开发（避免改 core 源码后仍读旧 dist）
-npm run dev:electron     # 先 build core + web 再以 Electron 打开 dist
+npm run dev:web          # 先 build @mvwb/core + @mvwb/mermaid，再 Vite 开发
+npm run dev:electron     # 先 build core + mermaid + web，再以 Electron 打开 dist
 python run_exe.py        # 同上：先 npm run build 再启动 Electron 套壳
 npm run build:vscode     # build + 复制 dist 到扩展 + tsc 编译扩展
 ```
+
+### 迁移提示（Mermaid 拆包）
+
+- `@mvwb/core` 不再导出 `slug`、`parseViewPayloadClassDiagram`、`buildClassDiagramViewPayload` 等 Mermaid 类图 API。
+- 相关调用请改为从 `@mvwb/mermaid` 导入。
+- 详细替换示例见 [`MIGRATION.md`](MIGRATION.md)。
 
 物理规格与块语法见仓库 [`ai-software-engineering/02-physical/md-mv-core/spec.md`](../ai-software-engineering/02-physical/md-mv-core/spec.md)。
 

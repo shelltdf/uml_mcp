@@ -118,14 +118,20 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
           namespaces: [
             {
               id: 'ns-core-root',
-              name: 'Core',
-              classes: [
+              name: '',
+              namespaces: [
                 {
-                  id: 'cls-service',
-                  name: 'Service',
-                  kind: 'class',
-                  members: [],
-                  methods: [{ name: 'run', visibility: 'public', virtual: true, signature: 'void run()' }],
+                  id: 'ns-core',
+                  name: 'Core',
+                  classes: [
+                    {
+                      id: 'cls-service',
+                      name: 'Service',
+                      kind: 'class',
+                      members: [],
+                      methods: [{ name: 'run', visibility: 'public', virtual: true, signature: 'void run()' }],
+                    },
+                  ],
                 },
               ],
             },
@@ -137,6 +143,13 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
           path: 'apps/web',
           role: 'app',
           notes: 'Workbench frontend (sample)',
+          namespaces: [
+            {
+              id: 'ns-web-root',
+              name: '',
+              namespaces: [],
+            },
+          ],
         },
       ],
     };
