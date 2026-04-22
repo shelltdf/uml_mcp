@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { MV_MODEL_REFS_SCHEME_DOC, MV_MERMAID_UML_INSERT_KINDS, getMermaidNonUmlViewKinds } from '@mvwb/core';
+import { modelRefsSchemeDoc, MV_MERMAID_UML_INSERT_KINDS, getMermaidNonUmlViewKinds } from '@mvwb/core';
 import type { InsertCodeBlockKind } from '../utils/code-block-insert';
 import { useAppLocale } from '../composables/useAppLocale';
 import {
@@ -73,7 +73,7 @@ function onKeydown(ev: KeyboardEvent) {
         <header class="icb-head">
           <h2 id="icb-title" class="icb-title">{{ insertModalTitle(locale) }}</h2>
           <p class="icb-lead" v-html="insertModalLeadHtml(locale)" />
-          <p class="icb-lead icb-lead--scheme">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>
+          <p class="icb-lead icb-lead--scheme">{{ modelRefsSchemeDoc(locale === 'en' ? 'en' : 'zh') }}</p>
         </header>
 
         <div class="icb-body">

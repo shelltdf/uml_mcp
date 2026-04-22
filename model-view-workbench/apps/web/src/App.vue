@@ -4,7 +4,7 @@ import {
   MV_MAP_CANVAS_TITLE,
   MV_MODEL_INTERFACE_CANVAS_TITLE,
   MV_MODEL_KV_CANVAS_TITLE,
-  MV_MODEL_REFS_SCHEME_DOC,
+  modelRefsSchemeDoc,
   MV_MODEL_SQL_CANVAS_TITLE,
   MV_MODEL_STRUCT_CANVAS_TITLE,
   isMermaidViewKind,
@@ -2919,7 +2919,7 @@ onUnmounted(() => {
                         </dl>
                         <details v-if="selectedBlock.kind === 'mv-view'" class="dock-json-details dock-ref-details">
                           <summary class="dock-json-summary" :title="ui.modelRefsSummaryHover">{{ ui.modelRefsSummaryTitle }}</summary>
-                          <p class="dock-muted dock-ref-doc">{{ MV_MODEL_REFS_SCHEME_DOC }}</p>
+                          <p class="dock-muted dock-ref-doc">{{ modelRefsSchemeDoc(locale === 'en' ? 'en' : 'zh') }}</p>
                         </details>
                         <details class="dock-json-details">
                           <summary class="dock-json-summary" :title="ui.fullJsonSummaryHover">{{ ui.fullJsonSummary }}</summary>

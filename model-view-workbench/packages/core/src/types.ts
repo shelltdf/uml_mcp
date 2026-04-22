@@ -617,8 +617,21 @@ export const MV_MAP_CANVAS_TITLE = '映射规则画布';
  * **modelRefs 书写约定**（供 UI 与文档展示；解析规则见 `refs/resolve.ts` 的 `parseRefUri` / `resolveRefPath`）。
  * 每个 `mv-view` 应在 `modelRefs` 中列出其依赖的 **Model 地址**：可多项。
  */
-export const MV_MODEL_REFS_SCHEME_DOC =
+export const MV_MODEL_REFS_SCHEME_DOC_ZH =
   'modelRefs 每项指向 **Model** 围栏（``mv-model-sql`` / ``mv-model-kv`` / ``mv-model-struct`` / ``mv-model-codespace`` / ``mv-model-interface``）：同文件写 `块id`；``mv-model-sql`` 多表时写 `块id#表id`，仅一张表时可只写 `块id`。跨文件写 `ref:相对路径.md#块id`，sql 多表时再加 `#表id`。路径相对于当前 mv-view 所在 .md 的目录，用 /。';
+
+/** English counterpart of {@link MV_MODEL_REFS_SCHEME_DOC_ZH}. */
+export const MV_MODEL_REFS_SCHEME_DOC_EN =
+  'Each `modelRefs` entry points to a **Model** fence (``mv-model-sql`` / ``mv-model-kv`` / ``mv-model-struct`` / ``mv-model-codespace`` / ``mv-model-interface``): in the **same** Markdown file write `block-id`; for ``mv-model-sql`` with **multiple** tables use `block-id#table-id`, and with **only one** table you may write just `block-id`. **Cross-file** refs use `ref:relative/path.md#block-id`, appending `#table-id` when SQL has multiple tables. Paths are **relative to the directory of the `.md` that contains the `mv-view`**, using `/`.';
+
+/**
+ * @deprecated 与 {@link MV_MODEL_REFS_SCHEME_DOC_ZH} 同文；新代码请用 {@link modelRefsSchemeDoc} 或 `MV_MODEL_REFS_SCHEME_DOC_ZH` / `MV_MODEL_REFS_SCHEME_DOC_EN`。
+ */
+export const MV_MODEL_REFS_SCHEME_DOC = MV_MODEL_REFS_SCHEME_DOC_ZH;
+
+export function modelRefsSchemeDoc(lang: 'zh' | 'en'): string {
+  return lang === 'en' ? MV_MODEL_REFS_SCHEME_DOC_EN : MV_MODEL_REFS_SCHEME_DOC_ZH;
+}
 
 /** UML 系视图（细分 kind 与通用 uml-diagram；独立记录格式） */
 export const MV_UML_VIEW_KINDS: ReadonlySet<MvViewKind> = new Set([
@@ -683,7 +696,7 @@ export const isPlantUmlViewKind = isUmlViewKind;
 export interface MvViewPayload {
   id: string;
   kind: MvViewKind;
-  /** 绑定的 Model 地址：同文件 `块id` 或 sql 多表时的 `块id#表id`；跨文件 `ref:路径.md#块id`（见 `MV_MODEL_REFS_SCHEME_DOC`） */
+  /** 绑定的 Model 地址：同文件 `块id` 或 sql 多表时的 `块id#表id`；跨文件 `ref:路径.md#块id`（见 `MV_MODEL_REFS_SCHEME_DOC_ZH` / `MV_MODEL_REFS_SCHEME_DOC_EN`、`modelRefsSchemeDoc`） */
   modelRefs: string[];
   /** 可选视图标题（展示用） */
   title?: string;
