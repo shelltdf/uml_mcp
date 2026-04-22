@@ -112,7 +112,16 @@ const marqueeNorm = computed(() => {
 });
 
 const shortcutsOpen = ref(false);
-const visibilityOpen = ref(true);
+const visibilityOpen = ref(false);
+type LayoutBeautyMode = 'fast' | 'balanced' | 'polish';
+const layoutBeautyMode = ref<LayoutBeautyMode>('balanced');
+const layoutBeautyLabel = computed(() =>
+  layoutBeautyMode.value === 'fast'
+    ? cd.value.cdeLayoutBeautyFast
+    : layoutBeautyMode.value === 'polish'
+      ? cd.value.cdeLayoutBeautyPolish
+      : cd.value.cdeLayoutBeautyBalanced,
+);
 
 const inheritDrag = ref<{ fromId: string } | null>(null);
 const tempInheritLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
@@ -143,7 +152,13 @@ function loadFromPayload(payload: string): void {
   }
   const { state: s, positions: p, folded: f, edgeVisibility: ev } = parseViewPayloadClassDiagram(payload);
   state.classes.splice(0, state.classes.length, ...s.classes);
-  state.links.splice(0, state.links.length, ...s.links);
+  const strictLinks = s.links.filter((l) => {
+    if (l.kind !== 'association') return true;
+    const sec = l.fromSlotSection;
+    const nm = (l.fromSlotName ?? '').trim();
+    return (sec === 'members' || sec === 'properties') && !!nm;
+  });
+  state.links.splice(0, state.links.length, ...strictLinks);
   Object.keys(positions).forEach((k) => delete positions[k]);
   Object.assign(positions, p);
   Object.keys(folded).forEach((k) => delete folded[k]);
@@ -574,14 +589,45 @@ function rightHandleTipY(c: ClassDef, h: { sectionIndex: number; lineIndex: numb
   return previewSectionLineY(c, h.sectionIndex, h.lineIndex) - 4;
 }
 
+function handleRowBySlotMeta(
+  c: ClassDef,
+  section: 'members' | 'properties' | undefined,
+  slotName: string | undefined,
+): { sectionIndex: number; lineIndex: number } | null {
+  const target = (slotName ?? '').trim();
+  if (!target) return null;
+  const lower = target.toLowerCase();
+  if (section === 'members') {
+    const list = effectiveAttributes(c);
+    for (let i = 0; i < list.length; i++) {
+      if (extractSlotName(list[i] ?? '').toLowerCase() === lower) return { sectionIndex: 0, lineIndex: i };
+    }
+    return null;
+  }
+  if (section === 'properties') {
+    const list = effectiveProperties(c);
+    for (let i = 0; i < list.length; i++) {
+      if (extractSlotName(list[i] ?? '').toLowerCase() === lower) return { sectionIndex: 1, lineIndex: i };
+    }
+    return null;
+  }
+  return null;
+}
+
 function associationSourceTip(
   edgeId: string,
+  edgeMeta: { fromSlotSection?: 'members' | 'properties'; fromSlotName?: string },
   fromClass: ClassDef,
   fromPos: { x: number; y: number },
   toPos: { x: number; y: number },
 ): { x: number; y: number } {
   const rows = rightHandleRows(fromClass);
   if (!rows.length) return { x: fromPos.x + 264, y: fromPos.y + 18 };
+  const byMeta = handleRowBySlotMeta(fromClass, edgeMeta.fromSlotSection, edgeMeta.fromSlotName);
+  if (byMeta) {
+    associationAnchorByEdge[edgeId] = byMeta;
+    return { x: fromPos.x + 264, y: fromPos.y + rightHandleTipY(fromClass, byMeta) };
+  }
   const pinned = associationAnchorByEdge[edgeId];
   if (pinned) {
     const found = rows.find((r) => r.sectionIndex === pinned.sectionIndex && r.lineIndex === pinned.lineIndex);
@@ -589,19 +635,8 @@ function associationSourceTip(
       return { x: fromPos.x + 264, y: fromPos.y + rightHandleTipY(fromClass, found) };
     }
   }
-  const targetY = toPos.y + 18;
-  let best = rows[0]!;
-  let bestD = Math.abs(fromPos.y + rightHandleTipY(fromClass, best) - targetY);
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i]!;
-    const d = Math.abs(fromPos.y + rightHandleTipY(fromClass, r) - targetY);
-    if (d < bestD) {
-      best = r;
-      bestD = d;
-    }
-  }
-  associationAnchorByEdge[edgeId] = { sectionIndex: best.sectionIndex, lineIndex: best.lineIndex };
-  return { x: fromPos.x + 264, y: fromPos.y + rightHandleTipY(fromClass, best) };
+  // Strict row binding: no metadata means no row-level source anchor.
+  return { x: fromPos.x + 264, y: fromPos.y + 18 };
 }
 
 function classBoxSize(c: ClassDef): { w: number; h: number } {
@@ -941,6 +976,60 @@ function zoomDelta(d: number): void {
 function autoLayoutClasses(): void {
   const classes = state.classes;
   if (!classes.length) return;
+  const beauty = (() => {
+    if (layoutBeautyMode.value === 'fast') {
+      return {
+        edgeImproveIter: 2,
+        baryRounds: 1,
+        swapPass: 0,
+        swapGuard: 2,
+        gridHGap: 52,
+        gridVGap: 52,
+        treeHGap: 34,
+        treeGap: 54,
+        treeVGap: 52,
+        relationPasses: 2,
+        relationPull: 0.1,
+        assocRender: 'straight' as const,
+      };
+    }
+    if (layoutBeautyMode.value === 'polish') {
+      return {
+        edgeImproveIter: 12,
+        baryRounds: 6,
+        swapPass: 3,
+        swapGuard: 20,
+        gridHGap: 90,
+        gridVGap: 86,
+        treeHGap: 62,
+        treeGap: 98,
+        treeVGap: 86,
+        relationPasses: 8,
+        relationPull: 0.26,
+        assocRender: 'orthogonal' as const,
+      };
+    }
+    return {
+      edgeImproveIter: 7,
+      baryRounds: 3,
+      swapPass: 1,
+      swapGuard: 10,
+      gridHGap: 68,
+      gridVGap: 64,
+      treeHGap: 44,
+      treeGap: 72,
+      treeVGap: 64,
+      relationPasses: 4,
+      relationPull: 0.16,
+      assocRender: 'orthogonal' as const,
+    };
+  })();
+  const applyBeautyEdgeRender = (): void => {
+    for (const l of state.links) {
+      if (l.kind === 'inherit') continue;
+      edgeRenderById[l.id] = l.kind === 'dependency' ? 'orthogonal' : beauty.assocRender;
+    }
+  };
   // 继承树布局：父类在上、子类在下；多个根按森林横向排列。
   // 纵向间距按每一层节点“真实框高”计算，避免内容多的类框重叠。
   const byId = new Map(classes.map((c) => [c.id, c] as const));
@@ -958,18 +1047,135 @@ function autoLayoutClasses(): void {
   for (const arr of children.values()) {
     arr.sort((a, b) => classDisplayLabel(byId.get(a)!).localeCompare(classDisplayLabel(byId.get(b)!)));
   }
+  const hasInheritLinks = children.size > 0;
+
+  // 无继承链时改为紧凑网格布局，避免所有类横向排成一条长带。
+  if (!hasInheritLinks) {
+    const sorted = [...classes].sort((a, b) => classDisplayLabel(a).localeCompare(classDisplayLabel(b)));
+    const n = sorted.length;
+    const colCount = Math.max(1, Math.ceil(Math.sqrt(n)));
+    const hGap = beauty.gridHGap;
+    const vGap = beauty.gridVGap;
+    const startX = 80;
+    const startY = 80;
+    const boxW = classBoxSize(sorted[0]!).w;
+    const rowHeights: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const row = Math.floor(i / colCount);
+      const h = classBoxSize(sorted[i]!).h;
+      rowHeights[row] = Math.max(rowHeights[row] ?? 0, h);
+    }
+    const rowTopY: number[] = [];
+    let curY = startY;
+    for (let r = 0; r < rowHeights.length; r++) {
+      rowTopY[r] = curY;
+      curY += (rowHeights[r] ?? 160) + vGap;
+    }
+    for (let i = 0; i < n; i++) {
+      const c = sorted[i]!;
+      const row = Math.floor(i / colCount);
+      const col = i % colCount;
+      positions[c.id] = {
+        x: startX + col * (boxW + hGap),
+        y: rowTopY[row] ?? startY,
+      };
+    }
+    applyBeautyEdgeRender();
+    improveEdgeAesthetics();
+    pushPayload();
+    fitAll();
+    void nextTick(() => fitAll());
+    return;
+  }
 
   let roots = classes.filter((c) => !hasParent.has(c.id)).map((c) => c.id);
   if (!roots.length) roots = classes.map((c) => c.id);
   roots.sort((a, b) => classDisplayLabel(byId.get(a)!).localeCompare(classDisplayLabel(byId.get(b)!)));
 
-  const hGap = 44;
-  const treeGap = 72;
-  const vGap = 64;
+  const hGap = beauty.treeHGap;
+  const treeGap = beauty.treeGap;
+  const vGap = beauty.treeVGap;
   const measureMemo = new Map<string, number>();
   const measuring = new Set<string>();
   const nodeWidth = (id: string) => classBoxSize(byId.get(id)!).w;
   const nodeHeight = (id: string) => classBoxSize(byId.get(id)!).h;
+  const linkedNeighbors = (() => {
+    const m = new Map<string, Set<string>>();
+    for (const c of classes) m.set(c.id, new Set<string>());
+    for (const l of state.links) {
+      if (l.kind !== 'association' && l.kind !== 'dependency') continue;
+      if (!byId.has(l.from) || !byId.has(l.to)) continue;
+      m.get(l.from)?.add(l.to);
+      m.get(l.to)?.add(l.from);
+    }
+    return m;
+  })();
+  const improveEdgeAesthetics = (): void => {
+    const ids = classes.map((c) => c.id).filter((id) => !!positions[id]);
+    if (ids.length < 2) return;
+    const yWeight = hasInheritLinks ? 0.05 : 0.2;
+    const xWeight = 0.24;
+    for (let iter = 0; iter < beauty.edgeImproveIter; iter++) {
+      for (const id of ids) {
+        const p = positions[id];
+        const me = byId.get(id);
+        if (!p || !me) continue;
+        const neighbors = [...(linkedNeighbors.get(id) ?? [])].filter((nid) => !!positions[nid]);
+        if (!neighbors.length) continue;
+        const mySize = classBoxSize(me);
+        let sumX = 0;
+        let sumY = 0;
+        for (const nid of neighbors) {
+          const np = positions[nid]!;
+          const nSize = classBoxSize(byId.get(nid)!);
+          sumX += np.x + nSize.w / 2;
+          sumY += np.y + nSize.h / 2;
+        }
+        const targetX = sumX / neighbors.length - mySize.w / 2;
+        const targetY = sumY / neighbors.length - mySize.h / 2;
+        positions[id] = {
+          x: p.x + (targetX - p.x) * xWeight,
+          y: p.y + (targetY - p.y) * yWeight,
+        };
+      }
+      for (let i = 0; i < ids.length; i++) {
+        const aId = ids[i]!;
+        const aPos = positions[aId];
+        const aClass = byId.get(aId);
+        if (!aPos || !aClass) continue;
+        const aSize = classBoxSize(aClass);
+        for (let j = i + 1; j < ids.length; j++) {
+          const bId = ids[j]!;
+          const bPos = positions[bId];
+          const bClass = byId.get(bId);
+          if (!bPos || !bClass) continue;
+          const bSize = classBoxSize(bClass);
+          const overlapX = Math.min(aPos.x + aSize.w, bPos.x + bSize.w) - Math.max(aPos.x, bPos.x);
+          const overlapY = Math.min(aPos.y + aSize.h, bPos.y + bSize.h) - Math.max(aPos.y, bPos.y);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+          if (overlapX < overlapY) {
+            const shift = overlapX / 2 + 16;
+            if (aPos.x <= bPos.x) {
+              aPos.x -= shift;
+              bPos.x += shift;
+            } else {
+              aPos.x += shift;
+              bPos.x -= shift;
+            }
+          } else {
+            const shift = overlapY / 2 + 12;
+            if (aPos.y <= bPos.y) {
+              aPos.y -= shift;
+              bPos.y += shift;
+            } else {
+              aPos.y += shift;
+              bPos.y -= shift;
+            }
+          }
+        }
+      }
+    }
+  };
 
   const measure = (id: string): number => {
     if (measureMemo.has(id)) return measureMemo.get(id)!;
@@ -989,6 +1195,7 @@ function autoLayoutClasses(): void {
   const depthMaxHeight = new Map<number, number>();
   const depthTopY = new Map<number, number>();
   const placed = new Set<string>();
+  const depthById = new Map<string, number>();
   const measureDepthHeights = (id: string, depth: number) => {
     const h = nodeHeight(id);
     depthMaxHeight.set(depth, Math.max(depthMaxHeight.get(depth) ?? 0, h));
@@ -1012,6 +1219,7 @@ function autoLayoutClasses(): void {
     const centerX = left + subW / 2;
     const topY = depthTopY.get(depth) ?? 80 + depth * (boxH + vGap);
     positions[id] = { x: centerX - boxW / 2, y: topY };
+    depthById.set(id, depth);
     const kids = children.get(id) ?? [];
     let cur = left;
     for (const k of kids) {
@@ -1033,28 +1241,138 @@ function autoLayoutClasses(): void {
     if (placed.has(c.id)) continue;
     const w = nodeWidth(c.id);
     positions[c.id] = { x: curX, y: 80 };
+    depthById.set(c.id, 0);
     curX += w + treeGap;
   }
 
-  // Association direction constraint: target class should stay on the right side.
-  // Apply multiple passes to propagate shifts across association chains.
+  const relationNeighbors = (() => {
+    const m = new Map<string, Set<string>>();
+    for (const c of classes) m.set(c.id, new Set<string>());
+    for (const l of state.links) {
+      if (!positions[l.from] || !positions[l.to]) continue;
+      m.get(l.from)?.add(l.to);
+      m.get(l.to)?.add(l.from);
+    }
+    return m;
+  })();
+  const centerXOf = (id: string): number => {
+    const p = positions[id]!;
+    return p.x + nodeWidth(id) / 2;
+  };
+  const edgeCrossCount = (depth: number, ids: string[]): number => {
+    const next = depth + 1;
+    const prev = depth - 1;
+    const edges: Array<{ ax: number; bx: number }> = [];
+    for (const id of ids) {
+      const a = centerXOf(id);
+      const ns = relationNeighbors.get(id) ?? new Set<string>();
+      for (const nid of ns) {
+        const nd = depthById.get(nid);
+        if (nd !== next && nd !== prev) continue;
+        edges.push({ ax: a, bx: centerXOf(nid) });
+      }
+    }
+    let c = 0;
+    for (let i = 0; i < edges.length; i++) {
+      const e1 = edges[i]!;
+      for (let j = i + 1; j < edges.length; j++) {
+        const e2 = edges[j]!;
+        if ((e1.ax - e2.ax) * (e1.bx - e2.bx) < 0) c++;
+      }
+    }
+    return c;
+  };
+  const applyLayerOrder = (depth: number, ids: string[]): void => {
+    if (!ids.length) return;
+    const minX = Math.min(...ids.map((id) => positions[id]!.x));
+    let x = minX;
+    for (const id of ids) {
+      positions[id] = { ...positions[id]!, x };
+      x += nodeWidth(id) + hGap;
+    }
+    for (const id of ids) {
+      positions[id] = { ...positions[id]!, y: depthTopY.get(depth) ?? positions[id]!.y };
+    }
+  };
+  const reorderByBarycenter = (depth: number, refDepth: number): void => {
+    const ids = classes.filter((c) => depthById.get(c.id) === depth).map((c) => c.id);
+    if (ids.length < 2) return;
+    const score = (id: string): number => {
+      const ns = [...(relationNeighbors.get(id) ?? [])].filter((nid) => depthById.get(nid) === refDepth);
+      if (!ns.length) return centerXOf(id);
+      const sum = ns.reduce((acc, nid) => acc + centerXOf(nid), 0);
+      return sum / ns.length;
+    };
+    const sorted = [...ids].sort((a, b) => score(a) - score(b));
+    applyLayerOrder(depth, sorted);
+  };
+  const localSwapReduceCross = (depth: number): void => {
+    const ids = classes.filter((c) => depthById.get(c.id) === depth).map((c) => c.id);
+    if (ids.length < 3) return;
+    let order = [...ids].sort((a, b) => positions[a]!.x - positions[b]!.x);
+    let improved = true;
+    let guard = 0;
+    while (improved && guard < beauty.swapGuard) {
+      improved = false;
+      guard++;
+      for (let i = 0; i < order.length - 1; i++) {
+        const curr = [...order];
+        const bestBefore = edgeCrossCount(depth, curr);
+        const swapped = [...curr];
+        const t = swapped[i]!;
+        swapped[i] = swapped[i + 1]!;
+        swapped[i + 1] = t;
+        applyLayerOrder(depth, swapped);
+        const after = edgeCrossCount(depth, swapped);
+        if (after < bestBefore) {
+          order = swapped;
+          improved = true;
+        } else {
+          applyLayerOrder(depth, curr);
+        }
+      }
+    }
+  };
+  // 轻量 crossing reduction：按层对齐到相邻层 barycenter，减少交叉与折返。
+  for (let round = 0; round < beauty.baryRounds; round++) {
+    for (let d = 1; d <= maxDepth; d++) reorderByBarycenter(d, d - 1);
+    for (let d = maxDepth - 1; d >= 0; d--) reorderByBarycenter(d, d + 1);
+  }
+  // 在 barycenter 后做局部相邻交换，进一步降低剩余交叉。
+  for (let pass = 0; pass < beauty.swapPass; pass++) {
+    for (let d = 0; d <= maxDepth; d++) localSwapReduceCross(d);
+  }
+
+  // Association/dependency direction constraint: target should stay on the right side.
+  // Apply multiple passes to propagate shifts across relation chains.
   const assocGap = 56;
-  for (let pass = 0; pass < 4; pass++) {
+  const depGap = 44;
+  for (let pass = 0; pass < beauty.relationPasses; pass++) {
     let moved = false;
     for (const l of state.links) {
-      if (l.kind !== 'association') continue;
+      if (l.kind !== 'association' && l.kind !== 'dependency') continue;
       const fromPos = positions[l.from];
       const toPos = positions[l.to];
       const fromClass = byId.get(l.from);
       if (!fromPos || !toPos || !fromClass) continue;
-      const minToX = fromPos.x + classBoxSize(fromClass).w + assocGap;
+      const minGap = l.kind === 'dependency' ? depGap : assocGap;
+      const minToX = fromPos.x + classBoxSize(fromClass).w + minGap;
       if (toPos.x < minToX) {
         positions[l.to] = { ...toPos, x: minToX };
+        moved = true;
+      }
+      const verticalPull = hasInheritLinks ? beauty.relationPull * 0.6 : beauty.relationPull;
+      const alignedY = fromPos.y + (l.kind === 'dependency' ? 0 : 6);
+      const nextY = toPos.y + (alignedY - toPos.y) * verticalPull;
+      if (Math.abs(nextY - toPos.y) > 1) {
+        positions[l.to] = { ...positions[l.to]!, y: nextY };
         moved = true;
       }
     }
     if (!moved) break;
   }
+  applyBeautyEdgeRender();
+  improveEdgeAesthetics();
 
   pushPayload();
   fitAll();
@@ -1129,6 +1447,8 @@ function startAssociationDrag(
   anchor: 'left' | 'right' = 'right',
 ): void {
   if (layoutOnly.value) return;
+  // Strict sync mode: association must originate from member/property slot handles only.
+  if (anchor !== 'right') return;
   e.stopPropagation();
   e.preventDefault();
   const p = positions[fromId];
@@ -1324,13 +1644,24 @@ function deleteEdge(edgeId: string): void {
 }
 
 const selectedEdge = computed(() => state.links.find((l) => l.id === edgeEditor.edgeId));
-const selectedEdgeRender = computed<'straight' | 'orthogonal' | 'curve'>(() => edgeRenderById[edgeEditor.edgeId] ?? 'straight');
+const selectedEdgeRender = computed<'straight' | 'orthogonal' | 'curve'>(() => {
+  const edge = selectedEdge.value;
+  if (!edge) return 'straight';
+  return edgeRenderById[edgeEditor.edgeId] ?? (edge.kind === 'dependency' ? 'orthogonal' : 'straight');
+});
 
 function patchEdge(part: Partial<{ kind: 'inherit' | 'association' | 'dependency'; fromMult: string; toMult: string }>): void {
   if (layoutOnly.value) return;
   const edge = state.links.find((l) => l.id === edgeEditor.edgeId);
   if (!edge) return;
-  if (part.kind !== undefined) edge.kind = part.kind;
+  if (part.kind !== undefined) {
+    if (part.kind === 'association') {
+      const sec = edge.fromSlotSection;
+      const nm = (edge.fromSlotName ?? '').trim();
+      if ((sec !== 'members' && sec !== 'properties') || !nm) return;
+    }
+    edge.kind = part.kind;
+  }
   if (part.fromMult !== undefined) edge.fromMult = part.fromMult || undefined;
   if (part.toMult !== undefined) edge.toMult = part.toMult || undefined;
   pushPayload();
@@ -1444,8 +1775,113 @@ type EdgePathItem = {
   ry?: number;
 };
 
+function segmentIntersectsRect(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  r: { x: number; y: number; w: number; h: number },
+  pad = 6,
+): boolean {
+  const left = r.x - pad;
+  const right = r.x + r.w + pad;
+  const top = r.y - pad;
+  const bottom = r.y + r.h + pad;
+  if (x1 === x2) {
+    if (x1 < left || x1 > right) return false;
+    const a = Math.min(y1, y2);
+    const b = Math.max(y1, y2);
+    return b >= top && a <= bottom;
+  }
+  if (y1 === y2) {
+    if (y1 < top || y1 > bottom) return false;
+    const a = Math.min(x1, x2);
+    const b = Math.max(x1, x2);
+    return b >= left && a <= right;
+  }
+  return false;
+}
+
 const edgePaths = computed((): EdgePathItem[] => {
   const out: EdgePathItem[] = [];
+  const classRectById = new Map<string, { x: number; y: number; w: number; h: number }>();
+  for (const c of state.classes) {
+    const p = positions[c.id];
+    if (!p) continue;
+    const s = classBoxSize(c);
+    classRectById.set(c.id, { x: p.x, y: p.y, w: s.w, h: s.h });
+  }
+  const nonInheritEdges = state.links.filter((l) => l.kind === 'association' || l.kind === 'dependency');
+  const outEdgeIdsByClass = new Map<string, string[]>();
+  const inEdgeIdsByClass = new Map<string, string[]>();
+  for (const e of nonInheritEdges) {
+    const outArr = outEdgeIdsByClass.get(e.from) ?? [];
+    outArr.push(e.id);
+    outEdgeIdsByClass.set(e.from, outArr);
+    const inArr = inEdgeIdsByClass.get(e.to) ?? [];
+    inArr.push(e.id);
+    inEdgeIdsByClass.set(e.to, inArr);
+  }
+  const laneByEdgeId = new Map<string, { outRank: number; outTotal: number; inRank: number; inTotal: number }>();
+  for (const ids of outEdgeIdsByClass.values()) ids.sort();
+  for (const ids of inEdgeIdsByClass.values()) ids.sort();
+  for (const e of nonInheritEdges) {
+    const outIds = outEdgeIdsByClass.get(e.from) ?? [];
+    const inIds = inEdgeIdsByClass.get(e.to) ?? [];
+    laneByEdgeId.set(e.id, {
+      outRank: Math.max(0, outIds.indexOf(e.id)),
+      outTotal: outIds.length,
+      inRank: Math.max(0, inIds.indexOf(e.id)),
+      inTotal: inIds.length,
+    });
+  }
+  const orthogonalPathAvoidingClasses = (
+    fromId: string,
+    toId: string,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    startLaneOffset: number,
+    endLaneOffset: number,
+    channelBias: number,
+  ): string => {
+    const startStub = x1 + 20 + startLaneOffset;
+    const endStub = x2 - 20 + endLaneOffset;
+    const left = Math.min(startStub, endStub);
+    const right = Math.max(startStub, endStub);
+    const candidates = [
+      (y1 + y2) / 2 + channelBias,
+      y1 - 56,
+      y1 + 56,
+      y2 - 56,
+      y2 + 56,
+      Math.min(y1, y2) - 72,
+      Math.max(y1, y2) + 72,
+    ];
+    let bestY = candidates[0]!;
+    let bestCost = Number.POSITIVE_INFINITY;
+    for (const cy of candidates) {
+      let hit = 0;
+      for (const [id, r] of classRectById.entries()) {
+        if (id === fromId || id === toId) continue;
+        if (
+          segmentIntersectsRect(left, cy, right, cy, r) ||
+          segmentIntersectsRect(startStub, y1, startStub, cy, r) ||
+          segmentIntersectsRect(endStub, cy, endStub, y2, r)
+        ) {
+          hit++;
+        }
+      }
+      const bend = Math.abs(cy - y1) + Math.abs(cy - y2);
+      const cost = hit * 10000 + bend;
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestY = cy;
+      }
+    }
+    return `M ${x1} ${y1} L ${startStub} ${y1} L ${startStub} ${bestY} L ${endStub} ${bestY} L ${endStub} ${y2} L ${x2} ${y2}`;
+  };
   for (const l of state.links) {
     if (l.kind === 'inherit' && !edgeVisibility.inherit) continue;
     if ((l.kind === 'association' || l.kind === 'dependency') && !edgeVisibility.association) continue;
@@ -1475,16 +1911,23 @@ const edgePaths = computed((): EdgePathItem[] => {
       y2 = p2.y + 18;
     } else {
       // Association anchors: from right triangle tip -> to left triangle tip.
-      const src = associationSourceTip(l.id, fc, p1, p2);
+      const src = associationSourceTip(l.id, { fromSlotSection: l.fromSlotSection, fromSlotName: l.fromSlotName }, fc, p1, p2);
       x1 = src.x;
       y1 = src.y;
       x2 = p2.x - 16;
       y2 = p2.y + 18;
     }
-    const render = edgeRenderById[l.id] ?? 'straight';
+    const lane = laneByEdgeId.get(l.id);
+    const laneStep = 9;
+    const outLaneOffset = lane ? (lane.outRank - (lane.outTotal - 1) / 2) * laneStep : 0;
+    const inLaneOffset = lane ? (lane.inRank - (lane.inTotal - 1) / 2) * laneStep : 0;
+    if (l.kind === 'dependency') {
+      y1 += outLaneOffset * 0.5;
+      y2 += inLaneOffset * 0.5;
+    }
+    const render = edgeRenderById[l.id] ?? (l.kind === 'dependency' ? 'orthogonal' : 'straight');
     if (render === 'orthogonal') {
-      const mx = (x1 + x2) / 2;
-      dpath = `M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2} ${y2}`;
+      dpath = orthogonalPathAvoidingClasses(l.from, l.to, x1, y1, x2, y2, outLaneOffset, inLaneOffset, outLaneOffset * 0.35);
     } else if (render === 'curve') {
       const dx = x2 - x1;
       const c1x = x1 + dx * 0.33;
@@ -1809,8 +2252,7 @@ function deleteClass(classId: string): void {
               v-if="!layoutOnly"
               points="-16,18 0,10 0,26"
               :fill="isDarkTheme() ? '#94a3b8' : '#475569'"
-              style="cursor: crosshair"
-              @pointerdown.stop="startAssociationDrag($event, c.id, 0, 0, 'left')"
+              style="cursor: default"
             />
             <polygon
               v-if="!layoutOnly"
@@ -2139,11 +2581,19 @@ function deleteClass(classId: string): void {
         </div>
 
         <div class="cde-canvas-toolbar" role="toolbar" :aria-label="cd.cdeToolbarAria">
+          <label class="cde-canvas-toolbar__select-wrap" :title="`${cd.cdeLayoutBeauty} — ${layoutBeautyLabel}`">
+            <span class="cde-canvas-toolbar__select-label">{{ cd.cdeLayoutBeauty }}</span>
+            <select v-model="layoutBeautyMode" class="cde-canvas-toolbar__select">
+              <option value="fast">{{ cd.cdeLayoutBeautyFast }}</option>
+              <option value="balanced">{{ cd.cdeLayoutBeautyBalanced }}</option>
+              <option value="polish">{{ cd.cdeLayoutBeautyPolish }}</option>
+            </select>
+          </label>
           <button
             type="button"
             class="cde-canvas-toolbar__btn"
             :aria-label="cd.cdeAutoLayout"
-            :title="`${cd.cdeAutoLayout} — ${noGlobalShortcutText}`"
+            :title="`${cd.cdeAutoLayout} (${layoutBeautyLabel}) — ${noGlobalShortcutText}`"
             @click="autoLayoutClasses"
           >
             <svg class="cde-canvas-toolbar__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -2512,6 +2962,28 @@ function deleteClass(classId: string): void {
   background: color-mix(in srgb, var(--panel-bg, #fafafa) 94%, transparent);
   border: 1px solid var(--border, #ccc);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.cde-canvas-toolbar__select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 4px 2px 6px;
+}
+.cde-canvas-toolbar__select-label {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted, #64748b);
+  text-align: center;
+}
+.cde-canvas-toolbar__select {
+  height: 1.55rem;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 5px;
+  background: var(--editor-bg, #fff);
+  color: var(--text, #0f172a);
+  font-size: 11px;
+  padding: 0 4px;
 }
 .cde-canvas-toolbar__btn {
   display: flex;

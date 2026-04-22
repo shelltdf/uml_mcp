@@ -21,6 +21,10 @@ export type ClassDiagramCanvasMessages = {
   cdeVisibilityPanel: string;
   cdeShowInherit: string;
   cdeShowAssoc: string;
+  cdeLayoutBeauty: string;
+  cdeLayoutBeautyFast: string;
+  cdeLayoutBeautyBalanced: string;
+  cdeLayoutBeautyPolish: string;
   cdeOpenCodespaceClass: string;
   cdeDeleteClass: string;
   cdeDeleteClassConfirm: string;
@@ -51,6 +55,10 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeVisibilityPanel: '显示',
     cdeShowInherit: '继承关系',
     cdeShowAssoc: '关联关系',
+    cdeLayoutBeauty: '排版强度',
+    cdeLayoutBeautyFast: '快速',
+    cdeLayoutBeautyBalanced: '平衡',
+    cdeLayoutBeautyPolish: '精修',
     cdeOpenCodespaceClass: '在 Codespace 中编辑类',
     cdeDeleteClass: '删除此类',
     cdeDeleteClassConfirm: '确定删除该类及其全部连线？此操作不可撤销。',
@@ -78,6 +86,10 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeVisibilityPanel: 'Show',
     cdeShowInherit: 'Inheritance',
     cdeShowAssoc: 'Associations',
+    cdeLayoutBeauty: 'Layout quality',
+    cdeLayoutBeautyFast: 'Fast',
+    cdeLayoutBeautyBalanced: 'Balanced',
+    cdeLayoutBeautyPolish: 'Polish',
     cdeOpenCodespaceClass: 'Edit class in Codespace',
     cdeDeleteClass: 'Delete class',
     cdeDeleteClassConfirm: 'Delete this class and all attached lines? This cannot be undone.',
