@@ -47,7 +47,18 @@ const leftPanelW = computed(() =>
     : Math.min(280, Math.max(120, canvasBox.value.w - 24)),
 );
 
-const debugX = computed(() => Math.max(chromeInset.value, canvasBox.value.w - 268));
+/** 调试条尺寸与画布角间距（与 HUD 分离，单独贴右下角） */
+const CS_DEBUG_BTN_W = 158;
+const CS_DEBUG_BTN_H = 26;
+const chromeCornerGap = 8;
+
+const debugX = computed(() =>
+  Math.max(chromeInset.value, canvasBox.value.w - CS_DEBUG_BTN_W - chromeCornerGap),
+);
+
+const debugY = computed(() =>
+  Math.max(chromeInset.value, canvasBox.value.h - CS_DEBUG_BTN_H - chromeCornerGap),
+);
 
 /** 快捷键说明：按行拆成 <text> 行（纯 SVG，无 foreignObject） */
 const shortcutLines = computed(() => csMsg.value.svgKeysBody.split('\n'));
@@ -736,13 +747,31 @@ onUnmounted(() => {
         </g>
       </g>
 
-      <g class="cs-svg-debug-wrap" pointer-events="auto" :transform="`translate(${debugX}, ${hudY})`">
+      <g class="cs-svg-debug-wrap" pointer-events="auto" :transform="`translate(${debugX}, ${debugY})`">
         <g class="cs-svg-debug-actions" @click.stop="copyRenderDebugInfo">
           <title>Copy full layout: every node worldRect + every edge dLocal/dWorld (SVG paths)</title>
-          <rect x="0" y="0" width="158" height="26" rx="4" fill="#fff" stroke="#94a3b8" class="cs-svg-debug-btn-rect" />
-          <text x="79" y="17" text-anchor="middle" class="cs-svg-debug-btn-txt">Copy drawing info</text>
+          <rect
+            x="0"
+            y="0"
+            :width="CS_DEBUG_BTN_W"
+            :height="CS_DEBUG_BTN_H"
+            rx="4"
+            fill="#fff"
+            stroke="#94a3b8"
+            class="cs-svg-debug-btn-rect"
+          />
+          <text :x="CS_DEBUG_BTN_W / 2" y="17" text-anchor="middle" class="cs-svg-debug-btn-txt">
+            Copy drawing info
+          </text>
         </g>
-        <text v-if="copyDebugFeedback" x="166" y="17" class="cs-svg-copy-toast-txt" role="status">
+        <text
+          v-if="copyDebugFeedback"
+          x="-8"
+          y="17"
+          text-anchor="end"
+          class="cs-svg-copy-toast-txt"
+          role="status"
+        >
           {{ copyDebugFeedback }}
         </text>
       </g>

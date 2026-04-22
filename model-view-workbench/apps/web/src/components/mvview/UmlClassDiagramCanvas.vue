@@ -76,9 +76,27 @@ const shellRef = ref<HTMLElement | null>(null);
 /** 视口像素尺寸（用于右上角可见性面板等 SVG 叠层定位） */
 const canvasBox = ref({ w: 400, h: 400 });
 const chromeInset = 12;
+/** 与 umlHudLayout.stackH 一致：6 + 24 + 6 + 24 + 6 */
+const UML_HUD_STACK_H = 66;
+/** 左下 HUD、右下调试条与画布边的间距（贴角） */
+const chromeCornerGap = 8;
+/** 左上排版工具栏：窄于原 96px 卡片，与内部 F/B/P 行宽一致 */
+const UML_TOOLBAR_CARD_W = 72;
+const UML_TOOLBAR_BTN_W = 56;
 const visibilityPanelX = computed(() => Math.max(chromeInset, canvasBox.value.w - 188));
-const umlHudY = computed(() => Math.max(chromeInset, canvasBox.value.h - 92));
-const umlDebugX = computed(() => Math.max(chromeInset, canvasBox.value.w - 220));
+const umlHudY = computed(() =>
+  Math.max(chromeInset, canvasBox.value.h - UML_HUD_STACK_H - chromeCornerGap),
+);
+/** 右下角「复制调试信息」按钮尺寸（与坐标计算一致） */
+const UML_DEBUG_BTN_W = 158;
+const UML_DEBUG_BTN_H = 26;
+/** 横纵贴右下角，与左下 HUD 解耦 */
+const umlDebugX = computed(() =>
+  Math.max(chromeInset, canvasBox.value.w - UML_DEBUG_BTN_W - chromeCornerGap),
+);
+const umlDebugY = computed(() =>
+  Math.max(chromeInset, canvasBox.value.h - UML_DEBUG_BTN_H - chromeCornerGap),
+);
 const state = reactive<ClassDiagramState>({ classes: [], links: [] });
 const positions = reactive<ClassPositions>({});
 const folded = reactive<Record<string, boolean>>({});
@@ -3489,74 +3507,80 @@ function deleteClass(classId: string): void {
             :aria-label="cd.cdeToolbarAria"
             :transform="`translate(0, ${keysPanelH + toolbarGap})`"
           >
-            <rect x="0" y="0" width="118" height="108" rx="8" :fill="chromePanelFill" :stroke="chromePanelStroke" />
+            <rect
+              x="0"
+              y="0"
+              :width="UML_TOOLBAR_CARD_W"
+              :height="layoutOnly ? 152 : 198"
+              rx="8"
+              :fill="chromePanelFill"
+              :stroke="chromePanelStroke"
+            />
             <text x="8" y="14" font-size="9" :fill="chromeMutedFill">{{ cd.cdeLayoutBeauty }}</text>
-            <g transform="translate(8, 22)">
-              <g style="cursor: pointer" @click.stop="setLayoutBeautyModeNext('fast')">
-                <title>{{ cd.cdeLayoutBeautyFast }}</title>
-                <rect
-                  width="30"
-                  height="18"
-                  rx="4"
-                  :fill="layoutBeautyMode === 'fast' ? '#2563eb' : 'transparent'"
-                  stroke="#94a3b8"
-                />
-                <text
-                  x="15"
-                  y="13"
-                  text-anchor="middle"
-                  font-size="10"
-                  pointer-events="none"
-                  :fill="layoutBeautyMode === 'fast' ? '#ffffff' : chromeTextFill"
-                >
-                  F
-                </text>
-              </g>
-              <g transform="translate(34, 0)" style="cursor: pointer" @click.stop="setLayoutBeautyModeNext('balanced')">
-                <title>{{ cd.cdeLayoutBeautyBalanced }}</title>
-                <rect
-                  width="30"
-                  height="18"
-                  rx="4"
-                  :fill="layoutBeautyMode === 'balanced' ? '#2563eb' : 'transparent'"
-                  stroke="#94a3b8"
-                />
-                <text
-                  x="15"
-                  y="13"
-                  text-anchor="middle"
-                  font-size="10"
-                  pointer-events="none"
-                  :fill="layoutBeautyMode === 'balanced' ? '#ffffff' : chromeTextFill"
-                >
-                  B
-                </text>
-              </g>
-              <g transform="translate(68, 0)" style="cursor: pointer" @click.stop="setLayoutBeautyModeNext('polish')">
-                <title>{{ cd.cdeLayoutBeautyPolish }}</title>
-                <rect
-                  width="30"
-                  height="18"
-                  rx="4"
-                  :fill="layoutBeautyMode === 'polish' ? '#2563eb' : 'transparent'"
-                  stroke="#94a3b8"
-                />
-                <text
-                  x="15"
-                  y="13"
-                  text-anchor="middle"
-                  font-size="10"
-                  pointer-events="none"
-                  :fill="layoutBeautyMode === 'polish' ? '#ffffff' : chromeTextFill"
-                >
-                  P
-                </text>
-              </g>
+            <g transform="translate(8, 22)" style="cursor: pointer" @click.stop="setLayoutBeautyModeNext('fast')">
+              <title>{{ cd.cdeLayoutBeautyFast }}</title>
+              <rect
+                :width="UML_TOOLBAR_BTN_W"
+                height="22"
+                rx="4"
+                :fill="layoutBeautyMode === 'fast' ? '#2563eb' : 'transparent'"
+                stroke="#94a3b8"
+              />
+              <text
+                :x="UML_TOOLBAR_BTN_W / 2"
+                y="15"
+                text-anchor="middle"
+                font-size="10"
+                pointer-events="none"
+                :fill="layoutBeautyMode === 'fast' ? '#ffffff' : chromeTextFill"
+              >
+                F
+              </text>
             </g>
-            <g transform="translate(12, 52)" style="cursor: pointer" @click.stop="autoLayoutClasses">
+            <g transform="translate(8, 50)" style="cursor: pointer" @click.stop="setLayoutBeautyModeNext('balanced')">
+              <title>{{ cd.cdeLayoutBeautyBalanced }}</title>
+              <rect
+                :width="UML_TOOLBAR_BTN_W"
+                height="22"
+                rx="4"
+                :fill="layoutBeautyMode === 'balanced' ? '#2563eb' : 'transparent'"
+                stroke="#94a3b8"
+              />
+              <text
+                :x="UML_TOOLBAR_BTN_W / 2"
+                y="15"
+                text-anchor="middle"
+                font-size="10"
+                pointer-events="none"
+                :fill="layoutBeautyMode === 'balanced' ? '#ffffff' : chromeTextFill"
+              >
+                B
+              </text>
+            </g>
+            <g transform="translate(8, 78)" style="cursor: pointer" @click.stop="setLayoutBeautyModeNext('polish')">
+              <title>{{ cd.cdeLayoutBeautyPolish }}</title>
+              <rect
+                :width="UML_TOOLBAR_BTN_W"
+                height="22"
+                rx="4"
+                :fill="layoutBeautyMode === 'polish' ? '#2563eb' : 'transparent'"
+                stroke="#94a3b8"
+              />
+              <text
+                :x="UML_TOOLBAR_BTN_W / 2"
+                y="15"
+                text-anchor="middle"
+                font-size="10"
+                pointer-events="none"
+                :fill="layoutBeautyMode === 'polish' ? '#ffffff' : chromeTextFill"
+              >
+                P
+              </text>
+            </g>
+            <g transform="translate(8, 108)" style="cursor: pointer" @click.stop="autoLayoutClasses">
               <title>{{ `${cd.cdeAutoLayout} (${layoutBeautyLabel}) — ${noGlobalShortcutText}` }}</title>
-              <rect x="-6" y="-6" width="44" height="44" fill="transparent" />
-              <g :stroke="chromeTextFill" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="0" y="0" :width="UML_TOOLBAR_BTN_W" height="36" rx="6" fill="transparent" />
+              <g transform="translate(17, 4)" :stroke="chromeTextFill" fill="none" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="4" width="6" height="6" rx="1.2" stroke-width="1.6" />
                 <rect x="15" y="4" width="6" height="6" rx="1.2" stroke-width="1.6" />
                 <rect x="9" y="14" width="6" height="6" rx="1.2" stroke-width="1.6" />
@@ -3565,13 +3589,13 @@ function deleteClass(classId: string): void {
             </g>
             <g
               v-if="!layoutOnly"
-              transform="translate(62, 52)"
+              transform="translate(8, 154)"
               style="cursor: pointer"
               @click.stop="addNewClass"
             >
               <title>{{ `${cd.cdeNewClassHint} — ${noGlobalShortcutText}` }}</title>
-              <rect x="-6" y="-6" width="44" height="44" fill="transparent" />
-              <g :stroke="chromeTextFill" fill="none" stroke-linecap="round">
+              <rect x="0" y="0" :width="UML_TOOLBAR_BTN_W" height="36" rx="6" fill="transparent" />
+              <g transform="translate(17, 5)" :stroke="chromeTextFill" fill="none" stroke-linecap="round">
                 <rect x="3" y="4" width="18" height="16" rx="2" stroke-width="1.75" />
                 <path d="M12 8v8M8 12h8" stroke-width="1.75" />
               </g>
@@ -3677,18 +3701,34 @@ function deleteClass(classId: string): void {
           </g>
         </g>
 
-        <g pointer-events="auto" :transform="`translate(${umlDebugX}, ${umlHudY})`">
+        <g pointer-events="auto" :transform="`translate(${umlDebugX}, ${umlDebugY})`">
           <g style="cursor: pointer" @click.stop="copyUmlDiagramDebugInfo">
             <title>{{ cd.cdeCopyDrawingInfoTitle }}</title>
-            <rect x="0" y="0" width="158" height="26" rx="4" :fill="chromePanelFill" stroke="#94a3b8" />
-            <text x="79" y="17" text-anchor="middle" font-size="11" pointer-events="none" :fill="chromeTextFill">
+            <rect
+              x="0"
+              y="0"
+              :width="UML_DEBUG_BTN_W"
+              :height="UML_DEBUG_BTN_H"
+              rx="4"
+              :fill="chromePanelFill"
+              stroke="#94a3b8"
+            />
+            <text
+              :x="UML_DEBUG_BTN_W / 2"
+              y="17"
+              text-anchor="middle"
+              font-size="11"
+              pointer-events="none"
+              :fill="chromeTextFill"
+            >
               {{ cd.cdeCopyDrawingInfo }}
             </text>
           </g>
           <text
             v-if="copyDebugFeedback"
-            x="166"
+            x="-8"
             y="17"
+            text-anchor="end"
             font-size="10"
             pointer-events="none"
             class="cde-svg-copy-feedback"
