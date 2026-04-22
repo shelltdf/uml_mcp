@@ -168,6 +168,8 @@ function loadFromPayload(payload: string): void {
   Object.keys(associationAnchorByEdge).forEach((k) => delete associationAnchorByEdge[k]);
   Object.keys(edgeRenderById).forEach((k) => delete edgeRenderById[k]);
   normalizeClassIdentityFromModel(false);
+  normalizeDuplicateClassIds(false);
+  collapseOverlappingDuplicateClasses(false);
   lastSynced.value = payload;
 }
 
@@ -211,6 +213,82 @@ function normalizeClassIdentityFromModel(emitPayload: boolean): void {
   if (changed && emitPayload) pushPayload();
 }
 
+function normalizeDuplicateClassIds(emitPayload: boolean): void {
+  if (!state.classes.length) return;
+  const seen = new Set<string>();
+  let changed = false;
+  for (const c of state.classes) {
+    const base = (c.id ?? '').trim() || slug(c.name || 'class');
+    if (!seen.has(base)) {
+      seen.add(base);
+      if (!c.id) {
+        c.id = base;
+        changed = true;
+      }
+      continue;
+    }
+    let i = 2;
+    let next = `${base}_${i}`;
+    while (seen.has(next)) {
+      i++;
+      next = `${base}_${i}`;
+    }
+    const oldId = c.id;
+    c.id = next;
+    seen.add(next);
+    changed = true;
+    const p = positions[oldId];
+    if (p) positions[next] = { x: p.x + 36 * (i - 1), y: p.y + 24 * (i - 1) };
+    if (folded[oldId] !== undefined && folded[next] === undefined) folded[next] = folded[oldId]!;
+  }
+  if (changed && emitPayload) pushPayload();
+}
+
+function collapseOverlappingDuplicateClasses(emitPayload: boolean): void {
+  if (state.classes.length < 2) return;
+  const sameName = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const removed = new Set<string>();
+  const redirect = new Map<string, string>();
+  let changed = false;
+  for (let i = 0; i < state.classes.length; i++) {
+    const a = state.classes[i]!;
+    if (removed.has(a.id)) continue;
+    const pa = positions[a.id];
+    if (!pa) continue;
+    for (let j = i + 1; j < state.classes.length; j++) {
+      const b = state.classes[j]!;
+      if (removed.has(b.id)) continue;
+      if (!sameName(a.name ?? a.id, b.name ?? b.id)) continue;
+      const pb = positions[b.id];
+      if (!pb) continue;
+      const closeX = Math.abs(pa.x - pb.x) <= 8;
+      const closeY = Math.abs(pa.y - pb.y) <= 8;
+      if (!closeX || !closeY) continue;
+      removed.add(b.id);
+      redirect.set(b.id, a.id);
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  for (const l of state.links) {
+    const nf = redirect.get(l.from);
+    const nt = redirect.get(l.to);
+    if (nf) l.from = nf;
+    if (nt) l.to = nt;
+  }
+  state.links = state.links.filter((l, idx, arr) => {
+    if (l.from === l.to) return false;
+    const key = `${l.kind}|${l.from}|${l.to}|${l.fromSlotSection ?? ''}|${l.fromSlotName ?? ''}`;
+    return arr.findIndex((x) => `${x.kind}|${x.from}|${x.to}|${x.fromSlotSection ?? ''}|${x.fromSlotName ?? ''}` === key) === idx;
+  });
+  for (const oldId of removed) {
+    delete positions[oldId];
+    delete folded[oldId];
+  }
+  state.classes = state.classes.filter((c) => !removed.has(c.id));
+  if (emitPayload) pushPayload();
+}
+
 function pushPayload(): void {
   const next = buildClassDiagramViewPayload(
     lastSynced.value,
@@ -245,6 +323,8 @@ watch(
   () => props.codespaceClasses,
   () => {
     normalizeClassIdentityFromModel(true);
+    normalizeDuplicateClassIds(true);
+    collapseOverlappingDuplicateClasses(true);
   },
   { deep: true },
 );
@@ -563,7 +643,11 @@ function rightHandleRows(c: ClassDef): Array<{ key: string; sectionIndex: number
 function extractSlotName(rawLine: string): string {
   const s = String(rawLine ?? '').trim();
   if (!s || s === '-') return '';
-  const noLead = s.replace(/^[+\-#~$]+/, '').trim();
+  // Property preview line format is usually:
+  // "private _field -> propertyName: Type (get/set)".
+  // For slot binding we must use the property name on the right side of "->".
+  const rhs = s.includes('->') ? s.split('->').slice(1).join('->').trim() : s;
+  const noLead = rhs.replace(/^[+\-#~$]+/, '').trim();
   const m = noLead.match(/[A-Za-z_][A-Za-z0-9_]*/);
   return m ? m[0]! : '';
 }
@@ -976,6 +1060,161 @@ function zoomDelta(d: number): void {
 function autoLayoutClasses(): void {
   const classes = state.classes;
   if (!classes.length) return;
+  const byId = new Map(classes.map((c) => [c.id, c] as const));
+  const runId = `layout-${Date.now()}`;
+  const samplePositions = () =>
+    classes.slice(0, 8).map((c) => ({
+      id: c.id,
+      name: c.name,
+      x: positions[c.id]?.x ?? null,
+      y: positions[c.id]?.y ?? null,
+    }));
+  const countClassOverlaps = (pad = 0): number => {
+    let n = 0;
+    for (let i = 0; i < classes.length; i++) {
+      const a = classes[i]!;
+      const pa = positions[a.id];
+      if (!pa) continue;
+      const sa = classBoxSize(a);
+      for (let j = i + 1; j < classes.length; j++) {
+        const b = classes[j]!;
+        const pb = positions[b.id];
+        if (!pb) continue;
+        const sb = classBoxSize(b);
+        const ox = Math.min(pa.x + sa.w + pad, pb.x + sb.w + pad) - Math.max(pa.x - pad, pb.x - pad);
+        const oy = Math.min(pa.y + sa.h + pad, pb.y + sb.h + pad) - Math.max(pa.y - pad, pb.y - pad);
+        if (ox > 0 && oy > 0) n++;
+      }
+    }
+    return n;
+  };
+  const estimateEdgeCrossings = (): { crossings: number; total: number; byKind: Record<string, number> } => {
+    const segs: Array<{ kind: string; x1: number; y1: number; x2: number; y2: number }> = [];
+    const byKind: Record<string, number> = {};
+    for (const l of state.links) {
+      const p1 = positions[l.from];
+      const p2 = positions[l.to];
+      if (!p1 || !p2) continue;
+      const c1 = byId.get(l.from);
+      const c2 = byId.get(l.to);
+      if (!c1 || !c2) continue;
+      const s1 = classBoxSize(c1);
+      const s2 = classBoxSize(c2);
+      const x1 = p1.x + s1.w / 2;
+      const y1 = p1.y + s1.h / 2;
+      const x2 = p2.x + s2.w / 2;
+      const y2 = p2.y + s2.h / 2;
+      segs.push({ kind: l.kind, x1, y1, x2, y2 });
+      byKind[l.kind] = (byKind[l.kind] ?? 0) + 1;
+    }
+    const ccw = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number): number =>
+      (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    const intersect = (a: (typeof segs)[number], b: (typeof segs)[number]): boolean => {
+      if (a.x1 === b.x1 && a.y1 === b.y1) return false;
+      if (a.x1 === b.x2 && a.y1 === b.y2) return false;
+      if (a.x2 === b.x1 && a.y2 === b.y1) return false;
+      if (a.x2 === b.x2 && a.y2 === b.y2) return false;
+      const d1 = ccw(a.x1, a.y1, a.x2, a.y2, b.x1, b.y1);
+      const d2 = ccw(a.x1, a.y1, a.x2, a.y2, b.x2, b.y2);
+      const d3 = ccw(b.x1, b.y1, b.x2, b.y2, a.x1, a.y1);
+      const d4 = ccw(b.x1, b.y1, b.x2, b.y2, a.x2, a.y2);
+      return d1 * d2 < 0 && d3 * d4 < 0;
+    };
+    let crossings = 0;
+    for (let i = 0; i < segs.length; i++) {
+      for (let j = i + 1; j < segs.length; j++) {
+        if (intersect(segs[i]!, segs[j]!)) crossings++;
+      }
+    }
+    return { crossings, total: segs.length, byKind };
+  };
+  const estimateEdgeClassOverlaps = (): { overlaps: number; totalEdges: number } => {
+    const rects = classes
+      .map((c) => {
+        const p = positions[c.id];
+        if (!p) return null;
+        const s = classBoxSize(c);
+        return { id: c.id, x: p.x, y: p.y, w: s.w, h: s.h };
+      })
+      .filter(Boolean) as Array<{ id: string; x: number; y: number; w: number; h: number }>;
+    let overlaps = 0;
+    let totalEdges = 0;
+    for (const l of state.links) {
+      const p1 = positions[l.from];
+      const p2 = positions[l.to];
+      const c1 = byId.get(l.from);
+      const c2 = byId.get(l.to);
+      if (!p1 || !p2 || !c1 || !c2) continue;
+      totalEdges++;
+      const s1 = classBoxSize(c1);
+      const s2 = classBoxSize(c2);
+      const x1 = p1.x + s1.w / 2;
+      const y1 = p1.y + s1.h / 2;
+      const x2 = p2.x + s2.w / 2;
+      const y2 = p2.y + s2.h / 2;
+      for (const r of rects) {
+        if (r.id === l.from || r.id === l.to) continue;
+        const left = r.x;
+        const right = r.x + r.w;
+        const top = r.y;
+        const bottom = r.y + r.h;
+        const minX = Math.min(x1, x2);
+        const maxX = Math.max(x1, x2);
+        const minY = Math.min(y1, y2);
+        const maxY = Math.max(y1, y2);
+        if (maxX < left || minX > right || maxY < top || minY > bottom) continue;
+        overlaps++;
+        break;
+      }
+    }
+    return { overlaps, totalEdges };
+  };
+  const summarizeDirectionalViolations = (): { violations: number; links: Array<{ id: string; kind: string; from: string; to: string; fromX: number; toX: number }> } => {
+    const links: Array<{ id: string; kind: string; from: string; to: string; fromX: number; toX: number }> = [];
+    let violations = 0;
+    for (const l of state.links) {
+      if (l.kind !== 'association' && l.kind !== 'dependency') continue;
+      const p1 = positions[l.from];
+      const p2 = positions[l.to];
+      const c1 = byId.get(l.from);
+      if (!p1 || !p2 || !c1) continue;
+      const minGap = l.kind === 'dependency' ? 44 : 56;
+      const minToX = p1.x + classBoxSize(c1).w + minGap;
+      const bad = p2.x < minToX;
+      if (bad) violations++;
+      links.push({ id: l.id, kind: l.kind, from: l.from, to: l.to, fromX: p1.x, toX: p2.x });
+    }
+    return { violations, links };
+  };
+  const enforceDirectionalConstraintsFinal = (): void => {
+    const assocGap = 56;
+    const depGap = 44;
+    for (let pass = 0; pass < 6; pass++) {
+      let moved = false;
+      for (const l of state.links) {
+        if (l.kind !== 'association' && l.kind !== 'dependency') continue;
+        const fromPos = positions[l.from];
+        const toPos = positions[l.to];
+        const fromClass = byId.get(l.from);
+        if (!fromPos || !toPos || !fromClass) continue;
+        const minGap = l.kind === 'dependency' ? depGap : assocGap;
+        const minToX = fromPos.x + classBoxSize(fromClass).w + minGap;
+        if (toPos.x < minToX) {
+          toPos.x = minToX;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+  };
+  // #region agent log
+  fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H1',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:start',message:'auto layout start',data:{classes:classes.length,links:state.links.length,layoutBeautyMode:layoutBeautyMode.value},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  normalizeDuplicateClassIds(false);
+  collapseOverlappingDuplicateClasses(false);
+  // #region agent log
+  fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H2',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:afterNormalization',message:'after id/duplicate normalization',data:{classes:state.classes.length,overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18),edgeCross:estimateEdgeCrossings(),edgeClassOverlap:estimateEdgeClassOverlaps(),sample:samplePositions()},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   const beauty = (() => {
     if (layoutBeautyMode.value === 'fast') {
       return {
@@ -1030,9 +1269,126 @@ function autoLayoutClasses(): void {
       edgeRenderById[l.id] = l.kind === 'dependency' ? 'orthogonal' : beauty.assocRender;
     }
   };
+  const resolveClassBoxOverlaps = (): void => {
+    const ids = classes.map((c) => c.id).filter((id) => !!positions[id] && !!byId.get(id));
+    if (ids.length < 2) return;
+    const pad = 18;
+    // Phase 1: symmetric separation (keeps center balance).
+    for (let iter = 0; iter < 24; iter++) {
+      let moved = false;
+      for (let i = 0; i < ids.length; i++) {
+        const aId = ids[i]!;
+        const aPos = positions[aId];
+        const aCls = byId.get(aId);
+        if (!aPos || !aCls) continue;
+        const aSize = classBoxSize(aCls);
+        for (let j = i + 1; j < ids.length; j++) {
+          const bId = ids[j]!;
+          const bPos = positions[bId];
+          const bCls = byId.get(bId);
+          if (!bPos || !bCls) continue;
+          const bSize = classBoxSize(bCls);
+          const overlapX = Math.min(aPos.x + aSize.w + pad, bPos.x + bSize.w + pad) - Math.max(aPos.x - pad, bPos.x - pad);
+          const overlapY = Math.min(aPos.y + aSize.h + pad, bPos.y + bSize.h + pad) - Math.max(aPos.y - pad, bPos.y - pad);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+          moved = true;
+          if (overlapX <= overlapY) {
+            const dx = overlapX / 2 + 1;
+            if (aPos.x <= bPos.x) {
+              aPos.x -= dx;
+              bPos.x += dx;
+            } else {
+              aPos.x += dx;
+              bPos.x -= dx;
+            }
+          } else {
+            const dy = overlapY / 2 + 1;
+            if (aPos.y <= bPos.y) {
+              aPos.y -= dy;
+              bPos.y += dy;
+            } else {
+              aPos.y += dy;
+              bPos.y -= dy;
+            }
+          }
+        }
+      }
+      if (!moved) break;
+    }
+    // Phase 2: deterministic shove-out (hard guarantee, avoids oscillation leftovers).
+    for (let iter = 0; iter < 48; iter++) {
+      let moved = false;
+      for (let i = 0; i < ids.length; i++) {
+        const aId = ids[i]!;
+        const aPos = positions[aId];
+        const aCls = byId.get(aId);
+        if (!aPos || !aCls) continue;
+        const aSize = classBoxSize(aCls);
+        for (let j = i + 1; j < ids.length; j++) {
+          const bId = ids[j]!;
+          const bPos = positions[bId];
+          const bCls = byId.get(bId);
+          if (!bPos || !bCls) continue;
+          const bSize = classBoxSize(bCls);
+          const overlapX = Math.min(aPos.x + aSize.w + pad, bPos.x + bSize.w + pad) - Math.max(aPos.x - pad, bPos.x - pad);
+          const overlapY = Math.min(aPos.y + aSize.h + pad, bPos.y + bSize.h + pad) - Math.max(aPos.y - pad, bPos.y - pad);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+          moved = true;
+          // Prefer pushing the "later" box away to guarantee monotonic convergence.
+          if (overlapX <= overlapY) {
+            const dx = overlapX + 2;
+            bPos.x += dx;
+          } else {
+            const dy = overlapY + 2;
+            bPos.y += dy;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+    // Phase 3: hard packing fallback.
+    // If any overlap still exists after iterative relaxation, place boxes into nearest free slots.
+    const sorted = [...ids].sort((a, b) => {
+      const pa = positions[a]!;
+      const pb = positions[b]!;
+      if (Math.abs(pa.y - pb.y) > 1) return pa.y - pb.y;
+      return pa.x - pb.x;
+    });
+    const placed: Array<{ x: number; y: number; w: number; h: number }> = [];
+    const collide = (x: number, y: number, w: number, h: number): boolean => {
+      for (const r of placed) {
+        const ox = Math.min(x + w + pad, r.x + r.w + pad) - Math.max(x - pad, r.x - pad);
+        const oy = Math.min(y + h + pad, r.y + r.h + pad) - Math.max(y - pad, r.y - pad);
+        if (ox > 0 && oy > 0) return true;
+      }
+      return false;
+    };
+    const leftBase = Math.min(...sorted.map((id) => positions[id]!.x));
+    const rightLimit = leftBase + 2200;
+    const laneStep = 24;
+    for (const id of sorted) {
+      const p = positions[id];
+      const c = byId.get(id);
+      if (!p || !c) continue;
+      const s = classBoxSize(c);
+      let x = p.x;
+      let y = p.y;
+      let guard = 0;
+      while (collide(x, y, s.w, s.h) && guard < 800) {
+        x += laneStep;
+        if (x + s.w > rightLimit) {
+          x = leftBase;
+          y += s.h + laneStep;
+        }
+        guard++;
+      }
+      p.x = x;
+      p.y = y;
+      placed.push({ x, y, w: s.w, h: s.h });
+    }
+  };
   // 继承树布局：父类在上、子类在下；多个根按森林横向排列。
   // 纵向间距按每一层节点“真实框高”计算，避免内容多的类框重叠。
-  const byId = new Map(classes.map((c) => [c.id, c] as const));
   const children = new Map<string, string[]>();
   const hasParent = new Set<string>();
 
@@ -1048,57 +1404,6 @@ function autoLayoutClasses(): void {
     arr.sort((a, b) => classDisplayLabel(byId.get(a)!).localeCompare(classDisplayLabel(byId.get(b)!)));
   }
   const hasInheritLinks = children.size > 0;
-
-  // 无继承链时改为紧凑网格布局，避免所有类横向排成一条长带。
-  if (!hasInheritLinks) {
-    const sorted = [...classes].sort((a, b) => classDisplayLabel(a).localeCompare(classDisplayLabel(b)));
-    const n = sorted.length;
-    const colCount = Math.max(1, Math.ceil(Math.sqrt(n)));
-    const hGap = beauty.gridHGap;
-    const vGap = beauty.gridVGap;
-    const startX = 80;
-    const startY = 80;
-    const boxW = classBoxSize(sorted[0]!).w;
-    const rowHeights: number[] = [];
-    for (let i = 0; i < n; i++) {
-      const row = Math.floor(i / colCount);
-      const h = classBoxSize(sorted[i]!).h;
-      rowHeights[row] = Math.max(rowHeights[row] ?? 0, h);
-    }
-    const rowTopY: number[] = [];
-    let curY = startY;
-    for (let r = 0; r < rowHeights.length; r++) {
-      rowTopY[r] = curY;
-      curY += (rowHeights[r] ?? 160) + vGap;
-    }
-    for (let i = 0; i < n; i++) {
-      const c = sorted[i]!;
-      const row = Math.floor(i / colCount);
-      const col = i % colCount;
-      positions[c.id] = {
-        x: startX + col * (boxW + hGap),
-        y: rowTopY[row] ?? startY,
-      };
-    }
-    applyBeautyEdgeRender();
-    improveEdgeAesthetics();
-    pushPayload();
-    fitAll();
-    void nextTick(() => fitAll());
-    return;
-  }
-
-  let roots = classes.filter((c) => !hasParent.has(c.id)).map((c) => c.id);
-  if (!roots.length) roots = classes.map((c) => c.id);
-  roots.sort((a, b) => classDisplayLabel(byId.get(a)!).localeCompare(classDisplayLabel(byId.get(b)!)));
-
-  const hGap = beauty.treeHGap;
-  const treeGap = beauty.treeGap;
-  const vGap = beauty.treeVGap;
-  const measureMemo = new Map<string, number>();
-  const measuring = new Set<string>();
-  const nodeWidth = (id: string) => classBoxSize(byId.get(id)!).w;
-  const nodeHeight = (id: string) => classBoxSize(byId.get(id)!).h;
   const linkedNeighbors = (() => {
     const m = new Map<string, Set<string>>();
     for (const c of classes) m.set(c.id, new Set<string>());
@@ -1110,7 +1415,7 @@ function autoLayoutClasses(): void {
     }
     return m;
   })();
-  const improveEdgeAesthetics = (): void => {
+  function improveEdgeAesthetics(): void {
     const ids = classes.map((c) => c.id).filter((id) => !!positions[id]);
     if (ids.length < 2) return;
     const yWeight = hasInheritLinks ? 0.05 : 0.2;
@@ -1175,7 +1480,87 @@ function autoLayoutClasses(): void {
         }
       }
     }
-  };
+  }
+
+  // 无继承链时改为紧凑网格布局，避免所有类横向排成一条长带。
+  if (!hasInheritLinks) {
+    const sorted = [...classes].sort((a, b) => classDisplayLabel(a).localeCompare(classDisplayLabel(b)));
+    const n = sorted.length;
+    const colCount = Math.max(1, Math.ceil(Math.sqrt(n)));
+    const hGap = beauty.gridHGap;
+    const vGap = beauty.gridVGap;
+    const startX = 80;
+    const startY = 80;
+    const boxW = classBoxSize(sorted[0]!).w;
+    const rowHeights: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const row = Math.floor(i / colCount);
+      const h = classBoxSize(sorted[i]!).h;
+      rowHeights[row] = Math.max(rowHeights[row] ?? 0, h);
+    }
+    const rowTopY: number[] = [];
+    let curY = startY;
+    for (let r = 0; r < rowHeights.length; r++) {
+      rowTopY[r] = curY;
+      curY += (rowHeights[r] ?? 160) + vGap;
+    }
+    for (let i = 0; i < n; i++) {
+      const c = sorted[i]!;
+      const row = Math.floor(i / colCount);
+      const col = i % colCount;
+      positions[c.id] = {
+        x: startX + col * (boxW + hGap),
+        y: rowTopY[row] ?? startY,
+      };
+    }
+    // Keep association/dependency direction semantics in grid layout:
+    // target node should stay on the right side of source node.
+    const assocGap = 56;
+    const depGap = 44;
+    for (let pass = 0; pass < beauty.relationPasses; pass++) {
+      let moved = false;
+      for (const l of state.links) {
+        if (l.kind !== 'association' && l.kind !== 'dependency') continue;
+        const fromPos = positions[l.from];
+        const toPos = positions[l.to];
+        const fromClass = byId.get(l.from);
+        if (!fromPos || !toPos || !fromClass) continue;
+        const minGap = l.kind === 'dependency' ? depGap : assocGap;
+        const minToX = fromPos.x + classBoxSize(fromClass).w + minGap;
+        if (toPos.x < minToX) {
+          positions[l.to] = { ...toPos, x: minToX };
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    applyBeautyEdgeRender();
+    improveEdgeAesthetics();
+    resolveClassBoxOverlaps();
+    enforceDirectionalConstraintsFinal();
+    // #region agent log
+    fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H8',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:gridFinalDirection',message:'grid final direction enforcement',data:{direction:summarizeDirectionalViolations(),overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    // #region agent log
+    fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H3',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:gridEnd',message:'grid branch layout end',data:{overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18),edgeCross:estimateEdgeCrossings(),edgeClassOverlap:estimateEdgeClassOverlaps(),direction:summarizeDirectionalViolations(),sample:samplePositions()},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    pushPayload();
+    fitAll();
+    void nextTick(() => fitAll());
+    return;
+  }
+
+  let roots = classes.filter((c) => !hasParent.has(c.id)).map((c) => c.id);
+  if (!roots.length) roots = classes.map((c) => c.id);
+  roots.sort((a, b) => classDisplayLabel(byId.get(a)!).localeCompare(classDisplayLabel(byId.get(b)!)));
+
+  const hGap = beauty.treeHGap;
+  const treeGap = beauty.treeGap;
+  const vGap = beauty.treeVGap;
+  const measureMemo = new Map<string, number>();
+  const measuring = new Set<string>();
+  const nodeWidth = (id: string) => classBoxSize(byId.get(id)!).w;
+  const nodeHeight = (id: string) => classBoxSize(byId.get(id)!).h;
 
   const measure = (id: string): number => {
     if (measureMemo.has(id)) return measureMemo.get(id)!;
@@ -1373,6 +1758,14 @@ function autoLayoutClasses(): void {
   }
   applyBeautyEdgeRender();
   improveEdgeAesthetics();
+  resolveClassBoxOverlaps();
+  enforceDirectionalConstraintsFinal();
+  // #region agent log
+  fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H8',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:treeFinalDirection',message:'tree final direction enforcement',data:{direction:summarizeDirectionalViolations(),overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18)},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  // #region agent log
+  fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H4',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:treeEnd',message:'tree branch layout end',data:{overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18),edgeCross:estimateEdgeCrossings(),edgeClassOverlap:estimateEdgeClassOverlaps(),sample:samplePositions()},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 
   pushPayload();
   fitAll();
@@ -2180,7 +2573,7 @@ function deleteClass(classId: string): void {
 
           <g
             v-for="(c, idx) in state.classes"
-            :key="c.id"
+            :key="`${c.id}::${idx}`"
             :transform="`translate(${positions[c.id]?.x ?? 0}, ${positions[c.id]?.y ?? 0})`"
             @pointerdown="onSvgClassPointerDown($event, c.id)"
             @pointermove="onSvgClassPointerMove($event, c.id)"

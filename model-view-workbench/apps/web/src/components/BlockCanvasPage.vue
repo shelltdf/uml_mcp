@@ -625,13 +625,25 @@ function syncAssocTypeFromDiagramToCodespace(): void {
           const fallback = resolveClassLevelType(c.id, cn);
           for (const m of c.members ?? []) {
             const aid = m.associatedClassifierId?.trim();
-            const t = aid ? resolveTypeForAssociatedClassifier(c.id, cn, aid) : fallback;
+            if (aid) {
+              const t = resolveTypeForAssociatedClassifier(c.id, cn, aid) ?? nameById.get(aid) ?? aid;
+              m.typeFromAssociation = true;
+              if (t) m.type = t;
+              continue;
+            }
+            const t = fallback;
             m.typeFromAssociation = !!t || undefined;
             if (t) m.type = t;
           }
           for (const p of c.properties ?? []) {
             const aid = p.associatedClassifierId?.trim();
-            const t = aid ? resolveTypeForAssociatedClassifier(c.id, cn, aid) : fallback;
+            if (aid) {
+              const t = resolveTypeForAssociatedClassifier(c.id, cn, aid) ?? nameById.get(aid) ?? aid;
+              p.typeFromAssociation = true;
+              if (t) p.type = t;
+              continue;
+            }
+            const t = fallback;
             p.typeFromAssociation = !!t || undefined;
             if (t) p.type = t;
           }
@@ -811,8 +823,10 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
   }
 
   const byClassSlot = new Map<string, string>();
+  const slotKey = (clsId: string, section: 'members' | 'properties', slotName: string): string =>
+    `${clsId}\t${section}\t${slotName.trim().toLowerCase()}`;
   for (const a of slotAssocs) {
-    byClassSlot.set(`${a.fromCs}\t${a.section}\t${a.slotName}`, a.toCs);
+    byClassSlot.set(slotKey(a.fromCs, a.section, a.slotName), a.toCs);
   }
 
   let changed = false;
@@ -829,7 +843,7 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
             for (const row of list) {
               const nm = (row.name ?? '').trim();
               if (!nm) continue;
-              const key = `${c.id}\t${section}\t${nm}`;
+              const key = slotKey(c.id, section, nm);
               const hit = byClassSlot.get(key);
               if (hit) {
                 if (row.associatedClassifierId !== hit) {
