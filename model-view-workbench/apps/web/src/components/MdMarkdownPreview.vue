@@ -20,13 +20,26 @@ function syncPreviewScrollLayout(el: HTMLElement) {
   });
 }
 
+/** Vditor/hljs 可能给 code 注入 max-height 内联样式，导致预览内出现滚动条 */
+function forceExpandCodeBlocks(el: HTMLElement) {
+  const codeNodes = el.querySelectorAll('pre > code, code.hljs');
+  codeNodes.forEach((node) => {
+    const codeEl = node as HTMLElement;
+    codeEl.style.maxHeight = 'none';
+    codeEl.style.overflow = 'visible';
+  });
+}
+
 function watchAsyncPreviewLayout(el: HTMLElement) {
   layoutObs?.disconnect();
   clearTimeout(layoutStableTimer);
   clearTimeout(layoutFallbackTimer);
   const bump = () => {
     clearTimeout(layoutStableTimer);
-    layoutStableTimer = window.setTimeout(() => syncPreviewScrollLayout(el), 240);
+    layoutStableTimer = window.setTimeout(() => {
+      forceExpandCodeBlocks(el);
+      syncPreviewScrollLayout(el);
+    }, 240);
   };
   layoutObs = new MutationObserver(bump);
   layoutObs.observe(el, { subtree: true, childList: true, characterData: true });
@@ -34,6 +47,7 @@ function watchAsyncPreviewLayout(el: HTMLElement) {
   /* Mermaid 多块时可能仍有漏网 mutation，延迟再同步一次 scrollHeight */
   layoutFallbackTimer = window.setTimeout(() => {
     layoutFallbackTimer = undefined;
+    forceExpandCodeBlocks(el);
     syncPreviewScrollLayout(el);
   }, 1500);
 }
@@ -46,6 +60,7 @@ async function renderPreview() {
   clearTimeout(layoutFallbackTimer);
   try {
     await Vditor.preview(el, props.markdown, mvwbVditorPreviewOptions);
+    forceExpandCodeBlocks(el);
     watchAsyncPreviewLayout(el);
     syncPreviewScrollLayout(el);
   } catch {
@@ -127,6 +142,16 @@ defineExpose({ getVditorResetElement });
 .md-preview-root :deep(.vditor-reset pre > code) {
   overflow: visible !important;
   max-height: none !important;
+}
+.md-preview-root :deep(.vditor-reset pre > code.hljs),
+.md-preview-root :deep(.vditor-reset code.hljs) {
+  overflow: visible !important;
+  max-height: none !important;
+}
+.md-preview-root :deep(.vditor-reset pre > code[style*='max-height']),
+.md-preview-root :deep(.vditor-reset code[style*='max-height']) {
+  max-height: none !important;
+  overflow: visible !important;
 }
 /* Mermaid / flowchart 等由 JS 替换为 SVG，避免块级 code 仍带 overflow 导致裁切 */
 .md-preview-root :deep(pre:has(.language-mermaid)),
