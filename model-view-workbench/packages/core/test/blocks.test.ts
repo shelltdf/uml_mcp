@@ -447,7 +447,7 @@ describe('parseMarkdownBlocks', () => {
                   name: 'Base',
                   kind: 'class',
                   abstract: true,
-                  member: [{ name: 'x', type: 'int' }],
+                  members: [{ name: 'x', type: 'int' }],
                 },
                 {
                   id: 'cls-derived',
@@ -494,8 +494,8 @@ describe('parseMarkdownBlocks', () => {
                 {
                   id: 'cls_a',
                   name: 'ClassA',
-                  member: [{ name: 'state', visibility: 'private', accessor: 'getset', type: 'int' }],
-                  method: [
+                  members: [{ name: 'state', visibility: 'private', accessor: 'getset', type: 'int' }],
+                  methods: [
                     { name: 'ctor', methodKind: 'constructor', signature: 'ClassA()' },
                     {
                       name: 'index',
@@ -641,7 +641,7 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('must use English letters'))).toBe(true);
   });
 
-  it('rejects mv-model-codespace member accessor on non-field kind', () => {
+  it('rejects mv-model-codespace methods accessor not allowed', () => {
     const md =
       '\`\`\`mv-model-codespace\n' +
       JSON.stringify({
@@ -654,7 +654,7 @@ describe('parseMarkdownBlocks', () => {
               {
                 id: 'n1',
                 name: 'NsA',
-                classes: [{ id: 'c1', name: 'C1', method: [{ name: 'f', accessor: 'get' }] }],
+                classes: [{ id: 'c1', name: 'C1', methods: [{ name: 'f', accessor: 'get' }] }],
               },
             ],
           },
@@ -764,7 +764,7 @@ describe('parseMarkdownBlocks', () => {
                 {
                   id: 'cls-a',
                   name: 'A',
-                  member: [{ name: 'ref', associatedClassifierId: 'cls-b' }],
+                  members: [{ name: 'ref', associatedClassifierId: 'cls-b' }],
                   properties: [{ name: 'Prop', associatedClassifierId: 'cls-b' }],
                 },
                 { id: 'cls-b', name: 'B' },
@@ -797,7 +797,7 @@ describe('parseMarkdownBlocks', () => {
                   {
                     id: 'c1',
                     name: 'C1',
-                    member: [{ name: 'f', associatedClassifierId: 'nosuch' }],
+                    members: [{ name: 'f', associatedClassifierId: 'nosuch' }],
                   },
                 ],
               },

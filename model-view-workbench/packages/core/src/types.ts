@@ -177,14 +177,14 @@ export interface MvCodespaceClassifier {
   /** 模板形参名列表（示意，如 `["T","U"]`） */
   templateParams?: string[];
   bases?: MvCodespaceClassifierBase[];
-  /** 独立属性组：私有字段 + 访问器；不与 member/method 混用 */
+  /** 独立属性组：私有字段 + 访问器；不与 members/methods 混用 */
   properties?: MvCodespaceProperty[];
-  /** 普通成员变量 */
-  member?: MvCodespaceClassMember[];
-  /** 方法 */
-  method?: MvCodespaceClassMethod[];
-  /** 枚举字面量（JSON 中写作 `enum`） */
-  'enum'?: MvCodespaceClassEnum[];
+  /** 普通成员变量（复数键） */
+  members?: MvCodespaceClassMember[];
+  /** 方法（复数键） */
+  methods?: MvCodespaceClassMethod[];
+  /** 枚举字面量（复数键） */
+  enums?: MvCodespaceClassEnum[];
 }
 
 export interface MvCodespaceVariable {

@@ -347,28 +347,6 @@ function validateCodespaceOptionalString(
   return { ok: true };
 }
 
-/** 将旧版 `members[{ kind }]` 归并为 `member` / `method` / `enum` 后删除 `members`。 */
-function splitLegacyClassifierMembers(co: Record<string, unknown>): void {
-  const raw = co.members;
-  delete co.members;
-  if (!Array.isArray(raw) || raw.length === 0) return;
-  const member: unknown[] = [];
-  const method: unknown[] = [];
-  const enums: unknown[] = [];
-  for (const mem of raw) {
-    if (!mem || typeof mem !== 'object' || Array.isArray(mem)) continue;
-    const mo = { ...(mem as Record<string, unknown>) };
-    const k = mo.kind;
-    delete mo.kind;
-    if (k === 'method') method.push(mo);
-    else if (k === 'enumLiteral') enums.push(mo);
-    else member.push(mo);
-  }
-  if (member.length) co.member = member;
-  if (method.length) co.method = method;
-  if (enums.length) co.enum = enums;
-}
-
 function codespaceForbidKeys(
   mo: Record<string, unknown>,
   mp: string,
@@ -604,153 +582,46 @@ function validateCodespaceNamespaceNode(
           ctx.pendingBases.push({ targetId: bo.targetId.trim(), path: bp });
         }
       }
-      const hasLegacyMembers = 'members' in co && co.members !== undefined;
-      const hasMemberArr = 'member' in co && co.member !== undefined;
-      const hasMethodArr = 'method' in co && co.method !== undefined;
-      const hasEnumArr = 'enum' in co && co.enum !== undefined;
-      const hasNewShape = hasMemberArr || hasMethodArr || hasEnumArr;
-      if (hasLegacyMembers && hasNewShape) {
+      if ('member' in co || 'method' in co || 'enum' in co) {
         return {
           ok: false,
-          message: `${cp}: use either legacy "members" or new "member"/"method"/"enum", not both`,
+          message: `${cp}: keys "member"/"method"/"enum" are removed; use "members"/"methods"/"enums"`,
         };
       }
-      if (hasNewShape) {
-        if (hasMemberArr) {
-          if (!Array.isArray(co.member)) {
-            return { ok: false, message: `${cp}.member must be an array when present` };
-          }
-          for (let m = 0; m < co.member.length; m++) {
-            const mp = `${cp}.member[${m}]`;
-            const vr = validateCodespaceClassifierMemberField(co.member[m], mp);
-            if (!vr.ok) return vr;
-            const mob = co.member[m] as Record<string, unknown>;
-            if (
-              typeof mob.associatedClassifierId === 'string' &&
-              mob.associatedClassifierId.trim()
-            ) {
-              ctx.pendingAssociatedClassifierRefs.push({
-                targetId: mob.associatedClassifierId.trim(),
-                path: mp,
-              });
-            }
-          }
-        }
-        if (hasMethodArr) {
-          if (!Array.isArray(co.method)) {
-            return { ok: false, message: `${cp}.method must be an array when present` };
-          }
-          for (let m = 0; m < co.method.length; m++) {
-            const vr = validateCodespaceClassifierMethod(co.method[m], `${cp}.method[${m}]`);
-            if (!vr.ok) return vr;
-          }
-        }
-        if (hasEnumArr) {
-          if (!Array.isArray(co.enum)) {
-            return { ok: false, message: `${cp}.enum must be an array when present` };
-          }
-          for (let m = 0; m < co.enum.length; m++) {
-            const vr = validateCodespaceClassifierEnum(co.enum[m], `${cp}.enum[${m}]`);
-            if (!vr.ok) return vr;
-          }
-        }
-      } else if (hasLegacyMembers) {
+      if ('members' in co && co.members !== undefined) {
         if (!Array.isArray(co.members)) {
           return { ok: false, message: `${cp}.members must be an array when present` };
         }
         for (let m = 0; m < co.members.length; m++) {
           const mp = `${cp}.members[${m}]`;
-          const mem = co.members[m];
-          if (!mem || typeof mem !== 'object' || Array.isArray(mem)) {
-            return { ok: false, message: `${mp} must be an object` };
-          }
-          const mo = mem as Record<string, unknown>;
-          if (typeof mo.name !== 'string' || !mo.name.trim()) {
-            return { ok: false, message: `${mp}.name must be a non-empty string` };
-          }
-          if (typeof mo.kind !== 'string' || !CODESPACE_MEMBER_KINDS.has(mo.kind)) {
-            return {
-              ok: false,
-              message: `${mp}.kind must be one of: field, method, enumLiteral`,
-            };
-          }
-          const optKeys =
-            mo.kind === 'field'
-              ? (['visibility', 'type', 'signature', 'enumGroup', 'notes', 'associatedClassifierId'] as const)
-              : (['visibility', 'type', 'signature', 'enumGroup', 'notes'] as const);
-          const ms = validateCodespaceOptionalString(mo, mp, optKeys);
-          if (!ms.ok) return ms;
-          if (mo.kind !== 'field' && mo.associatedClassifierId !== undefined) {
-            return {
-              ok: false,
-              message: `${mp}.associatedClassifierId is only allowed when kind is field`,
-            };
-          }
-          if (
-            mo.kind === 'field' &&
-            typeof mo.associatedClassifierId === 'string' &&
-            mo.associatedClassifierId !== undefined &&
-            !mo.associatedClassifierId.trim()
-          ) {
-            return { ok: false, message: `${mp}.associatedClassifierId must be non-empty when present` };
-          }
-          if (
-            mo.kind === 'field' &&
-            typeof mo.associatedClassifierId === 'string' &&
-            mo.associatedClassifierId.trim()
-          ) {
+          const vr = validateCodespaceClassifierMemberField(co.members[m], mp);
+          if (!vr.ok) return vr;
+          const mob = co.members[m] as Record<string, unknown>;
+          if (typeof mob.associatedClassifierId === 'string' && mob.associatedClassifierId.trim()) {
             ctx.pendingAssociatedClassifierRefs.push({
-              targetId: mo.associatedClassifierId.trim(),
+              targetId: mob.associatedClassifierId.trim(),
               path: mp,
             });
           }
-          if ('methodKind' in mo && mo.methodKind !== undefined) {
-            if (typeof mo.methodKind !== 'string' || !CODESPACE_METHOD_KINDS.has(mo.methodKind)) {
-              return {
-                ok: false,
-                message: `${mp}.methodKind must be one of: normal, constructor, destructor, functor, operator`,
-              };
-            }
-          }
-          if ('accessor' in mo && mo.accessor !== undefined) {
-            if (typeof mo.accessor !== 'string' || !CODESPACE_FIELD_ACCESSORS.has(mo.accessor)) {
-              return {
-                ok: false,
-                message: `${mp}.accessor must be one of: none, get, set, getset`,
-              };
-            }
-          }
-          if ('operatorSymbol' in mo && mo.operatorSymbol !== undefined && typeof mo.operatorSymbol !== 'string') {
-            return { ok: false, message: `${mp}.operatorSymbol must be a string when present` };
-          }
-          if ('static' in mo && mo.static !== undefined && typeof mo.static !== 'boolean') {
-            return { ok: false, message: `${mp}.static must be a boolean when present` };
-          }
-          if ('virtual' in mo && mo.virtual !== undefined && typeof mo.virtual !== 'boolean') {
-            return { ok: false, message: `${mp}.virtual must be a boolean when present` };
-          }
-          if ('typeFromAssociation' in mo && mo.typeFromAssociation !== undefined && typeof mo.typeFromAssociation !== 'boolean') {
-            return { ok: false, message: `${mp}.typeFromAssociation must be a boolean when present` };
-          }
-          if (mo.kind === 'field' && 'methodKind' in mo && mo.methodKind !== undefined) {
-            return { ok: false, message: `${mp}.methodKind is only allowed when kind is method` };
-          }
-          if (mo.kind === 'field' && 'operatorSymbol' in mo && mo.operatorSymbol !== undefined) {
-            return { ok: false, message: `${mp}.operatorSymbol is only allowed when kind is method` };
-          }
-          if (mo.kind !== 'field' && 'accessor' in mo && mo.accessor !== undefined) {
-            return { ok: false, message: `${mp}.accessor is only allowed when kind is field` };
-          }
-          if (mo.kind === 'method' && mo.methodKind === 'operator') {
-            if (typeof mo.operatorSymbol !== 'string' || !mo.operatorSymbol.trim()) {
-              return {
-                ok: false,
-                message: `${mp}.operatorSymbol must be a non-empty string when methodKind is operator`,
-              };
-            }
-          }
         }
-        splitLegacyClassifierMembers(co);
+      }
+      if ('methods' in co && co.methods !== undefined) {
+        if (!Array.isArray(co.methods)) {
+          return { ok: false, message: `${cp}.methods must be an array when present` };
+        }
+        for (let m = 0; m < co.methods.length; m++) {
+          const vr = validateCodespaceClassifierMethod(co.methods[m], `${cp}.methods[${m}]`);
+          if (!vr.ok) return vr;
+        }
+      }
+      if ('enums' in co && co.enums !== undefined) {
+        if (!Array.isArray(co.enums)) {
+          return { ok: false, message: `${cp}.enums must be an array when present` };
+        }
+        for (let m = 0; m < co.enums.length; m++) {
+          const vr = validateCodespaceClassifierEnum(co.enums[m], `${cp}.enums[${m}]`);
+          if (!vr.ok) return vr;
+        }
       }
       if ('properties' in co && co.properties !== undefined) {
         if (!Array.isArray(co.properties)) {
