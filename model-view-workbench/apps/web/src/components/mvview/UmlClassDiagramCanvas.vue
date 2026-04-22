@@ -70,7 +70,15 @@ const WORLD_SIZE = WORLD_HALF * 2;
 /** fit / 原点：扣除浮在视口上的 HUD、侧栏，避免自动排版后内容仍被底部控件遮挡 */
 const VIEWPORT_FIT_MARGIN = { top: 10, bottom: 108, left: 10, right: 16 } as const;
 
-const viewportRef = ref<HTMLElement | null>(null);
+const viewportRef = ref<SVGSVGElement | null>(null);
+/** 包裹 SVG 与 HTML 浮层（添加类 / 连线编辑），用于点击外部关闭菜单 */
+const shellRef = ref<HTMLElement | null>(null);
+/** 视口像素尺寸（用于右上角可见性面板等 SVG 叠层定位） */
+const canvasBox = ref({ w: 400, h: 400 });
+const chromeInset = 12;
+const visibilityPanelX = computed(() => Math.max(chromeInset, canvasBox.value.w - 188));
+const umlHudY = computed(() => Math.max(chromeInset, canvasBox.value.h - 92));
+const umlDebugX = computed(() => Math.max(chromeInset, canvasBox.value.w - 220));
 const state = reactive<ClassDiagramState>({ classes: [], links: [] });
 const positions = reactive<ClassPositions>({});
 const folded = reactive<Record<string, boolean>>({});
@@ -122,6 +130,7 @@ const marqueeNorm = computed(() => {
 
 const shortcutsOpen = ref(false);
 const visibilityOpen = ref(false);
+const shortcutLines = computed(() => cd.value.cdeShortcutsBody.split('\n'));
 type LayoutBeautyMode = 'fast' | 'balanced' | 'polish';
 const layoutBeautyMode = ref<LayoutBeautyMode>('balanced');
 const layoutBeautyLabel = computed(() =>
@@ -586,16 +595,23 @@ const ADD_CTX_MARGIN = 12;
 const ADD_CTX_MAX_WIDTH = 460;
 const ADD_CTX_MAX_HEIGHT = 520;
 
-function clampAddCtxPosition(x: number, y: number): { x: number; y: number } {
-  const vw = Math.max(window.innerWidth || 0, 0);
-  const vh = Math.max(window.innerHeight || 0, 0);
+function clampAddCtxPosition(clientX: number, clientY: number): { x: number; y: number } {
+  const el = viewportRef.value;
+  const r = el?.getBoundingClientRect();
+  if (!r?.width) {
+    return { x: ADD_CTX_MARGIN, y: ADD_CTX_MARGIN };
+  }
+  const rx = clientX - r.left;
+  const ry = clientY - r.top;
+  const vw = r.width;
+  const vh = r.height;
   const panelW = Math.min(ADD_CTX_MAX_WIDTH, Math.max(vw - ADD_CTX_MARGIN * 2, 220));
   const panelH = Math.min(ADD_CTX_MAX_HEIGHT, Math.max(vh - ADD_CTX_MARGIN * 2, 220));
   const maxX = Math.max(ADD_CTX_MARGIN, vw - panelW - ADD_CTX_MARGIN);
   const maxY = Math.max(ADD_CTX_MARGIN, vh - panelH - ADD_CTX_MARGIN);
   return {
-    x: Math.min(Math.max(x, ADD_CTX_MARGIN), maxX),
-    y: Math.min(Math.max(y, ADD_CTX_MARGIN), maxY),
+    x: Math.min(Math.max(rx, ADD_CTX_MARGIN), maxX),
+    y: Math.min(Math.max(ry, ADD_CTX_MARGIN), maxY),
   };
 }
 
@@ -1025,7 +1041,7 @@ function classOutOfBoundModel(c: ClassDef): boolean {
   return !classExistsInBoundModel(c);
 }
 
-function isClassAlreadyAdded(row: (typeof codespaceClassRows.value)[number]): boolean {
+function isClassAlreadyAdded(row: { classId?: string; className: string }): boolean {
   const rowClassId = String(row.classId ?? '').trim();
   return state.classes.some((c) => {
     if (rowClassId) return c.id === rowClassId;
@@ -1086,6 +1102,35 @@ const ctxRelatedAssociationRows = computed(() => {
   if (!pack) return [];
   return treeRowsForClassifierIds(pack.associationIds).filter((r) => !isClassAlreadyAdded(r));
 });
+
+const classCtxPanelW = computed(() => (canUseRelatedTypesMenu.value ? 320 : 220));
+
+const classCtxPanelH = computed(() => {
+  let h = 44;
+  if (canUseRelatedTypesMenu.value) {
+    h += 22;
+    if (ctxRelatedInheritanceRows.value.length) {
+      h += 18 + ctxRelatedInheritanceRows.value.length * 30;
+    }
+    if (ctxRelatedAssociationRows.value.length) {
+      h += 18 + ctxRelatedAssociationRows.value.length * 30;
+    }
+    if (
+      ctxRelatedOneHopPack.value &&
+      !ctxRelatedInheritanceRows.value.length &&
+      !ctxRelatedAssociationRows.value.length
+    ) {
+      h += 28;
+    }
+    if (!ctxRelatedOneHopPack.value) h += 28;
+  } else if (!layoutOnly.value) {
+    h += 36;
+  }
+  h += 38;
+  return Math.min(Math.max(h, 96), Math.max(120, canvasBox.value.h - 16));
+});
+
+const edgeCtxMenuH = 88;
 
 function addRelatedClassifierFromTree(row: CodespaceClassTreeItem, kind: 'inherit' | 'association'): void {
   if (layoutOnly.value) return;
@@ -1197,17 +1242,26 @@ function addCustomClassAndSyncModel(): void {
   pushPayload();
 }
 
+let canvasResizeObs: ResizeObserver | undefined;
 onMounted(() => {
   loadFromPayload(props.modelValue ?? '');
   // Default behavior: run one auto layout when the canvas is opened.
   nextTick(() => {
     autoLayoutClasses();
+    syncCanvasBox();
+    const el = viewportRef.value;
+    if (el) {
+      canvasResizeObs = new ResizeObserver(() => syncCanvasBox());
+      canvasResizeObs.observe(el);
+    }
   });
   window.addEventListener('click', onWindowClick);
   window.addEventListener('pointermove', onGlobalPointerMove);
   window.addEventListener('pointerup', onGlobalPointerUp);
 });
 onUnmounted(() => {
+  canvasResizeObs?.disconnect();
+  canvasResizeObs = undefined;
   if (copyDebugFeedbackTimer) {
     clearTimeout(copyDebugFeedbackTimer);
     copyDebugFeedbackTimer = null;
@@ -1222,16 +1276,17 @@ onUnmounted(() => {
 
 function onWindowClick(e: MouseEvent): void {
   const t = e.target as Node;
-  if (ctx.open && viewportRef.value && !viewportRef.value.querySelector('.cde-ctx')?.contains(t)) {
+  const shell = shellRef.value;
+  if (ctx.open && shell && !shell.querySelector('.cde-ctx')?.contains(t)) {
     ctx.open = false;
   }
-  if (edgeCtx.open && viewportRef.value && !viewportRef.value.querySelector('.cde-edgectx')?.contains(t)) {
+  if (edgeCtx.open && shell && !shell.querySelector('.cde-edgectx')?.contains(t)) {
     edgeCtx.open = false;
   }
-  if (edgeEditor.open && viewportRef.value && !viewportRef.value.querySelector('.cde-edgeedit')?.contains(t)) {
+  if (edgeEditor.open && shell && !shell.querySelector('.cde-edgeedit')?.contains(t)) {
     edgeEditor.open = false;
   }
-  if (addCtx.open && viewportRef.value && !viewportRef.value.querySelector('.cde-addctx')?.contains(t)) {
+  if (addCtx.open && shell && !shell.querySelector('.cde-addctx')?.contains(t)) {
     addCtx.open = false;
   }
 }
@@ -1239,6 +1294,59 @@ function onWindowClick(e: MouseEvent): void {
 function isDarkTheme(): boolean {
   return document.documentElement.dataset.theme === 'dark';
 }
+
+const keysHeaderH = 22;
+const keysLineGap = 13;
+const toolbarGap = 10;
+const hudPad = 6;
+const hudBtnH = 24;
+const hudGap = 6;
+
+const keysPanelBodyH = computed(() =>
+  shortcutsOpen.value ? 8 + shortcutLines.value.length * keysLineGap + 6 : 0,
+);
+const keysPanelH = computed(() => keysHeaderH + keysPanelBodyH.value);
+const leftPanelW = computed(() => Math.min(280, Math.max(120, canvasBox.value.w - 24)));
+
+const chromePanelFill = computed(() => (isDarkTheme() ? 'rgba(30,32,38,0.94)' : 'rgba(255,255,255,0.92)'));
+const chromePanelStroke = computed(() => (isDarkTheme() ? '#334155' : '#e2e8f0'));
+const chromeTextFill = computed(() => (isDarkTheme() ? '#e2e8f0' : '#0f172a'));
+const chromeMutedFill = computed(() => (isDarkTheme() ? '#94a3b8' : '#64748b'));
+
+const visibilityPanelH = computed(() => (visibilityOpen.value ? 78 : keysHeaderH));
+
+const umlHudLayout = computed(() => {
+  const M = cd.value;
+  const tip = noGlobalShortcutText.value;
+  const pct = `${Math.round(scale.value * 100)}%`;
+  const row1: { key: string; label: string; w: number; title: string; run: () => void }[] = [
+    { key: 'fit', label: '⤢', w: 34, title: `${M.cdeFit} — ${tip}`, run: () => fitAll() },
+    { key: 'origin', label: '◎', w: 34, title: `${M.cdeOrigin} — ${tip}`, run: () => originCenter() },
+    { key: 'reset', label: '↺', w: 34, title: `${M.cdeResetZoom} — ${tip}`, run: () => resetZoom100() },
+  ];
+  let x = hudPad;
+  const laid1 = row1.map((it) => {
+    const ox = x;
+    x += it.w + hudGap;
+    return { ...it, x: ox };
+  });
+  const w1 = Math.max(x - hudGap + hudPad, 120);
+  const row2: { key: string; label: string; w: number; title: string; run?: () => void }[] = [
+    { key: 'zout', label: '−', w: 28, title: `${M.cdeZoomOut} — ${tip}`, run: () => zoomDelta(-0.1) },
+    { key: 'pct', label: pct, w: 52, title: tip },
+    { key: 'zin', label: '+', w: 28, title: `${M.cdeZoomIn} — ${tip}`, run: () => zoomDelta(0.1) },
+  ];
+  x = hudPad;
+  const laid2 = row2.map((it) => {
+    const ox = x;
+    x += it.w + hudGap;
+    return { ...it, x: ox };
+  });
+  const w2 = Math.max(x - hudGap + hudPad, 120);
+  const stackW = Math.max(w1, w2);
+  const stackH = hudPad * 2 + hudBtnH * 2 + hudGap;
+  return { row1: laid1, row2: laid2, stackW, stackH };
+});
 
 /** 按 UML 构造型区分主色（无构造型时用序号色相） */
 function classBodyFill(c: ClassDef, index: number): string {
@@ -1283,11 +1391,45 @@ function classStereotype(c: ClassDef): string {
   return (((c as ClassDefCompat).stereotype ?? '') as string).trim();
 }
 
-function worldTransform(): Record<string, string> {
+const worldGroupTransform = computed(
+  () => `translate(${panX.value}, ${panY.value}) scale(${scale.value})`,
+);
+
+const paperFillColor = computed(() => (isDarkTheme() ? '#1c2028' : '#f8fafc'));
+const gridPatternStroke = computed(() =>
+  isDarkTheme() ? 'rgba(236, 239, 244, 0.07)' : 'rgba(15, 23, 42, 0.07)',
+);
+
+function syncCanvasBox(): void {
+  const el = viewportRef.value;
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  canvasBox.value = { w: r.width, h: r.height };
+}
+
+function clientToOverlayLocal(clientX: number, clientY: number): { x: number; y: number } {
+  const el = viewportRef.value;
+  if (!el) return { x: 0, y: 0 };
+  const r = el.getBoundingClientRect();
+  return { x: clientX - r.left, y: clientY - r.top };
+}
+
+function clampCtxMenuLocal(x: number, y: number, mw: number, mh: number): { x: number; y: number } {
+  const { w: vw, h: vh } = canvasBox.value;
+  const pad = 8;
   return {
-    transform: `translate(${panX.value}px, ${panY.value}px) scale(${scale.value})`,
-    transformOrigin: '0 0',
+    x: Math.min(Math.max(pad, x), Math.max(pad, vw - mw - pad)),
+    y: Math.min(Math.max(pad, y), Math.max(pad, vh - mh - pad)),
   };
+}
+
+function toggleEdgeVisibility(key: 'inherit' | 'association'): void {
+  edgeVisibility[key] = !edgeVisibility[key];
+  pushPayload();
+}
+
+function setLayoutBeautyModeNext(m: LayoutBeautyMode): void {
+  layoutBeautyMode.value = m;
 }
 
 function clientToWorld(clientX: number, clientY: number): { x: number; y: number } {
@@ -2064,8 +2206,8 @@ function startAssociationDrag(
   selectedInheritHandleClassId.value = null;
   selectedEdgeId.value = null;
   associationDrag.value = { fromId, sectionIndex, lineIndex, anchor };
-  const x1 = anchor === 'left' ? p.x - 16 : p.x + 264;
-  const y1 = anchor === 'left' ? p.y + 18 : p.y + rightHandleTipY(c, { sectionIndex, lineIndex });
+  const x1 = p.x + 264;
+  const y1 = p.y + rightHandleTipY(c, { sectionIndex, lineIndex });
   const w = clientToWorld(e.clientX, e.clientY);
   tempAssociationLine.value = { x1, y1, x2: w.x, y2: w.y };
 }
@@ -2204,7 +2346,12 @@ function onEdgePointerDown(e: PointerEvent, edgeId: string): void {
   addCtx.open = false;
 }
 
-function openEdgeEditor(edgeId: string, x: number, y: number): void {
+function openEdgeEditor(
+  edgeId: string,
+  ax: number,
+  ay: number,
+  coords: 'client' | 'overlay' = 'client',
+): void {
   if (layoutOnly.value) return;
   selectedEdgeId.value = edgeId;
   selectedInheritHandleClassId.value = null;
@@ -2213,8 +2360,10 @@ function openEdgeEditor(edgeId: string, x: number, y: number): void {
   edgeCtx.open = false;
   edgeEditor.open = true;
   edgeEditor.edgeId = edgeId;
-  edgeEditor.x = x;
-  edgeEditor.y = y;
+  const loc = coords === 'overlay' ? { x: ax, y: ay } : clientToOverlayLocal(ax, ay);
+  const p = clampCtxMenuLocal(loc.x, loc.y, 280, 260);
+  edgeEditor.x = p.x;
+  edgeEditor.y = p.y;
 }
 
 function onEdgeContextMenu(e: MouseEvent, edgeId: string): void {
@@ -2228,8 +2377,10 @@ function onEdgeContextMenu(e: MouseEvent, edgeId: string): void {
   edgeEditor.open = false;
   edgeCtx.open = true;
   edgeCtx.edgeId = edgeId;
-  edgeCtx.x = e.clientX;
-  edgeCtx.y = e.clientY;
+  const loc0 = clientToOverlayLocal(e.clientX, e.clientY);
+  const loc = clampCtxMenuLocal(loc0.x, loc0.y, 200, 88);
+  edgeCtx.x = loc.x;
+  edgeCtx.y = loc.y;
 }
 
 function onEdgeDblClick(e: MouseEvent, edgeId: string): void {
@@ -2351,8 +2502,10 @@ function onClassContextMenu(e: MouseEvent, classId: string): void {
   addCtx.open = false;
   selectedIds.value = [classId];
   ctx.open = true;
-  ctx.x = e.clientX;
-  ctx.y = e.clientY;
+  const loc0 = clientToOverlayLocal(e.clientX, e.clientY);
+  const loc = clampCtxMenuLocal(loc0.x, loc0.y, canUseRelatedTypesMenu.value ? 400 : 240, 360);
+  ctx.x = loc.x;
+  ctx.y = loc.y;
   ctx.classId = classId;
 }
 
@@ -2795,38 +2948,41 @@ function deleteClass(classId: string): void {
 
 <template>
   <div class="cde">
-    <div
-      ref="viewportRef"
-      class="cde-viewport"
-      :class="{
-        'cde-viewport--panning': isPanning,
-        'cde-viewport--marquee': !!marquee,
-        'cde-viewport--dragging': !!drag,
-      }"
-      :title="`${cd.cdeFit} · ${cd.cdeOrigin} · ${cd.cdeResetZoom} — ${noGlobalShortcutText}`"
-      @wheel.prevent="onWheel"
-      @pointerdown="onViewportPointerDown"
-      @pointermove="onViewportPointerMove"
-      @pointerup="onViewportPointerUp"
-      @pointercancel="onViewportPointerUp"
-    >
+    <div ref="shellRef" class="cde-viewport-shell">
       <div v-if="modelSourceErrorText" class="cde-model-source-error" role="alert">
         {{ modelSourceErrorText }}
       </div>
       <div v-else-if="layoutOnly" class="cde-model-source-error cde-model-source-error--info" role="status">
         {{ cd.cdeObserveModeBanner }}
       </div>
-      <div class="cde-world" :style="worldTransform()">
-        <div class="cde-grid" aria-hidden="true" />
-        <svg
-          class="cde-svg"
-          xmlns="http://www.w3.org/2000/svg"
-          :width="WORLD_SIZE"
-          :height="WORLD_SIZE"
-          @contextmenu.prevent
-        >
-          <defs>
-            <!-- 泛化：空心三角（指向父类一端） -->
+
+      <svg
+        ref="viewportRef"
+        class="cde-viewport cde-root-svg"
+        xmlns="http://www.w3.org/2000/svg"
+        width="100%"
+        height="100%"
+        :class="{
+          'cde-viewport--panning': isPanning,
+          'cde-viewport--marquee': !!marquee,
+          'cde-viewport--dragging': !!drag,
+        }"
+        :title="`${cd.cdeFit} · ${cd.cdeOrigin} · ${cd.cdeResetZoom} — ${noGlobalShortcutText}`"
+        @wheel.prevent="onWheel"
+        @pointerdown="onViewportPointerDown"
+        @pointermove="onViewportPointerMove"
+        @pointerup="onViewportPointerUp"
+        @pointercancel="onViewportPointerUp"
+        @contextmenu.prevent
+      >
+        <defs>
+          <pattern :id="`${mkId}-paper-grid`" patternUnits="userSpaceOnUse" width="40" height="40">
+            <path d="M 40 0 L 0 0 0 40" fill="none" :stroke="gridPatternStroke" stroke-width="1" />
+          </pattern>
+          <filter id="cde-svg-menu-shadow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="6" stdDeviation="10" flood-opacity="0.16" />
+          </filter>
+          <!-- 泛化：空心三角（指向父类一端） -->
             <marker
               :id="`${mkId}-inh`"
               markerWidth="14"
@@ -2869,6 +3025,23 @@ function deleteClass(classId: string): void {
             </marker>
           </defs>
 
+          <g class="cde-world-layer" :transform="worldGroupTransform">
+          <rect
+            :x="-WORLD_HALF"
+            :y="-WORLD_HALF"
+            :width="WORLD_SIZE"
+            :height="WORLD_SIZE"
+            :fill="paperFillColor"
+            pointer-events="none"
+          />
+          <rect
+            :x="-WORLD_HALF"
+            :y="-WORLD_HALF"
+            :width="WORLD_SIZE"
+            :height="WORLD_SIZE"
+            :fill="`url(#${mkId}-paper-grid)`"
+            pointer-events="none"
+          />
           <rect
             class="cde-svg-bg"
             :x="-WORLD_HALF"
@@ -3264,218 +3437,367 @@ function deleteClass(classId: string): void {
             stroke-dasharray="4 3"
             pointer-events="none"
           />
-        </svg>
-      </div>
+          </g>
 
-      <div class="cde-left-stack">
-        <div class="cde-panel cde-panel--shortcuts" :class="{ 'cde-panel--collapsed': !shortcutsOpen }">
-          <button
-            type="button"
-            class="cde-panel__toggle"
-            :aria-expanded="shortcutsOpen"
-            :title="`${cd.cdeShortcutsPanel} — ${noGlobalShortcutText}`"
-            @click="shortcutsOpen = !shortcutsOpen"
-          >
-            {{ cd.cdeShortcutsPanel }}
-            <span class="cde-panel__glyph">{{ shortcutsOpen ? '▴' : '▾' }}</span>
-          </button>
-          <pre v-show="shortcutsOpen" class="cde-panel__body">{{ cd.cdeShortcutsBody }}</pre>
-        </div>
-
-        <div class="cde-canvas-toolbar" role="toolbar" :aria-label="cd.cdeToolbarAria">
-          <label class="cde-canvas-toolbar__select-wrap" :title="`${cd.cdeLayoutBeauty} — ${layoutBeautyLabel}`">
-            <span class="cde-canvas-toolbar__select-label">{{ cd.cdeLayoutBeauty }}</span>
-            <select v-model="layoutBeautyMode" class="cde-canvas-toolbar__select">
-              <option value="fast">{{ cd.cdeLayoutBeautyFast }}</option>
-              <option value="balanced">{{ cd.cdeLayoutBeautyBalanced }}</option>
-              <option value="polish">{{ cd.cdeLayoutBeautyPolish }}</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            class="cde-canvas-toolbar__btn"
-            :aria-label="cd.cdeAutoLayout"
-            :title="`${cd.cdeAutoLayout} (${layoutBeautyLabel}) — ${noGlobalShortcutText}`"
-            @click="autoLayoutClasses"
-          >
-            <svg class="cde-canvas-toolbar__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-              <rect x="3" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6" />
-              <rect x="15" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6" />
-              <rect x="9" y="14" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6" />
-              <path d="M9 7h6M12 10v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-            </svg>
-          </button>
-          <button
-            v-if="!layoutOnly"
-            type="button"
-            class="cde-canvas-toolbar__btn"
-            :aria-label="cd.cdeNewClass"
-            :title="`${cd.cdeNewClassHint} — ${noGlobalShortcutText}`"
-            @click="addNewClass"
-          >
-            <svg class="cde-canvas-toolbar__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-              <rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.75" />
-              <path
-                d="M12 8v8M8 12h8"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.75"
-                stroke-linecap="round"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="cde-panel cde-panel--visibility" :class="{ 'cde-panel--collapsed': !visibilityOpen }">
-        <button
-          type="button"
-          class="cde-panel__toggle"
-          :aria-expanded="visibilityOpen"
-          :title="`${cd.cdeVisibilityPanel} — ${noGlobalShortcutText}`"
-          @click="visibilityOpen = !visibilityOpen"
-        >
-          {{ cd.cdeVisibilityPanel }}
-          <span class="cde-panel__glyph">{{ visibilityOpen ? '▴' : '▾' }}</span>
-        </button>
-        <div v-show="visibilityOpen" class="cde-panel__body cde-panel__checks">
-          <label class="cde-check">
-            <input v-model="edgeVisibility.inherit" type="checkbox" @change="pushPayload()" />
-            {{ cd.cdeShowInherit }}
-          </label>
-          <label class="cde-check">
-            <input v-model="edgeVisibility.association" type="checkbox" @change="pushPayload()" />
-            {{ cd.cdeShowAssoc }}
-          </label>
-        </div>
-      </div>
-
-      <div class="cde-hud" aria-hidden="false">
-        <div class="cde-hud__row cde-hud__row--tools">
-          <button
-            type="button"
-            class="cde-hud__mini cde-hud__iconbtn"
-            :aria-label="cd.cdeFit"
-            :title="`${cd.cdeFit} — ${noGlobalShortcutText}`"
-            @click="fitAll"
-          >
-            <span class="cde-hud__glyph" aria-hidden="true">⤢</span>
-          </button>
-          <button
-            type="button"
-            class="cde-hud__mini cde-hud__iconbtn"
-            :aria-label="cd.cdeOrigin"
-            :title="`${cd.cdeOrigin} — ${noGlobalShortcutText}`"
-            @click="originCenter"
-          >
-            <span class="cde-hud__glyph" aria-hidden="true">◎</span>
-          </button>
-          <button
-            type="button"
-            class="cde-hud__mini cde-hud__iconbtn"
-            :aria-label="cd.cdeResetZoom"
-            :title="`${cd.cdeResetZoom} — ${noGlobalShortcutText}`"
-            @click="resetZoom100"
-          >
-            <span class="cde-hud__glyph" aria-hidden="true">↺</span>
-          </button>
-        </div>
-        <div class="cde-hud__row cde-hud__row--zoom">
-          <button type="button" class="cde-hud__zoombtn" :title="`${cd.cdeZoomOut} — ${noGlobalShortcutText}`" @click="zoomDelta(-0.1)">
-            −
-          </button>
-          <span class="cde-hud__pct">{{ Math.round(scale * 100) }}%</span>
-          <button type="button" class="cde-hud__zoombtn" :title="`${cd.cdeZoomIn} — ${noGlobalShortcutText}`" @click="zoomDelta(0.1)">
-            +
-          </button>
-        </div>
-      </div>
-
-      <div class="cde-debug-actions">
-        <button
-          type="button"
-          class="cde-debug-actions__btn"
-          :title="cd.cdeCopyDrawingInfoTitle"
-          @click="copyUmlDiagramDebugInfo"
-        >
-          {{ cd.cdeCopyDrawingInfo }}
-        </button>
-        <span
-          v-if="copyDebugFeedback"
-          class="cde-debug-actions__toast"
-          :class="
-            copyDebugFeedback.kind === 'ok' ? 'cde-debug-actions__toast--ok' : 'cde-debug-actions__toast--err'
-          "
-          role="status"
-        >
-          {{ copyDebugFeedback.text }}
-        </span>
-      </div>
-
-      <div
-        v-if="ctx.open"
-        class="cde-ctx"
-        :class="{ 'cde-ctx--wide': canUseRelatedTypesMenu }"
-        :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }"
-        role="menu"
-        @click.stop
-      >
-        <button type="button" @click="openClassifierFromDiagram(ctx.classId)">{{ cd.cdeOpenCodespaceClass }}</button>
-        <template v-if="canUseRelatedTypesMenu">
-          <div class="cde-ctx-group">
-            <div class="cde-ctx-sub">{{ cd.cdeCtxAddRelatedHeader }}</div>
-            <template v-if="ctxRelatedInheritanceRows.length">
-              <div class="cde-ctx-hint">{{ cd.cdeCtxRelatedInheritance }}</div>
-              <button
-                v-for="r in ctxRelatedInheritanceRows"
-                :key="'rel-inh-' + r.classId"
-                type="button"
-                @click="addRelatedClassifierFromTree(r, 'inherit')"
-              >
-                + {{ labelForCodespaceTreeRow(r) }}
-              </button>
-            </template>
-            <template v-if="ctxRelatedAssociationRows.length">
-              <div class="cde-ctx-hint">{{ cd.cdeCtxRelatedAssociation }}</div>
-              <button
-                v-for="r in ctxRelatedAssociationRows"
-                :key="'rel-asc-' + r.classId"
-                type="button"
-                @click="addRelatedClassifierFromTree(r, 'association')"
-              >
-                + {{ labelForCodespaceTreeRow(r) }}
-              </button>
-            </template>
-            <div
-              v-if="ctxRelatedOneHopPack && !ctxRelatedInheritanceRows.length && !ctxRelatedAssociationRows.length"
-              class="cde-ctx-muted"
+      <g class="cde-svg-chrome" pointer-events="none">
+        <g class="cde-svg-left-stack" pointer-events="auto" :transform="`translate(${chromeInset}, ${chromeInset})`">
+          <g class="cde-svg-keys" @click.stop>
+            <rect
+              :width="leftPanelW"
+              :height="keysPanelH"
+              rx="6"
+              :fill="chromePanelFill"
+              :stroke="chromePanelStroke"
+            />
+            <rect
+              :width="leftPanelW"
+              :height="keysHeaderH"
+              fill="transparent"
+              style="cursor: pointer"
+              @click.stop="shortcutsOpen = !shortcutsOpen"
             >
-              {{ cd.cdeCtxRelatedNone }}
-            </div>
-            <div v-if="!ctxRelatedOneHopPack" class="cde-ctx-muted">{{ cd.cdeCtxRelatedNoResolve }}</div>
-          </div>
-        </template>
-        <template v-else-if="!layoutOnly">
-          <div class="cde-ctx-group">
-            <div class="cde-ctx-muted">{{ cd.cdeCtxRelatedNeedModel }}</div>
-          </div>
-        </template>
-        <button type="button" class="cde-ctx-danger" @click="deleteClass(ctx.classId)">{{ cd.cdeDeleteClass }}</button>
-      </div>
-      <div
-        v-if="edgeCtx.open"
-        class="cde-ctx cde-edgectx"
-        :style="{ left: edgeCtx.x + 'px', top: edgeCtx.y + 'px' }"
-        role="menu"
-        @click.stop
-      >
-        <button type="button" @click="openEdgeEditor(edgeCtx.edgeId, edgeCtx.x, edgeCtx.y)">
-          {{ locale === 'en' ? 'Edit edge' : '编辑连线' }}
-        </button>
-        <button type="button" class="cde-ctx-danger" @click="deleteEdge(edgeCtx.edgeId)">
-          {{ locale === 'en' ? 'Delete edge' : '删除连线' }}
-        </button>
-      </div>
+              <title>{{ `${cd.cdeShortcutsPanel} — ${noGlobalShortcutText}` }}</title>
+            </rect>
+            <text
+              x="8"
+              y="15"
+              font-size="11"
+              pointer-events="none"
+              font-family="ui-sans-serif,system-ui,sans-serif"
+              :fill="chromeMutedFill"
+            >
+              {{ cd.cdeShortcutsPanel }} {{ shortcutsOpen ? '▴' : '▾' }}
+            </text>
+            <g v-if="shortcutsOpen">
+              <text
+                v-for="(line, li) in shortcutLines"
+                :key="'sk-' + li"
+                x="8"
+                :y="keysHeaderH + 8 + (li + 1) * keysLineGap - 2"
+                font-size="11"
+                pointer-events="none"
+                font-family="ui-monospace, Consolas, monospace"
+                :fill="chromeTextFill"
+              >
+                {{ line }}
+              </text>
+            </g>
+          </g>
+
+          <g
+            role="toolbar"
+            :aria-label="cd.cdeToolbarAria"
+            :transform="`translate(0, ${keysPanelH + toolbarGap})`"
+          >
+            <rect x="0" y="0" width="118" height="108" rx="8" :fill="chromePanelFill" :stroke="chromePanelStroke" />
+            <text x="8" y="14" font-size="9" :fill="chromeMutedFill">{{ cd.cdeLayoutBeauty }}</text>
+            <g transform="translate(8, 22)">
+              <g style="cursor: pointer" @click.stop="setLayoutBeautyModeNext('fast')">
+                <title>{{ cd.cdeLayoutBeautyFast }}</title>
+                <rect
+                  width="30"
+                  height="18"
+                  rx="4"
+                  :fill="layoutBeautyMode === 'fast' ? '#2563eb' : 'transparent'"
+                  stroke="#94a3b8"
+                />
+                <text
+                  x="15"
+                  y="13"
+                  text-anchor="middle"
+                  font-size="10"
+                  pointer-events="none"
+                  :fill="layoutBeautyMode === 'fast' ? '#ffffff' : chromeTextFill"
+                >
+                  F
+                </text>
+              </g>
+              <g transform="translate(34, 0)" style="cursor: pointer" @click.stop="setLayoutBeautyModeNext('balanced')">
+                <title>{{ cd.cdeLayoutBeautyBalanced }}</title>
+                <rect
+                  width="30"
+                  height="18"
+                  rx="4"
+                  :fill="layoutBeautyMode === 'balanced' ? '#2563eb' : 'transparent'"
+                  stroke="#94a3b8"
+                />
+                <text
+                  x="15"
+                  y="13"
+                  text-anchor="middle"
+                  font-size="10"
+                  pointer-events="none"
+                  :fill="layoutBeautyMode === 'balanced' ? '#ffffff' : chromeTextFill"
+                >
+                  B
+                </text>
+              </g>
+              <g transform="translate(68, 0)" style="cursor: pointer" @click.stop="setLayoutBeautyModeNext('polish')">
+                <title>{{ cd.cdeLayoutBeautyPolish }}</title>
+                <rect
+                  width="30"
+                  height="18"
+                  rx="4"
+                  :fill="layoutBeautyMode === 'polish' ? '#2563eb' : 'transparent'"
+                  stroke="#94a3b8"
+                />
+                <text
+                  x="15"
+                  y="13"
+                  text-anchor="middle"
+                  font-size="10"
+                  pointer-events="none"
+                  :fill="layoutBeautyMode === 'polish' ? '#ffffff' : chromeTextFill"
+                >
+                  P
+                </text>
+              </g>
+            </g>
+            <g transform="translate(12, 52)" style="cursor: pointer" @click.stop="autoLayoutClasses">
+              <title>{{ `${cd.cdeAutoLayout} (${layoutBeautyLabel}) — ${noGlobalShortcutText}` }}</title>
+              <rect x="-6" y="-6" width="44" height="44" fill="transparent" />
+              <g :stroke="chromeTextFill" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="6" height="6" rx="1.2" stroke-width="1.6" />
+                <rect x="15" y="4" width="6" height="6" rx="1.2" stroke-width="1.6" />
+                <rect x="9" y="14" width="6" height="6" rx="1.2" stroke-width="1.6" />
+                <path d="M9 7h6M12 10v4" stroke-width="1.4" />
+              </g>
+            </g>
+            <g
+              v-if="!layoutOnly"
+              transform="translate(62, 52)"
+              style="cursor: pointer"
+              @click.stop="addNewClass"
+            >
+              <title>{{ `${cd.cdeNewClassHint} — ${noGlobalShortcutText}` }}</title>
+              <rect x="-6" y="-6" width="44" height="44" fill="transparent" />
+              <g :stroke="chromeTextFill" fill="none" stroke-linecap="round">
+                <rect x="3" y="4" width="18" height="16" rx="2" stroke-width="1.75" />
+                <path d="M12 8v8M8 12h8" stroke-width="1.75" />
+              </g>
+            </g>
+          </g>
+        </g>
+
+        <g pointer-events="auto" :transform="`translate(${visibilityPanelX}, ${chromeInset})`">
+          <rect width="176" :height="visibilityPanelH" rx="6" :fill="chromePanelFill" :stroke="chromePanelStroke" />
+          <rect
+            width="176"
+            :height="keysHeaderH"
+            fill="transparent"
+            style="cursor: pointer"
+            @click.stop="visibilityOpen = !visibilityOpen"
+          >
+            <title>{{ `${cd.cdeVisibilityPanel} — ${noGlobalShortcutText}` }}</title>
+          </rect>
+          <text x="8" y="15" font-size="11" pointer-events="none" :fill="chromeTextFill">
+            {{ cd.cdeVisibilityPanel }} {{ visibilityOpen ? '▴' : '▾' }}
+          </text>
+          <g v-if="visibilityOpen" transform="translate(8, 26)">
+            <g style="cursor: pointer" @click.stop="toggleEdgeVisibility('inherit')">
+              <rect x="0" y="2" width="12" height="12" rx="2" :fill="edgeVisibility.inherit ? '#2563eb' : 'transparent'" stroke="#64748b" />
+              <text x="18" y="12" font-size="11" pointer-events="none" :fill="chromeTextFill">{{ cd.cdeShowInherit }}</text>
+            </g>
+            <g transform="translate(0, 26)" style="cursor: pointer" @click.stop="toggleEdgeVisibility('association')">
+              <rect x="0" y="2" width="12" height="12" rx="2" :fill="edgeVisibility.association ? '#2563eb' : 'transparent'" stroke="#64748b" />
+              <text x="18" y="12" font-size="11" pointer-events="none" :fill="chromeTextFill">{{ cd.cdeShowAssoc }}</text>
+            </g>
+          </g>
+        </g>
+
+        <g pointer-events="auto" :transform="`translate(${chromeInset}, ${umlHudY})`">
+          <rect
+            x="0"
+            y="0"
+            :width="umlHudLayout.stackW"
+            :height="umlHudLayout.stackH"
+            rx="6"
+            :fill="chromePanelFill"
+            :stroke="chromePanelStroke"
+          />
+          <g v-for="it in umlHudLayout.row1" :key="'h1-' + it.key" :transform="`translate(${it.x}, ${hudPad})`">
+            <title>{{ it.title }}</title>
+            <rect
+              :width="it.w"
+              :height="hudBtnH"
+              rx="4"
+              fill="transparent"
+              stroke="#94a3b8"
+              style="cursor: pointer"
+              @click.stop="it.run()"
+            />
+            <text
+              :x="it.w / 2"
+              :y="hudBtnH / 2 + 4"
+              text-anchor="middle"
+              font-size="12"
+              pointer-events="none"
+              :fill="chromeTextFill"
+            >
+              {{ it.label }}
+            </text>
+          </g>
+          <g v-for="it in umlHudLayout.row2" :key="'h2-' + it.key" :transform="`translate(${it.x}, ${hudPad + hudBtnH + hudGap})`">
+            <title>{{ it.title }}</title>
+            <template v-if="it.run">
+              <rect
+                :width="it.w"
+                :height="hudBtnH"
+                rx="4"
+                fill="transparent"
+                stroke="#94a3b8"
+                style="cursor: pointer"
+                @click.stop="it.run ? it.run() : undefined"
+              />
+              <text
+                :x="it.w / 2"
+                :y="hudBtnH / 2 + 4"
+                text-anchor="middle"
+                font-size="12"
+                pointer-events="none"
+                :fill="chromeTextFill"
+              >
+                {{ it.label }}
+              </text>
+            </template>
+            <template v-else>
+              <rect :width="it.w" :height="hudBtnH" rx="4" fill="#f8fafc" stroke="#cbd5e1" />
+              <text
+                :x="it.w / 2"
+                :y="hudBtnH / 2 + 4"
+                text-anchor="middle"
+                font-size="11"
+                font-weight="600"
+                pointer-events="none"
+                :fill="chromeTextFill"
+              >
+                {{ it.label }}
+              </text>
+            </template>
+          </g>
+        </g>
+
+        <g pointer-events="auto" :transform="`translate(${umlDebugX}, ${umlHudY})`">
+          <g style="cursor: pointer" @click.stop="copyUmlDiagramDebugInfo">
+            <title>{{ cd.cdeCopyDrawingInfoTitle }}</title>
+            <rect x="0" y="0" width="158" height="26" rx="4" :fill="chromePanelFill" stroke="#94a3b8" />
+            <text x="79" y="17" text-anchor="middle" font-size="11" pointer-events="none" :fill="chromeTextFill">
+              {{ cd.cdeCopyDrawingInfo }}
+            </text>
+          </g>
+          <text
+            v-if="copyDebugFeedback"
+            x="166"
+            y="17"
+            font-size="10"
+            pointer-events="none"
+            class="cde-svg-copy-feedback"
+            :data-kind="copyDebugFeedback.kind"
+            role="status"
+          >
+            {{ copyDebugFeedback.text }}
+          </text>
+        </g>
+      </g>
+
+      <g v-if="ctx.open" class="cde-svg-ctx-layer" pointer-events="auto">
+        <rect width="100%" height="100%" fill="transparent" @click="ctx.open = false" @contextmenu.prevent="ctx.open = false" />
+        <g class="cde-ctx" :transform="`translate(${ctx.x}, ${ctx.y})`" role="menu" @click.stop>
+          <rect
+            :width="classCtxPanelW"
+            :height="classCtxPanelH"
+            rx="8"
+            :fill="chromePanelFill"
+            :stroke="chromePanelStroke"
+            filter="url(#cde-svg-menu-shadow)"
+          />
+          <g transform="translate(4, 4)" font-family="ui-sans-serif,system-ui,sans-serif">
+            <g style="cursor: pointer" @click.stop="openClassifierFromDiagram(ctx.classId)">
+              <rect x="0" y="0" :width="classCtxPanelW - 8" height="32" fill="transparent" />
+              <text x="8" y="22" font-size="12" :fill="chromeTextFill">{{ cd.cdeOpenCodespaceClass }}</text>
+            </g>
+            <g v-if="canUseRelatedTypesMenu" transform="translate(0, 34)">
+              <text x="8" y="12" font-size="10" font-weight="700" :fill="chromeMutedFill">{{ cd.cdeCtxAddRelatedHeader }}</text>
+              <g
+                v-for="(r, ri) in ctxRelatedInheritanceRows"
+                :key="'rel-inh-' + r.classId"
+                :transform="`translate(0, ${22 + ri * 26})`"
+                style="cursor: pointer"
+                @click.stop="addRelatedClassifierFromTree(r, 'inherit')"
+              >
+                <rect x="0" y="0" :width="classCtxPanelW - 8" height="24" fill="transparent" />
+                <text x="8" y="16" font-size="11" :fill="chromeTextFill">+ {{ labelForCodespaceTreeRow(r) }}</text>
+              </g>
+              <g
+                v-for="(r, ri) in ctxRelatedAssociationRows"
+                :key="'rel-asc-' + r.classId"
+                :transform="`translate(0, ${22 + ctxRelatedInheritanceRows.length * 26 + 10 + ri * 26})`"
+                style="cursor: pointer"
+                @click.stop="addRelatedClassifierFromTree(r, 'association')"
+              >
+                <rect x="0" y="0" :width="classCtxPanelW - 8" height="24" fill="transparent" />
+                <text x="8" y="16" font-size="11" :fill="chromeTextFill">+ {{ labelForCodespaceTreeRow(r) }}</text>
+              </g>
+              <text
+                v-if="ctxRelatedOneHopPack && !ctxRelatedInheritanceRows.length && !ctxRelatedAssociationRows.length"
+                x="8"
+                :y="28 + ctxRelatedInheritanceRows.length * 26 + ctxRelatedAssociationRows.length * 26"
+                font-size="11"
+                :fill="chromeMutedFill"
+              >
+                {{ cd.cdeCtxRelatedNone }}
+              </text>
+              <text
+                v-if="!ctxRelatedOneHopPack"
+                x="8"
+                :y="28 + ctxRelatedInheritanceRows.length * 26 + ctxRelatedAssociationRows.length * 26"
+                font-size="11"
+                :fill="chromeMutedFill"
+              >
+                {{ cd.cdeCtxRelatedNoResolve }}
+              </text>
+            </g>
+            <g v-else-if="!layoutOnly" transform="translate(0, 38)">
+              <text x="8" y="12" font-size="11" :fill="chromeMutedFill">{{ cd.cdeCtxRelatedNeedModel }}</text>
+            </g>
+            <g
+              style="cursor: pointer"
+              :transform="`translate(0, ${classCtxPanelH - 40})`"
+              @click.stop="deleteClass(ctx.classId)"
+            >
+              <rect x="0" y="0" :width="classCtxPanelW - 8" height="32" fill="transparent" />
+              <text x="8" y="22" font-size="12" fill="#b91c1c">{{ cd.cdeDeleteClass }}</text>
+            </g>
+          </g>
+        </g>
+      </g>
+
+      <g v-if="edgeCtx.open" class="cde-svg-edgectx-layer" pointer-events="auto">
+        <rect width="100%" height="100%" fill="transparent" @click="edgeCtx.open = false" @contextmenu.prevent="edgeCtx.open = false" />
+        <g class="cde-ctx cde-edgectx" :transform="`translate(${edgeCtx.x}, ${edgeCtx.y})`" role="menu" @click.stop>
+          <rect
+            width="220"
+            :height="edgeCtxMenuH"
+            rx="8"
+            :fill="chromePanelFill"
+            :stroke="chromePanelStroke"
+            filter="url(#cde-svg-menu-shadow)"
+          />
+          <g style="cursor: pointer" transform="translate(0, 4)" @click.stop="openEdgeEditor(edgeCtx.edgeId, edgeCtx.x, edgeCtx.y, 'overlay')">
+            <rect width="220" height="36" fill="transparent" />
+            <text x="12" y="24" font-size="12" :fill="chromeTextFill">
+              {{ locale === 'en' ? 'Edit edge' : '编辑连线' }}
+            </text>
+          </g>
+          <g style="cursor: pointer" transform="translate(0, 42)" @click.stop="deleteEdge(edgeCtx.edgeId)">
+            <rect width="220" height="36" fill="transparent" />
+            <text x="12" y="24" font-size="12" fill="#b91c1c">
+              {{ locale === 'en' ? 'Delete edge' : '删除连线' }}
+            </text>
+          </g>
+        </g>
+      </g>
+    </svg>
       <div
         v-if="edgeEditor.open && selectedEdge"
         class="cde-ctx cde-edgeedit"
@@ -3608,6 +3930,24 @@ function deleteClass(classId: string): void {
   --canvas-bg: #1a1b1f;
 }
 
+.cde-viewport-shell {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.cde-viewport.cde-root-svg {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: block;
+  overflow: visible;
+  cursor: default;
+  touch-action: none;
+}
+
 .cde-viewport {
   flex: 1;
   min-height: 0;
@@ -3615,6 +3955,13 @@ function deleteClass(classId: string): void {
   overflow: hidden;
   cursor: default;
   touch-action: none;
+}
+
+.cde-svg-copy-feedback[data-kind='ok'] {
+  fill: #15803d;
+}
+.cde-svg-copy-feedback[data-kind='err'] {
+  fill: #b91c1c;
 }
 .cde-model-source-error {
   position: absolute;
@@ -3649,47 +3996,11 @@ function deleteClass(classId: string): void {
 .cde-viewport--panning {
   cursor: grabbing;
 }
-.cde-viewport--marquee .cde-svg .cde-svg-bg {
+.cde-viewport--marquee .cde-svg-bg {
   cursor: crosshair;
 }
 .cde-viewport--dragging .cde-class-body {
   cursor: move;
-}
-
-.cde-world {
-  position: relative;
-  display: inline-block;
-  transform-origin: 0 0;
-}
-
-.cde-grid {
-  position: absolute;
-  left: -100000px;
-  top: -100000px;
-  width: 200000px;
-  height: 200000px;
-  pointer-events: none;
-  z-index: 0;
-  background-color: var(--uml-paper-bg, #f8fafc);
-  background-image: linear-gradient(
-      to right,
-      var(--uml-grid-major, rgba(15, 23, 42, 0.07)) 1px,
-      transparent 1px
-    ),
-    linear-gradient(to bottom, var(--uml-grid-major, rgba(15, 23, 42, 0.07)) 1px, transparent 1px);
-  background-size: 24px 24px;
-}
-:root[data-theme='dark'] .cde-grid {
-  --uml-paper-bg: #1c2028;
-  --uml-grid-major: rgba(236, 239, 244, 0.07);
-}
-
-.cde-svg {
-  position: relative;
-  z-index: 1;
-  display: block;
-  /* Allow class groups with negative x/y to remain visible instead of clipping at svg viewport origin. */
-  overflow: visible;
 }
 
 .cde-svg-bg {
@@ -3956,6 +4267,23 @@ function deleteClass(classId: string): void {
   background: var(--editor-bg, #fff);
   border: 1px solid var(--border, #ccc);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.cde-root-svg .cde-ctx {
+  position: static;
+  display: block;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cde-edgeedit.cde-ctx,
+.cde-addctx {
+  position: absolute;
 }
 .cde-ctx button {
   font: inherit;
