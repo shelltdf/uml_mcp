@@ -89,6 +89,8 @@ export type MvCodespaceBaseRelation = 'generalization' | 'realization';
 
 /** 方法语义细分（用于构造/析构/仿函数/操作符等文档化标记） */
 export type MvCodespaceMethodKind = 'normal' | 'constructor' | 'destructor' | 'functor' | 'operator';
+/** 方法参数传递方式 */
+export type MvCodespaceMethodParamPassMode = 'value' | 'reference' | 'pointer';
 /** 字段访问器策略（私有字段 + get/set 包装语义） */
 export type MvCodespaceFieldAccessor = 'none' | 'get' | 'set' | 'getset';
 /** Property 访问器可见性 */
@@ -121,6 +123,16 @@ export interface MvCodespaceClassMember {
   notes?: string;
 }
 
+/** Classifier 方法参数 */
+export interface MvCodespaceMethodParam {
+  name: string;
+  type?: string;
+  /** 值传递 / 引用 / 指针 */
+  passMode?: MvCodespaceMethodParamPassMode;
+  isConst?: boolean;
+  notes?: string;
+}
+
 /** Classifier 方法 */
 export interface MvCodespaceClassMethod {
   name: string;
@@ -129,6 +141,7 @@ export interface MvCodespaceClassMethod {
   virtual?: boolean;
   methodKind?: MvCodespaceMethodKind;
   operatorSymbol?: string;
+  params?: MvCodespaceMethodParam[];
   typeFromAssociation?: boolean;
   type?: string;
   signature?: string;
@@ -139,6 +152,8 @@ export interface MvCodespaceClassMethod {
 export interface MvCodespaceClassEnum {
   name: string;
   enumGroup?: string;
+  /** 字面量值（如 C++ 枚举项显式赋值） */
+  value?: string;
   type?: string;
   notes?: string;
 }

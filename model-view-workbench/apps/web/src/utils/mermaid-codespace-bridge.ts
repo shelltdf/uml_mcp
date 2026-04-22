@@ -102,20 +102,39 @@ function fieldToAttrLine(m: MvCodespaceClassMember): string {
 
 function enumToLine(m: MvCodespaceClassEnum): string {
   const n = (m.name ?? '').trim() || 'ENUM';
-  const ty = (m.type ?? '').trim();
+  const val = (m.value ?? m.type ?? '').trim();
   const grp = (m.enumGroup ?? '').trim();
-  const body = ty ? `${n}: ${ty}` : n;
+  const body = val ? `${n} = ${val}` : n;
   return grp ? `[${grp}] ${body}` : body;
+}
+
+function methodParamsToText(m: MvCodespaceClassMethod): string {
+  if (!m.params?.length) return '';
+  return m.params
+    .map((p, i) => {
+      const name = (p.name ?? '').trim() || `arg${i + 1}`;
+      const type = (p.type ?? '').trim() || 'any';
+      const cst = p.isConst ? 'const ' : '';
+      const pass = p.passMode === 'reference' ? '&' : p.passMode === 'pointer' ? '*' : '';
+      return `${cst}${type}${pass} ${name}`.trim();
+    })
+    .join(', ');
 }
 
 function methodToLine(m: MvCodespaceClassMethod): string {
   const lead = visLead(m.visibility);
   const st = m.static ? '$' : '';
   const sig = (m.signature ?? '').trim();
+  const ptxt = methodParamsToText(m);
   const ret = (m.type ?? '').trim();
   const kind = (m.methodKind ?? 'normal').trim();
   const kindPrefix =
     kind && kind !== 'normal' ? `[${kind}] ` : '';
+  if (ptxt) {
+    const n = (m.name ?? '').trim() || 'method';
+    const s = `${n}(${ptxt})`;
+    return ret ? `${lead}${st}${kindPrefix}${s}: ${ret}`.trim() : `${lead}${st}${kindPrefix}${s}`.trim();
+  }
   if (sig) {
     const s = sig.startsWith(m.name ?? '') ? sig : `${m.name}${sig.startsWith('(') ? '' : ' '}${sig}`;
     return ret ? `${lead}${st}${kindPrefix}${s}: ${ret}`.trim() : `${lead}${st}${kindPrefix}${s}`.trim();

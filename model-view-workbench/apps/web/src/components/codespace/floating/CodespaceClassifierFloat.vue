@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, watch } from 'vue';
+import { computed, inject, ref, watch } from 'vue';
 import type {
   MvCodespaceAccessorVisibility,
   MvCodespaceClassEnum,
@@ -8,6 +8,8 @@ import type {
   MvCodespaceClassifier,
   MvCodespaceClassifierBase,
   MvCodespaceMethodKind,
+  MvCodespaceMethodParam,
+  MvCodespaceMethodParamPassMode,
   MvCodespaceProperty,
   MvModelCodespacePayload,
 } from '@mvwb/core';
@@ -45,6 +47,38 @@ const MEMBER_TYPE_OPTIONS: readonly string[] = [
   'unknown',
 ];
 const OPERATOR_SYMBOL_OPTIONS = ['+', '-', '*', '/', '%', '==', '!=', '<', '>', '<=', '>=', '[]', '()'] as const;
+const METHOD_PARAM_PASS_MODES: readonly MvCodespaceMethodParamPassMode[] = ['value', 'reference', 'pointer'];
+
+type SpecialMethodTemplate = {
+  id: string;
+  category: string;
+  label: string;
+  method: Omit<MvCodespaceClassMethod, 'name' | 'notes'> & { name: string };
+};
+
+const SPECIAL_METHOD_TEMPLATES: readonly SpecialMethodTemplate[] = [
+  { id: 'ctor-default', category: '构造/析构', label: '默认构造函数', method: { name: 'constructor', methodKind: 'constructor', type: 'void', params: [] } },
+  {
+    id: 'ctor-copy',
+    category: '构造/析构',
+    label: '拷贝构造函数',
+    method: { name: 'constructor', methodKind: 'constructor', type: 'void', params: [{ name: 'other', type: 'Self', passMode: 'reference', isConst: true }] },
+  },
+  { id: 'dtor', category: '构造/析构', label: '析构函数', method: { name: 'destructor', methodKind: 'destructor', type: 'void', params: [] } },
+  {
+    id: 'op-eq',
+    category: '运算符',
+    label: 'operator=',
+    method: { name: 'operatorAssign', methodKind: 'operator', operatorSymbol: '=', type: 'Self&', params: [{ name: 'other', type: 'Self', passMode: 'reference', isConst: true }] },
+  },
+  {
+    id: 'op-call',
+    category: '运算符',
+    label: 'operator()',
+    method: { name: 'operatorCall', methodKind: 'operator', operatorSymbol: '()', type: 'void', params: [] },
+  },
+  { id: 'dispose', category: '生命周期', label: 'Dispose', method: { name: 'Dispose', methodKind: 'normal', type: 'void', params: [] } },
+];
 
 const props = defineProps<{
   open: boolean;
@@ -74,6 +108,16 @@ const fieldRows = computed(() =>
 const methodRows = computed(() => (selectedClass.value?.methods ?? []).map((mem, idx) => ({ mem, idx })));
 const enumRows = computed(() => (selectedClass.value?.enums ?? []).map((mem, idx) => ({ mem, idx })));
 const propertyRows = computed(() => selectedClass.value?.properties ?? []);
+const specialMethodPickerOpen = ref(false);
+const specialMethodTemplateGroups = computed(() => {
+  const groups = new Map<string, SpecialMethodTemplate[]>();
+  for (const t of SPECIAL_METHOD_TEMPLATES) {
+    const arr = groups.get(t.category) ?? [];
+    arr.push(t);
+    groups.set(t.category, arr);
+  }
+  return [...groups.entries()].map(([category, templates]) => ({ category, templates }));
+});
 
 const classifierNameById = computed(() => {
   const m = new Map<string, string>();
@@ -257,9 +301,14 @@ function normalizeMethodMember(mem: MvCodespaceClassMethod): void {
   delete m.accessor;
   delete m.enumGroup;
   if (!mem.methodKind) mem.methodKind = 'normal';
+  if (!mem.params && mem.signature) {
+    mem.params = parseParamsFromSignature(mem.signature);
+  }
   if (!mem.signature) mem.signature = '()';
   if (!mem.type) mem.type = 'int';
   if (mem.methodKind !== 'operator') delete mem.operatorSymbol;
+  if (!mem.params) mem.params = [];
+  mem.signature = buildMethodSignature(mem);
 }
 
 function normalizeEnumMember(mem: MvCodespaceClassEnum): void {
@@ -271,6 +320,49 @@ function normalizeEnumMember(mem: MvCodespaceClassEnum): void {
   delete m.virtual;
   delete m.static;
   delete m.typeFromAssociation;
+  if (!mem.value && mem.type) mem.value = mem.type;
+  if (mem.value && !mem.type) mem.type = mem.value;
+}
+
+function parseParamsFromSignature(signature: string): MvCodespaceMethodParam[] {
+  const s = signature.trim();
+  const l = s.indexOf('(');
+  const r = s.lastIndexOf(')');
+  if (l < 0 || r <= l) return [];
+  const body = s.slice(l + 1, r).trim();
+  if (!body) return [];
+  return body
+    .split(',')
+    .map((raw, i) => {
+      const token = raw.trim().replace(/\s+/g, ' ');
+      if (!token) return null;
+      const isConst = /\bconst\b/.test(token);
+      const passMode: MvCodespaceMethodParamPassMode = token.includes('*')
+        ? 'pointer'
+        : token.includes('&')
+          ? 'reference'
+          : 'value';
+      const cleaned = token.replace(/\bconst\b/g, '').replace(/[&*]/g, '').trim();
+      const parts = cleaned.split(' ').filter(Boolean);
+      const name = parts.pop() ?? `arg${i + 1}`;
+      const type = parts.join(' ').trim() || 'int';
+      return { name, type, passMode, isConst };
+    })
+    .filter((x): x is MvCodespaceMethodParam => !!x);
+}
+
+function buildMethodSignature(mem: MvCodespaceClassMethod): string {
+  const params = mem.params ?? [];
+  const body = params
+    .map((p, i) => {
+      const name = (p.name ?? '').trim() || `arg${i + 1}`;
+      const type = (p.type ?? '').trim() || 'int';
+      const pass = p.passMode === 'reference' ? '&' : p.passMode === 'pointer' ? '*' : '';
+      const cst = p.isConst ? 'const ' : '';
+      return `${cst}${type}${pass} ${name}`.trim();
+    })
+    .join(', ');
+  return `(${body})`;
 }
 
 function setClassTemplateParams(raw: string) {
@@ -376,8 +468,26 @@ function addMethodMember() {
     if (!c) return;
     if (!c.methods) c.methods = [];
     const name = ensureUniqueClassifierItemName(c, 'method');
-    c.methods.push({ name, methodKind: 'normal', signature: '()', type: 'int' });
+    c.methods.push({ name, methodKind: 'normal', signature: '()', params: [], type: 'int' });
   });
+}
+
+function addSpecialMethodFromTemplate(t: SpecialMethodTemplate) {
+  props.runPatch((d) => {
+    const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
+    if (!c) return;
+    if (!c.methods) c.methods = [];
+    const name = ensureUniqueClassifierItemName(c, t.method.name);
+    const method: MvCodespaceClassMethod & Record<string, unknown> = {
+      ...JSON.parse(JSON.stringify(t.method)),
+      name,
+      notes: '',
+      __specialTemplateId: t.id,
+    };
+    normalizeMethodMember(method);
+    c.methods.push(method);
+  });
+  specialMethodPickerOpen.value = false;
 }
 
 function addEnumMember() {
@@ -386,7 +496,7 @@ function addEnumMember() {
     if (!c) return;
     if (!c.enums) c.enums = [];
     const name = ensureUniqueClassifierItemName(c, 'ENUM');
-    c.enums.push({ name, enumGroup: 'default' });
+    c.enums.push({ name, enumGroup: 'default', value: '0' });
   });
 }
 
@@ -439,10 +549,58 @@ function patchMethodMember(miIdx: number, part: Partial<MvCodespaceClassMethod>)
   });
 }
 
+function methodIsTemplateLocked(mem: MvCodespaceClassMethod): boolean {
+  return typeof (mem as Record<string, unknown>).__specialTemplateId === 'string';
+}
+
+function addMethodParam(miIdx: number) {
+  props.runPatch((d) => {
+    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.[miIdx];
+    if (!mem) return;
+    if (methodIsTemplateLocked(mem)) return;
+    if (!mem.params) mem.params = [];
+    mem.params.push({ name: `arg${(mem.params?.length ?? 0) + 1}`, type: 'int', passMode: 'value' });
+    normalizeMethodMember(mem);
+  });
+}
+
+function patchMethodParam(
+  miIdx: number,
+  pi: number,
+  part: Partial<MvCodespaceMethodParam>,
+) {
+  props.runPatch((d) => {
+    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.[miIdx];
+    if (!mem) return;
+    if (methodIsTemplateLocked(mem)) return;
+    if (!mem.params) mem.params = [];
+    const p = mem.params[pi];
+    if (!p) return;
+    Object.assign(p, part);
+    if (!p.name) p.name = `arg${pi + 1}`;
+    normalizeMethodMember(mem);
+  });
+}
+
+function removeMethodParam(miIdx: number, pi: number) {
+  props.runPatch((d) => {
+    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.[miIdx];
+    if (!mem) return;
+    if (methodIsTemplateLocked(mem)) return;
+    mem.params?.splice(pi, 1);
+    normalizeMethodMember(mem);
+  });
+}
+
 function patchEnumMember(miIdx: number, part: Partial<MvCodespaceClassEnum>) {
   props.runPatch((d) => {
     const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.enums?.[miIdx];
     if (!mem) return;
+    if ('value' in part) {
+      const v = String(part.value ?? '').trim();
+      part.type = v || undefined;
+      part.value = v || undefined;
+    }
     Object.assign(mem, part);
     normalizeEnumMember(mem);
   });
@@ -488,6 +646,11 @@ watch(associatedTypeCandidates, (next, prev) => {
     if (propertyRows.value[pi]?.typeFromAssociation !== true) continue;
     const t = resolveRowAssocType(propertyRows.value[pi]?.associatedClassifierId);
     if (t) patchProperty(pi, { type: t });
+  }
+  for (const r of methodRows.value) {
+    if (r.mem.typeFromAssociation !== true) continue;
+    const t = resolveRowAssocType(undefined);
+    if (t) patchMethodMember(r.idx, { type: t });
   }
 }, { immediate: true });
 </script>
@@ -659,6 +822,7 @@ watch(associatedTypeCandidates, (next, prev) => {
               <select
                 :value="mem.type ?? 'int'"
                 :title="csMsg.flClsMemberTypeSigTitle"
+                :disabled="mem.typeFromAssociation === true"
                 @change="patchFieldMember(idx, { type: ($event.target as HTMLSelectElement).value })"
               >
                 <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'mt-' + t" :value="t">{{ t }}</option>
@@ -755,6 +919,7 @@ watch(associatedTypeCandidates, (next, prev) => {
               <select
                 :value="prop.type ?? 'int'"
                 :title="csMsg.flClsMemberTypeSigTitle"
+                :disabled="prop.typeFromAssociation === true"
                 @change="patchProperty(pi, { type: ($event.target as HTMLSelectElement).value })"
               >
                 <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'pt-' + t" :value="t">{{ t }}</option>
@@ -848,6 +1013,7 @@ watch(associatedTypeCandidates, (next, prev) => {
             <th>return</th>
             <th>virtual</th>
             <th>operator</th>
+            <th>notes</th>
             <th></th>
           </tr>
         </thead>
@@ -857,24 +1023,46 @@ watch(associatedTypeCandidates, (next, prev) => {
               <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchMethodMember(idx, { name: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
-              <input :value="mem.visibility ?? ''" :title="csMsg.flClsMemberVisTitle" @input="patchMethodMember(idx, { visibility: ($event.target as HTMLInputElement).value })" />
+              <select
+                :value="mem.visibility ?? 'public'"
+                :title="csMsg.flClsMemberVisTitle"
+                :disabled="methodIsTemplateLocked(mem)"
+                @change="patchMethodMember(idx, { visibility: ($event.target as HTMLSelectElement).value })"
+              >
+                <option v-for="v in MEMBER_VIS_OPTIONS" :key="'mvm-' + v" :value="v">{{ v }}</option>
+              </select>
             </td>
             <td>
               <select
                 :value="mem.methodKind ?? 'normal'"
                 :title="csMsg.flClsMemberMethodKindTitle"
-                @change="patchMethodMember(idx, { methodKind: ($event.target as HTMLSelectElement).value as MvCodespaceMethodKind })"
+                disabled
               >
                 <option v-for="mk in METHOD_KINDS" :key="mk" :value="mk">{{ mk }}</option>
               </select>
             </td>
             <td>
-              <input :value="mem.signature ?? '()'" placeholder="(arg: int)" :title="csMsg.flClsMemberTypeSigTitle" @input="patchMethodMember(idx, { signature: ($event.target as HTMLInputElement).value })" />
+              <div class="cs-param-list">
+                <div v-for="(p, pi) in mem.params ?? []" :key="'mp-' + idx + '-' + pi" class="cs-param-row">
+                  <select :value="p.passMode ?? 'value'" :disabled="methodIsTemplateLocked(mem)" @change="patchMethodParam(idx, pi, { passMode: ($event.target as HTMLSelectElement).value as MvCodespaceMethodParamPassMode })">
+                    <option v-for="mode in METHOD_PARAM_PASS_MODES" :key="'pm-' + mode" :value="mode">{{ mode }}</option>
+                  </select>
+                  <input :value="p.type ?? ''" placeholder="type" :disabled="methodIsTemplateLocked(mem)" @input="patchMethodParam(idx, pi, { type: ($event.target as HTMLInputElement).value })" />
+                  <input :value="p.name" placeholder="name" :disabled="methodIsTemplateLocked(mem)" @input="patchMethodParam(idx, pi, { name: ($event.target as HTMLInputElement).value })" />
+                  <label class="cs-check cs-param-const">
+                    <input type="checkbox" :checked="p.isConst === true" :disabled="methodIsTemplateLocked(mem)" @change="patchMethodParam(idx, pi, { isConst: ($event.target as HTMLInputElement).checked })" />
+                    <span>const</span>
+                  </label>
+                  <button type="button" class="link-btn" :disabled="methodIsTemplateLocked(mem)" @click="removeMethodParam(idx, pi)">Del</button>
+                </div>
+                <button type="button" class="link-btn" :disabled="methodIsTemplateLocked(mem)" @click="addMethodParam(idx)">+ param</button>
+              </div>
             </td>
             <td>
               <select
                 :value="mem.type ?? 'int'"
                 :title="csMsg.flClsMemberTypeSigTitle"
+                :disabled="mem.typeFromAssociation === true || methodIsTemplateLocked(mem)"
                 @change="patchMethodMember(idx, { type: ($event.target as HTMLSelectElement).value })"
               >
                 <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'mr-' + t" :value="t">{{ t }}</option>
@@ -884,18 +1072,22 @@ watch(associatedTypeCandidates, (next, prev) => {
               </select>
             </td>
             <td class="cs-td-center">
-              <input type="checkbox" :checked="mem.virtual === true" :title="csMsg.flClsMemberVirtualTitle" @change="patchMethodMember(idx, { virtual: ($event.target as HTMLInputElement).checked })" />
+              <input type="checkbox" :checked="mem.virtual === true" :title="csMsg.flClsMemberVirtualTitle" :disabled="methodIsTemplateLocked(mem)" @change="patchMethodMember(idx, { virtual: ($event.target as HTMLInputElement).checked })" />
             </td>
             <td>
               <template v-if="(mem.methodKind ?? 'normal') === 'operator'">
                 <select
                   :value="mem.operatorSymbol ?? '()'"
                   :title="csMsg.flClsMemberOperatorTitle"
+                  :disabled="methodIsTemplateLocked(mem)"
                   @change="patchMethodMember(idx, { operatorSymbol: ($event.target as HTMLSelectElement).value })"
                 >
                   <option v-for="op in OPERATOR_SYMBOL_OPTIONS" :key="op" :value="op">{{ op }}</option>
                 </select>
               </template>
+            </td>
+            <td>
+              <input :value="mem.notes ?? ''" placeholder="notes" @input="patchMethodMember(idx, { notes: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
               <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeMethodMember(idx)">
@@ -908,27 +1100,46 @@ watch(associatedTypeCandidates, (next, prev) => {
       <button type="button" class="add-row" :title="csMsg.flClsAddMethodTitle" @click="addMethodMember">
         {{ csMsg.flClsAddMethodLabel }}
       </button>
+      <button type="button" class="add-row" title="添加特殊方法模板" @click="specialMethodPickerOpen = true">
+        ＋ 特殊方法
+      </button>
+      <dialog v-if="specialMethodPickerOpen" open class="cs-special-method-dialog">
+        <div class="cs-special-picker">
+          <div class="cs-special-picker__header">
+            <strong>特殊方法模板</strong>
+            <button type="button" class="link-btn" @click="specialMethodPickerOpen = false">Close</button>
+          </div>
+          <details v-for="group in specialMethodTemplateGroups" :key="'smg-' + group.category" open>
+            <summary>{{ group.category }}</summary>
+            <div class="cs-special-picker__group">
+              <button v-for="tpl in group.templates" :key="tpl.id" type="button" class="link-btn" @click="addSpecialMethodFromTemplate(tpl)">
+                {{ tpl.label }}
+              </button>
+            </div>
+          </details>
+        </div>
+      </dialog>
 
       <h5 class="cs-subh">{{ csMsg.flClsEnumLiteralsHeading }}</h5>
       <table class="cs-table">
         <thead>
           <tr>
-            <th>name</th>
-            <th>value/type</th>
             <th>group</th>
+            <th>name</th>
+            <th>value</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="{ mem, idx } in enumRows" :key="'en-' + idx">
             <td>
+              <input :value="mem.enumGroup ?? ''" placeholder="EnumType" title="enum group" @input="patchEnumMember(idx, { enumGroup: ($event.target as HTMLInputElement).value })" />
+            </td>
+            <td>
               <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchEnumMember(idx, { name: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
-              <input :value="mem.type ?? ''" :title="csMsg.flClsMemberTypeSigTitle" @input="patchEnumMember(idx, { type: ($event.target as HTMLInputElement).value })" />
-            </td>
-            <td>
-              <input :value="mem.enumGroup ?? ''" placeholder="default" title="enum group" @input="patchEnumMember(idx, { enumGroup: ($event.target as HTMLInputElement).value })" />
+              <input :value="mem.value ?? mem.type ?? ''" :title="csMsg.flClsMemberTypeSigTitle" @input="patchEnumMember(idx, { value: ($event.target as HTMLInputElement).value })" />
             </td>
             <td>
               <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeEnumMember(idx)">

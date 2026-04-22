@@ -299,6 +299,7 @@ const CODESPACE_CLASSIFIER_KINDS = new Set(['class', 'interface', 'struct']);
 const CODESPACE_BASE_RELATIONS = new Set(['generalization', 'realization']);
 const CODESPACE_MEMBER_KINDS = new Set(['field', 'method', 'enumLiteral']);
 const CODESPACE_METHOD_KINDS = new Set(['normal', 'constructor', 'destructor', 'functor', 'operator']);
+const CODESPACE_METHOD_PARAM_PASS_MODES = new Set(['value', 'reference', 'pointer']);
 const CODESPACE_FIELD_ACCESSORS = new Set(['none', 'get', 'set', 'getset']);
 const CODESPACE_ACCESSOR_VIS = new Set(['public', 'protected', 'private', 'package']);
 const CODESPACE_ENGLISH_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -355,6 +356,38 @@ function codespaceForbidKeys(
   for (const k of Object.keys(mo)) {
     if (forbidden.has(k)) {
       return { ok: false, message: `${mp}: property "${k}" is not allowed in this entry` };
+    }
+  }
+  return { ok: true };
+}
+
+function validateCodespaceMethodParams(
+  mo: Record<string, unknown>,
+  mp: string,
+): { ok: true } | { ok: false; message: string } {
+  if (!('params' in mo) || mo.params === undefined) return { ok: true };
+  if (!Array.isArray(mo.params)) {
+    return { ok: false, message: `${mp}.params must be an array when present` };
+  }
+  for (let i = 0; i < mo.params.length; i++) {
+    const po = mo.params[i];
+    const pp = `${mp}.params[${i}]`;
+    if (!po || typeof po !== 'object' || Array.isArray(po)) {
+      return { ok: false, message: `${pp} must be an object` };
+    }
+    const p = po as Record<string, unknown>;
+    if (typeof p.name !== 'string' || !p.name.trim()) {
+      return { ok: false, message: `${pp}.name must be a non-empty string` };
+    }
+    const ps = validateCodespaceOptionalString(p, pp, ['type', 'passMode', 'notes']);
+    if (!ps.ok) return ps;
+    if ('passMode' in p && p.passMode !== undefined) {
+      if (typeof p.passMode !== 'string' || !CODESPACE_METHOD_PARAM_PASS_MODES.has(p.passMode)) {
+        return { ok: false, message: `${pp}.passMode must be one of: value, reference, pointer` };
+      }
+    }
+    if ('isConst' in p && p.isConst !== undefined && typeof p.isConst !== 'boolean') {
+      return { ok: false, message: `${pp}.isConst must be a boolean when present` };
     }
   }
   return { ok: true };
@@ -449,6 +482,8 @@ function validateCodespaceClassifierMethod(
       };
     }
   }
+  const pv = validateCodespaceMethodParams(mo, mp);
+  if (!pv.ok) return pv;
   return { ok: true };
 }
 
@@ -481,7 +516,7 @@ function validateCodespaceClassifierEnum(
   if (typeof mo.name !== 'string' || !mo.name.trim()) {
     return { ok: false, message: `${mp}.name must be a non-empty string` };
   }
-  const ms = validateCodespaceOptionalString(mo, mp, ['type', 'enumGroup', 'notes']);
+  const ms = validateCodespaceOptionalString(mo, mp, ['type', 'enumGroup', 'value', 'notes']);
   if (!ms.ok) return ms;
   return { ok: true };
 }

@@ -1061,131 +1061,6 @@ function autoLayoutClasses(): void {
   const classes = state.classes;
   if (!classes.length) return;
   const byId = new Map(classes.map((c) => [c.id, c] as const));
-  const runId = `layout-${Date.now()}`;
-  const samplePositions = () =>
-    classes.slice(0, 8).map((c) => ({
-      id: c.id,
-      name: c.name,
-      x: positions[c.id]?.x ?? null,
-      y: positions[c.id]?.y ?? null,
-    }));
-  const countClassOverlaps = (pad = 0): number => {
-    let n = 0;
-    for (let i = 0; i < classes.length; i++) {
-      const a = classes[i]!;
-      const pa = positions[a.id];
-      if (!pa) continue;
-      const sa = classBoxSize(a);
-      for (let j = i + 1; j < classes.length; j++) {
-        const b = classes[j]!;
-        const pb = positions[b.id];
-        if (!pb) continue;
-        const sb = classBoxSize(b);
-        const ox = Math.min(pa.x + sa.w + pad, pb.x + sb.w + pad) - Math.max(pa.x - pad, pb.x - pad);
-        const oy = Math.min(pa.y + sa.h + pad, pb.y + sb.h + pad) - Math.max(pa.y - pad, pb.y - pad);
-        if (ox > 0 && oy > 0) n++;
-      }
-    }
-    return n;
-  };
-  const estimateEdgeCrossings = (): { crossings: number; total: number; byKind: Record<string, number> } => {
-    const segs: Array<{ kind: string; x1: number; y1: number; x2: number; y2: number }> = [];
-    const byKind: Record<string, number> = {};
-    for (const l of state.links) {
-      const p1 = positions[l.from];
-      const p2 = positions[l.to];
-      if (!p1 || !p2) continue;
-      const c1 = byId.get(l.from);
-      const c2 = byId.get(l.to);
-      if (!c1 || !c2) continue;
-      const s1 = classBoxSize(c1);
-      const s2 = classBoxSize(c2);
-      const x1 = p1.x + s1.w / 2;
-      const y1 = p1.y + s1.h / 2;
-      const x2 = p2.x + s2.w / 2;
-      const y2 = p2.y + s2.h / 2;
-      segs.push({ kind: l.kind, x1, y1, x2, y2 });
-      byKind[l.kind] = (byKind[l.kind] ?? 0) + 1;
-    }
-    const ccw = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number): number =>
-      (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-    const intersect = (a: (typeof segs)[number], b: (typeof segs)[number]): boolean => {
-      if (a.x1 === b.x1 && a.y1 === b.y1) return false;
-      if (a.x1 === b.x2 && a.y1 === b.y2) return false;
-      if (a.x2 === b.x1 && a.y2 === b.y1) return false;
-      if (a.x2 === b.x2 && a.y2 === b.y2) return false;
-      const d1 = ccw(a.x1, a.y1, a.x2, a.y2, b.x1, b.y1);
-      const d2 = ccw(a.x1, a.y1, a.x2, a.y2, b.x2, b.y2);
-      const d3 = ccw(b.x1, b.y1, b.x2, b.y2, a.x1, a.y1);
-      const d4 = ccw(b.x1, b.y1, b.x2, b.y2, a.x2, a.y2);
-      return d1 * d2 < 0 && d3 * d4 < 0;
-    };
-    let crossings = 0;
-    for (let i = 0; i < segs.length; i++) {
-      for (let j = i + 1; j < segs.length; j++) {
-        if (intersect(segs[i]!, segs[j]!)) crossings++;
-      }
-    }
-    return { crossings, total: segs.length, byKind };
-  };
-  const estimateEdgeClassOverlaps = (): { overlaps: number; totalEdges: number } => {
-    const rects = classes
-      .map((c) => {
-        const p = positions[c.id];
-        if (!p) return null;
-        const s = classBoxSize(c);
-        return { id: c.id, x: p.x, y: p.y, w: s.w, h: s.h };
-      })
-      .filter(Boolean) as Array<{ id: string; x: number; y: number; w: number; h: number }>;
-    let overlaps = 0;
-    let totalEdges = 0;
-    for (const l of state.links) {
-      const p1 = positions[l.from];
-      const p2 = positions[l.to];
-      const c1 = byId.get(l.from);
-      const c2 = byId.get(l.to);
-      if (!p1 || !p2 || !c1 || !c2) continue;
-      totalEdges++;
-      const s1 = classBoxSize(c1);
-      const s2 = classBoxSize(c2);
-      const x1 = p1.x + s1.w / 2;
-      const y1 = p1.y + s1.h / 2;
-      const x2 = p2.x + s2.w / 2;
-      const y2 = p2.y + s2.h / 2;
-      for (const r of rects) {
-        if (r.id === l.from || r.id === l.to) continue;
-        const left = r.x;
-        const right = r.x + r.w;
-        const top = r.y;
-        const bottom = r.y + r.h;
-        const minX = Math.min(x1, x2);
-        const maxX = Math.max(x1, x2);
-        const minY = Math.min(y1, y2);
-        const maxY = Math.max(y1, y2);
-        if (maxX < left || minX > right || maxY < top || minY > bottom) continue;
-        overlaps++;
-        break;
-      }
-    }
-    return { overlaps, totalEdges };
-  };
-  const summarizeDirectionalViolations = (): { violations: number; links: Array<{ id: string; kind: string; from: string; to: string; fromX: number; toX: number }> } => {
-    const links: Array<{ id: string; kind: string; from: string; to: string; fromX: number; toX: number }> = [];
-    let violations = 0;
-    for (const l of state.links) {
-      if (l.kind !== 'association' && l.kind !== 'dependency') continue;
-      const p1 = positions[l.from];
-      const p2 = positions[l.to];
-      const c1 = byId.get(l.from);
-      if (!p1 || !p2 || !c1) continue;
-      const minGap = l.kind === 'dependency' ? 44 : 56;
-      const minToX = p1.x + classBoxSize(c1).w + minGap;
-      const bad = p2.x < minToX;
-      if (bad) violations++;
-      links.push({ id: l.id, kind: l.kind, from: l.from, to: l.to, fromX: p1.x, toX: p2.x });
-    }
-    return { violations, links };
-  };
   const enforceDirectionalConstraintsFinal = (): void => {
     const assocGap = 56;
     const depGap = 44;
@@ -1207,14 +1082,8 @@ function autoLayoutClasses(): void {
       if (!moved) break;
     }
   };
-  // #region agent log
-  fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H1',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:start',message:'auto layout start',data:{classes:classes.length,links:state.links.length,layoutBeautyMode:layoutBeautyMode.value},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   normalizeDuplicateClassIds(false);
   collapseOverlappingDuplicateClasses(false);
-  // #region agent log
-  fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H2',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:afterNormalization',message:'after id/duplicate normalization',data:{classes:state.classes.length,overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18),edgeCross:estimateEdgeCrossings(),edgeClassOverlap:estimateEdgeClassOverlaps(),sample:samplePositions()},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   const beauty = (() => {
     if (layoutBeautyMode.value === 'fast') {
       return {
@@ -1538,12 +1407,6 @@ function autoLayoutClasses(): void {
     improveEdgeAesthetics();
     resolveClassBoxOverlaps();
     enforceDirectionalConstraintsFinal();
-    // #region agent log
-    fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H8',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:gridFinalDirection',message:'grid final direction enforcement',data:{direction:summarizeDirectionalViolations(),overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    // #region agent log
-    fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H3',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:gridEnd',message:'grid branch layout end',data:{overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18),edgeCross:estimateEdgeCrossings(),edgeClassOverlap:estimateEdgeClassOverlaps(),direction:summarizeDirectionalViolations(),sample:samplePositions()},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     pushPayload();
     fitAll();
     void nextTick(() => fitAll());
@@ -1760,12 +1623,6 @@ function autoLayoutClasses(): void {
   improveEdgeAesthetics();
   resolveClassBoxOverlaps();
   enforceDirectionalConstraintsFinal();
-  // #region agent log
-  fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H8',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:treeFinalDirection',message:'tree final direction enforcement',data:{direction:summarizeDirectionalViolations(),overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18)},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
-  // #region agent log
-  fetch('http://127.0.0.1:7369/ingest/ba5a81d9-77cb-4125-8c41-edf71d019e9a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e2d57c'},body:JSON.stringify({sessionId:'e2d57c',runId,hypothesisId:'H4',location:'UmlClassDiagramCanvas.vue:autoLayoutClasses:treeEnd',message:'tree branch layout end',data:{overlap0:countClassOverlaps(0),overlapPad18:countClassOverlaps(18),edgeCross:estimateEdgeCrossings(),edgeClassOverlap:estimateEdgeClassOverlaps(),sample:samplePositions()},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
 
   pushPayload();
   fitAll();
