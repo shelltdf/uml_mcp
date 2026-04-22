@@ -190,10 +190,10 @@ async function copyRenderDebugInfo() {
   const text = JSON.stringify(renderDebugSnapshot.value, null, 2);
   try {
     await navigator.clipboard.writeText(text);
-    window.alert('绘制信息已复制到剪贴板');
+    window.alert('Drawing info copied to clipboard.');
   }
   catch {
-    window.alert('复制失败：当前环境不支持剪贴板写入');
+    window.alert('Copy failed: clipboard write is not supported in this environment.');
   }
 }
 
@@ -452,10 +452,10 @@ onUnmounted(() => {
       <button
         type="button"
         class="cs-svg-hud-btn cs-svg-hud-wide"
-        title="复制当前绘制信息到系统剪贴板"
+        title="Copy current drawing info to clipboard"
         @click="copyRenderDebugInfo"
       >
-        复制绘制信息
+        Copy drawing info
       </button>
     </div>
 

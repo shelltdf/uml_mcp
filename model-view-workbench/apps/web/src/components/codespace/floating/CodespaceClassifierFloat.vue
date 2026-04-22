@@ -936,16 +936,16 @@ watch(
   >
     <template v-if="selectedClass">
       <div class="cde-float-tabs">
-        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'basic' }" @click="activeTab = 'basic'">基础信息</button>
-        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'bases' }" @click="activeTab = 'bases'">继承关系</button>
-        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'internals' }" @click="activeTab = 'internals'">内部类型</button>
-        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'members' }" @click="activeTab = 'members'">成员</button>
-        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'properties' }" @click="activeTab = 'properties'">属性</button>
-        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'methods' }" @click="activeTab = 'methods'">方法</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'basic' }" @click="activeTab = 'basic'">Basic</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'bases' }" @click="activeTab = 'bases'">Inheritance</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'internals' }" @click="activeTab = 'internals'">Internal Types</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'members' }" @click="activeTab = 'members'">Members</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'properties' }" @click="activeTab = 'properties'">Properties</button>
+        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'methods' }" @click="activeTab = 'methods'">Methods</button>
       </div>
 
       <section v-if="activeTab === 'basic'" class="cde-section-card">
-        <h4 class="cde-section-title">基础信息</h4>
+        <h4 class="cde-section-title">Basic</h4>
         <label class="field">
           <span>parentContainer</span>
           <div class="cs-parent-picker-inline">
@@ -966,7 +966,7 @@ watch(
               readonly
             />
             <button type="button" class="cs-parent-picker-btn" title="Pick parent container" @click="openParentPicker">
-              修改
+              Change
             </button>
           </div>
         </label>
@@ -1048,13 +1048,13 @@ watch(
       </section>
 
       <section v-if="activeTab === 'internals'" class="cde-section-card">
-        <h4 class="cde-section-title">内部类型</h4>
+        <h4 class="cde-section-title">Internal Types</h4>
         <div class="cs-actions">
-          <button type="button" class="add-row" title="新增当前类内部的嵌套类" @click="addSubclass">
-            ＋ 内部类
+          <button type="button" class="add-row" title="Add nested class inside current class" @click="addSubclass">
+            + Internal class
           </button>
           <button type="button" class="add-row" :title="csMsg.flClsAddEnumLiteralTitle" @click="addEnumMember">
-            ＋ 内部枚举
+            + Internal enum
           </button>
         </div>
       </section>
@@ -1092,7 +1092,7 @@ watch(
                 </select>
               </td>
               <td>
-                <select class="wide" :value="mem.associatedClassifierId ?? ''" title="与该成员关联的类型端 Classifier（可与类图中不同邻居分别对应）" @change="onFieldMemberAssocClassifierChange(idx, $event)">
+                <select class="wide" :value="mem.associatedClassifierId ?? ''" title="Classifier associated with this member (can differ across neighbors)" @change="onFieldMemberAssocClassifierChange(idx, $event)">
                   <option value="">—</option>
                   <option v-for="cid in classifierOptions" :key="'macf-' + cid" :value="cid">
                     {{ classifierNameById.get(cid) ?? cid }}
@@ -1169,7 +1169,7 @@ watch(
               <select
                 class="wide"
                 :value="mem.associatedClassifierId ?? ''"
-                title="与该成员关联的类型端 Classifier（可与类图中不同邻居分别对应）"
+                title="Classifier associated with this member (can differ across neighbors)"
                 @change="onFieldMemberAssocClassifierChange(idx, $event)"
               >
                 <option value="">—</option>
@@ -1266,7 +1266,7 @@ watch(
               <select
                 class="wide"
                 :value="prop.associatedClassifierId ?? ''"
-                title="与该属性关联的类型端 Classifier"
+                title="Classifier associated with this property"
                 @change="onPropertyAssocClassifierChange(pi, $event)"
               >
                 <option value="">—</option>
@@ -1440,8 +1440,8 @@ watch(
           <button type="button" class="add-row" :title="csMsg.flClsAddMethodTitle" @click="addMethodMember">
             {{ csMsg.flClsAddMethodLabel }}
           </button>
-          <button type="button" class="add-row" title="添加特殊方法模板" @click="specialMethodPickerOpen = true">
-            ＋ 特殊方法
+          <button type="button" class="add-row" title="Add special method template" @click="specialMethodPickerOpen = true">
+            + Special method
           </button>
         </div>
       </section>
@@ -1449,7 +1449,7 @@ watch(
       <dialog v-if="specialMethodPickerOpen" open class="cs-special-method-dialog">
         <div class="cs-special-picker">
           <div class="cs-special-picker__header">
-            <strong>特殊方法模板</strong>
+            <strong>Special method templates</strong>
             <button type="button" class="link-btn" @click="specialMethodPickerOpen = false">Close</button>
           </div>
           <details v-for="group in specialMethodTemplateGroups" :key="'smg-' + group.category" open>
@@ -1466,12 +1466,12 @@ watch(
       <dialog v-if="parentPickerOpen" open class="cs-parent-picker-dialog">
         <div class="cs-special-picker">
           <div class="cs-special-picker__header">
-            <strong>选择父容器</strong>
+            <strong>Select parent container</strong>
             <button type="button" class="link-btn" @click="parentPickerOpen = false">Close</button>
           </div>
           <label class="field">
-            <span>搜索</span>
-            <input v-model="parentSearch" type="text" class="wide" placeholder="搜索 namespace/class..." />
+            <span>Search</span>
+            <input v-model="parentSearch" type="text" class="wide" placeholder="Search namespace/class..." />
           </label>
           <div class="cs-parent-tree" role="tree" aria-label="Parent container tree">
             <details v-for="[mi, items] in groupedClassParentOptions" :key="'pcg-' + mi" open>
@@ -1504,8 +1504,8 @@ watch(
             </details>
           </div>
           <div class="cs-actions">
-            <button type="button" class="add-row" @click="applyParentPicker">确定</button>
-            <button type="button" class="link-btn" @click="parentPickerOpen = false">取消</button>
+            <button type="button" class="add-row" @click="applyParentPicker">Apply</button>
+            <button type="button" class="link-btn" @click="parentPickerOpen = false">Cancel</button>
           </div>
         </div>
       </dialog>
