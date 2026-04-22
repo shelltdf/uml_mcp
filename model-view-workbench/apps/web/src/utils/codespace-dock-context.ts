@@ -46,6 +46,18 @@ function resolveClassBySelection(
   return c;
 }
 
+function resolveEnumBySelection(
+  payload: MvModelCodespacePayload,
+  s: Extract<CsDockSelection, { t: 'enum' }>,
+) {
+  const ns = getNamespaceAtPath(payload, s.mi, s.path);
+  if (!ns) return undefined;
+  if (s.ci === undefined) return ns.enums?.[s.eni];
+  let c = ns.classes?.[s.ci];
+  for (const idx of s.classPath ?? []) c = c?.classes?.[idx];
+  return c?.enums?.[s.eni];
+}
+
 /** 从模块根沿 path 拼面包屑（模块名 › NS › …） */
 function namespaceBreadcrumb(
   payload: MvModelCodespacePayload,
@@ -81,7 +93,7 @@ function formatSummary(s: CsDockSelection, p: MvModelCodespacePayload, M: Codesp
     return c ? M.formatClassLabel(c.name) : M.dockSummaryClassBare;
   }
   if (s.t === 'enum') {
-    const e = getNamespaceAtPath(p, s.mi, s.path)?.enums?.[s.eni];
+    const e = resolveEnumBySelection(p, s);
     return e ? M.formatEnumLabel(e.name) : M.dockSummaryEnumBare;
   }
   if (s.t === 'var') {
@@ -198,7 +210,7 @@ function formatLines(s: CsDockSelection, p: MvModelCodespacePayload, M: Codespac
   }
 
   if (s.t === 'enum') {
-    const e = ns.enums?.[s.eni];
+    const e = resolveEnumBySelection(p, s);
     push(M.dockNodeType, M.dockSummaryEnumBare);
     push(M.dockHierarchy, namespaceBreadcrumb(p, s.mi, s.path, M));
     if (!e) {

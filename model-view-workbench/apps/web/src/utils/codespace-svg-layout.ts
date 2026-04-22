@@ -10,7 +10,7 @@ export type CodespaceSvgPick =
   | { t: 'module'; mi: number }
   | { t: 'ns'; mi: number; path: number[] }
   | { t: 'class'; mi: number; path: number[]; ci: number; classPath?: number[] }
-  | { t: 'enum'; mi: number; path: number[]; eni: number }
+  | { t: 'enum'; mi: number; path: number[]; eni: number; ci?: number; classPath?: number[] }
   | { t: 'var'; mi: number; path: number[]; vi: number }
   | { t: 'fn'; mi: number; path: number[]; fi: number }
   | { t: 'macro'; mi: number; path: number[]; maci: number };
@@ -365,6 +365,24 @@ function layoutNsTreeLR(
       skipNsEdge: indent > 0,
       indent,
     });
+    (c.enums ?? [])
+      .map((x, i) => ({ x, i }))
+      .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
+      .forEach(({ x, i }) => {
+        rowItems.push({
+          pick: {
+            t: 'enum',
+            mi,
+            path,
+            ci: rootCi,
+            classPath: classPath.length ? classPath : undefined,
+            eni: i,
+          },
+          label: lbl.enumRow(x.name),
+          skipNsEdge: true,
+          indent: indent + 1,
+        });
+      });
     const nestedIndexed = (c.classes ?? [])
       .map((x, i) => ({ x, i }))
       .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }));
@@ -763,7 +781,7 @@ function appendTreeEdgesFromFinalNodes(
     const p = ns.pick.path;
     const directNs = nsNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length + 1 && x.pick.path.slice(0, p.length).every((v, i) => v === p[i]));
     const directClass = classTopNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
-    const directEnums = enumNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
+    const directEnums = enumNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.ci === undefined && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
     const directVars = varNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
     const directFns = fnNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
     const directMacros = macroNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
@@ -773,6 +791,47 @@ function appendTreeEdgesFromFinalNodes(
       const t = leftMid({ x: tNode.x, y: tNode.y, w: tNode.w, h: tNode.h });
       pushTreeEdgeSimple(edges, bounds, s.x - EDGE_INSET, s.y, t.x + EDGE_INSET, t.y);
     }
+  }
+}
+
+function enumPickKey(p: Extract<CodespaceSvgPick, { t: 'enum' }>): string {
+  return `${p.mi}|${p.path.join('.')}|${p.ci ?? -1}|${(p.classPath ?? []).join('.')}|${p.eni}`;
+}
+
+function appendClassEnumContainmentEdges(
+  nodes: CodespaceLayoutNode[],
+  edges: CodespaceLayoutEdge[],
+  bounds: CodespaceLayoutResult['bounds'],
+): void {
+  const classNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class');
+  const enumNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'enum' }> } => n.pick.t === 'enum' && n.pick.ci !== undefined);
+  if (!enumNodes.length) return;
+  const byClassKey = new Map<string, CodespaceLayoutNode>();
+  for (const n of classNodes) byClassKey.set(classPickKey(n.pick), n);
+  const handled = new Set<string>();
+  for (const en of enumNodes) {
+    const parentPick: Extract<CodespaceSvgPick, { t: 'class' }> = {
+      t: 'class',
+      mi: en.pick.mi,
+      path: en.pick.path,
+      ci: en.pick.ci as number,
+      classPath: en.pick.classPath,
+    };
+    const parent = byClassKey.get(classPickKey(parentPick));
+    if (!parent) continue;
+    const k = `${classPickKey(parentPick)}=>${enumPickKey(en.pick)}`;
+    if (handled.has(k)) continue;
+    handled.add(k);
+    const pr = rightMid({ x: parent.x, y: parent.y, w: parent.w, h: parent.h });
+    const el = leftMid({ x: en.x, y: en.y, w: en.w, h: en.h });
+    pushOrthContainmentEdge(
+      edges,
+      bounds,
+      pr.x - EDGE_INSET,
+      pr.y,
+      el.x + EDGE_INSET,
+      el.y,
+    );
   }
 }
 
@@ -908,6 +967,7 @@ export function layoutCodespaceSvg(
   const finalEdges: CodespaceLayoutEdge[] = [];
   appendTreeEdgesFromFinalNodes(nodesOut, finalEdges, bounds);
   appendNestedClassContainmentEdges(nodesOut, finalEdges, bounds);
+  appendClassEnumContainmentEdges(nodesOut, finalEdges, bounds);
   appendClassInheritanceEdges(payload, nodesOut, finalEdges, bounds);
   const finalBounds = recomputeBounds(nodesOut, finalEdges);
   finalBounds.maxX = Math.max(finalBounds.maxX, PAD + maxW + PAD);

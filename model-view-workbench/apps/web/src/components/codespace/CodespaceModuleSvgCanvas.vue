@@ -19,6 +19,7 @@ const emit = defineEmits<{
   addTopLevelNs: [mi: number];
   addChildNs: [mi: number, path: number[]];
   addClass: [mi: number, path: number[]];
+  addClassEnum: [mi: number, path: number[], ci: number, classPath?: number[]];
   addEnum: [mi: number, path: number[]];
   addVar: [mi: number, path: number[]];
   addFn: [mi: number, path: number[]];
@@ -105,7 +106,7 @@ function pickKey(p: CodespaceSvgPick): string {
   if (p.t === 'module') return `m-${p.mi}`;
   if (p.t === 'ns') return `ns-${p.mi}-${p.path.join('.')}`;
   if (p.t === 'class') return `c-${p.mi}-${p.path.join('.')}-${p.ci}-${(p.classPath ?? []).join('.')}`;
-  if (p.t === 'enum') return `e-${p.mi}-${p.path.join('.')}-${p.eni}`;
+  if (p.t === 'enum') return `e-${p.mi}-${p.path.join('.')}-${p.ci ?? -1}-${(p.classPath ?? []).join('.')}-${p.eni}`;
   if (p.t === 'var') return `v-${p.mi}-${p.path.join('.')}-${p.vi}`;
   if (p.t === 'fn') return `f-${p.mi}-${p.path.join('.')}-${p.fi}`;
   return `mac-${p.mi}-${p.path.join('.')}-${p.maci}`;
@@ -301,6 +302,14 @@ function onNodeContextMenu(n: CodespaceLayoutNode, e: MouseEvent) {
         run: () => emit('addMacro', p.mi, p.path),
       },
     );
+  }
+  if (p.t === 'class') {
+    items.push({
+      key: 'add-class-enum',
+      label: csMsg.value.flNsAddEnumLabel,
+      title: csMsg.value.flNsAddEnumTitle,
+      run: () => emit('addClassEnum', p.mi, p.path, p.ci, p.classPath),
+    });
   }
   items.push({
     key: 'delete',

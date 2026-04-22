@@ -21,6 +21,7 @@ import FormatHint from '../common/FormatHint.vue';
 import CodespaceModuleSvgCanvas from './CodespaceModuleSvgCanvas.vue';
 import CodespaceClassifierFloat from './floating/CodespaceClassifierFloat.vue';
 import CodespaceFunctionFloat from './floating/CodespaceFunctionFloat.vue';
+import CodespaceEnumFloat from './floating/CodespaceEnumFloat.vue';
 import CodespaceMacroFloat from './floating/CodespaceMacroFloat.vue';
 import CodespaceModuleFloat from './floating/CodespaceModuleFloat.vue';
 import CodespaceNamespaceFloat from './floating/CodespaceNamespaceFloat.vue';
@@ -57,6 +58,7 @@ const floatPick = ref<CodespaceSvgPick | null>(null);
 const moduleFloatCtx = computed(() => (floatPick.value?.t === 'module' ? floatPick.value : null));
 const nsFloatCtx = computed(() => (floatPick.value?.t === 'ns' ? floatPick.value : null));
 const classFloatCtx = computed(() => (floatPick.value?.t === 'class' ? floatPick.value : null));
+const enumFloatCtx = computed(() => (floatPick.value?.t === 'enum' ? floatPick.value : null));
 const varFloatCtx = computed(() => (floatPick.value?.t === 'var' ? floatPick.value : null));
 const fnFloatCtx = computed(() => (floatPick.value?.t === 'fn' ? floatPick.value : null));
 const macroFloatCtx = computed(() => (floatPick.value?.t === 'macro' ? floatPick.value : null));
@@ -298,6 +300,22 @@ function addEnum(mi: number, path: number[]) {
   });
 }
 
+function addClassEnum(mi: number, path: number[], ci: number, classPath?: number[]) {
+  patch((d) => {
+    const n = getNamespaceAtPath(d, mi, path);
+    if (!n?.classes?.[ci]) return;
+    let c = n.classes[ci];
+    for (const idx of classPath ?? []) c = c?.classes?.[idx] as typeof c;
+    if (!c) return;
+    if (!c.enums) c.enums = [];
+    const name = ensureUniqueName(
+      csCanvasMsg.value.newEnumName,
+      c.enums.map((e) => e.name ?? ''),
+    );
+    c.enums.push({ name, enumGroup: 'default', value: '0' });
+  });
+}
+
 function addVar(mi: number, path: number[]) {
   patch((d) => {
     const n = getNamespaceAtPath(d, mi, path);
@@ -353,7 +371,16 @@ function deleteLeafByPick(p: Extract<CodespaceSvgPick, { t: 'enum' | 'var' | 'fn
   patch((d) => {
     const n = getNamespaceAtPath(d, p.mi, p.path);
     if (!n) return;
-    if (p.t === 'enum' && n.enums) n.enums.splice(p.eni, 1);
+    if (p.t === 'enum') {
+      if (p.ci === undefined) {
+        if (n.enums) n.enums.splice(p.eni, 1);
+      }
+      else {
+        let c = n.classes?.[p.ci];
+        for (const idx of p.classPath ?? []) c = c?.classes?.[idx];
+        c?.enums?.splice(p.eni, 1);
+      }
+    }
     if (p.t === 'var' && n.variables) n.variables.splice(p.vi, 1);
     if (p.t === 'fn' && n.functions) n.functions.splice(p.fi, 1);
     if (p.t === 'macro' && n.macros) n.macros.splice(p.maci, 1);
@@ -437,6 +464,7 @@ function patchMetaRoot(root: string) {
       @add-top-level-ns="addTopLevelNs"
       @add-child-ns="addChildNs"
       @add-class="addClass"
+      @add-class-enum="addClassEnum"
       @add-enum="addEnum"
       @add-var="addVar"
       @add-fn="addFn"
@@ -478,6 +506,18 @@ function patchMetaRoot(root: string) {
       :path="classFloatCtx.path"
       :ci="classFloatCtx.ci"
       :class-path="classFloatCtx.classPath"
+      :run-patch="patch"
+      @close="closeFloat"
+    />
+    <CodespaceEnumFloat
+      v-if="enumFloatCtx"
+      :open="floatOpen"
+      :model-value="modelValue"
+      :mi="enumFloatCtx.mi"
+      :path="enumFloatCtx.path"
+      :eni="enumFloatCtx.eni"
+      :ci="enumFloatCtx.ci"
+      :class-path="enumFloatCtx.classPath"
       :run-patch="patch"
       @close="closeFloat"
     />

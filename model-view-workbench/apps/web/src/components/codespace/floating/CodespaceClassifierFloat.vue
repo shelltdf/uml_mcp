@@ -56,7 +56,7 @@ type SpecialMethodTemplate = {
   label: string;
   method: Omit<MvCodespaceClassMethod, 'name' | 'notes'> & { name: string };
 };
-type ClassifierTabKey = 'basic' | 'bases' | 'members' | 'properties' | 'methods' | 'enums';
+type ClassifierTabKey = 'basic' | 'bases' | 'members' | 'properties' | 'methods';
 
 const SPECIAL_METHOD_TEMPLATES: readonly SpecialMethodTemplate[] = [
   { id: 'ctor-default', category: '构造/析构', label: '默认构造函数', method: { name: 'constructor', methodKind: 'constructor', type: 'void', params: [] } },
@@ -217,7 +217,6 @@ const fieldRows = computed(() =>
     .filter((r) => r.mem.accessor === undefined || r.mem.accessor === 'none'),
 );
 const methodRows = computed(() => (selectedClass.value?.methods ?? []).map((mem, idx) => ({ mem, idx })));
-const enumRows = computed(() => (selectedClass.value?.enums ?? []).map((mem, idx) => ({ mem, idx })));
 const propertyRows = computed(() => selectedClass.value?.properties ?? []);
 const specialMethodPickerOpen = ref(false);
 const parentPickerOpen = ref(false);
@@ -873,20 +872,6 @@ function removeMethodParam(miIdx: number, pi: number) {
   });
 }
 
-function patchEnumMember(miIdx: number, part: Partial<MvCodespaceClassEnum>) {
-  props.runPatch((d) => {
-    const mem = resolveSelectedClass(d)?.enums?.[miIdx];
-    if (!mem) return;
-    if ('value' in part) {
-      const v = String(part.value ?? '').trim();
-      part.type = v || undefined;
-      part.value = v || undefined;
-    }
-    Object.assign(mem, part);
-    normalizeEnumMember(mem);
-  });
-}
-
 function removeFieldMember(miIdx: number) {
   props.runPatch((d) => {
     resolveSelectedClass(d)?.members?.splice(miIdx, 1);
@@ -896,12 +881,6 @@ function removeFieldMember(miIdx: number) {
 function removeMethodMember(miIdx: number) {
   props.runPatch((d) => {
     resolveSelectedClass(d)?.methods?.splice(miIdx, 1);
-  });
-}
-
-function removeEnumMember(miIdx: number) {
-  props.runPatch((d) => {
-    resolveSelectedClass(d)?.enums?.splice(miIdx, 1);
   });
 }
 
@@ -962,7 +941,6 @@ watch(
         <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'members' }" @click="activeTab = 'members'">成员</button>
         <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'properties' }" @click="activeTab = 'properties'">属性</button>
         <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'methods' }" @click="activeTab = 'methods'">方法</button>
-        <button type="button" class="cde-tab-btn" :class="{ 'cde-tab-btn--active': activeTab === 'enums' }" @click="activeTab = 'enums'">枚举</button>
       </div>
 
       <section v-if="activeTab === 'basic'" class="cde-section-card">
@@ -1067,6 +1045,9 @@ watch(
           </button>
           <button type="button" class="add-row" title="新增当前类内部的嵌套类" @click="addSubclass">
             ＋ 内部类
+          </button>
+          <button type="button" class="add-row" :title="csMsg.flClsAddEnumLiteralTitle" @click="addEnumMember">
+            ＋ 内部枚举
           </button>
         </div>
       </section>
@@ -1521,43 +1502,6 @@ watch(
           </div>
         </div>
       </dialog>
-
-      <section v-if="activeTab === 'enums'" class="cde-section-card">
-        <h4 class="cde-section-title">{{ csMsg.flClsEnumLiteralsHeading }}</h4>
-        <table class="cs-table">
-          <thead>
-            <tr>
-              <th>group</th>
-              <th>name</th>
-              <th>value</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="{ mem, idx } in enumRows" :key="'en-' + idx">
-              <td>
-                <input :value="mem.enumGroup ?? ''" placeholder="EnumType" title="enum group" @input="patchEnumMember(idx, { enumGroup: ($event.target as HTMLInputElement).value })" />
-              </td>
-              <td>
-                <input :value="mem.name" :title="csMsg.flClsMemberNameTitle" @input="patchEnumMember(idx, { name: ($event.target as HTMLInputElement).value })" />
-              </td>
-              <td>
-                <input :value="mem.value ?? mem.type ?? ''" :title="csMsg.flClsMemberTypeSigTitle" @input="patchEnumMember(idx, { value: ($event.target as HTMLInputElement).value })" />
-              </td>
-              <td>
-                <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeEnumMember(idx)">
-                  {{ csMsg.flClsRemoveMemberLabel }}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="cs-actions">
-          <button type="button" class="add-row" :title="csMsg.flClsAddEnumLiteralTitle" @click="addEnumMember">
-            {{ csMsg.flClsAddEnumLiteralLabel }}
-          </button>
-        </div>
-      </section>
 
       <div class="cs-actions cde-float-final-actions">
         <button type="button" class="link-btn cs-danger" :title="csMsg.flClsRemoveClassTitle" @click="removeClass">
