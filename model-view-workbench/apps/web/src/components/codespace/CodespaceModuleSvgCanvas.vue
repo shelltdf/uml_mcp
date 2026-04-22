@@ -47,6 +47,42 @@ const worldDivStyle = computed(() => ({
   transformOrigin: '0 0' as const,
 }));
 
+const renderDebugSnapshot = computed(() => ({
+  timestamp: new Date().toISOString(),
+  viewport: {
+    scale: vp.scale.value,
+    panX: vp.panX.value,
+    panY: vp.panY.value,
+    zoomPercent: vp.zoomPercent.value,
+  },
+  worldMetrics: worldMetrics.value,
+  contentOffset: contentOffset.value,
+  bounds: layout.value.bounds,
+  viewBounds: viewBounds.value,
+  nodes: layout.value.nodes.map((n) => ({
+    pick: n.pick,
+    label: n.label,
+    x: n.x,
+    y: n.y,
+    w: n.w,
+    h: n.h,
+  })),
+  edges: layout.value.edges.map((e) => ({
+    kind: e.kind ?? 'tree',
+    d: e.d,
+  })),
+}));
+
+const viewBounds = computed(() => {
+  const b = layout.value.bounds;
+  return {
+    minX: b.minX + contentOffset.value.x,
+    minY: b.minY + contentOffset.value.y,
+    maxX: b.maxX + contentOffset.value.x,
+    maxY: b.maxY + contentOffset.value.y,
+  };
+});
+
 const viewportBgStyle = computed(() => {
   const s = Math.max(8, Math.round(24 * vp.scale.value));
   const px = Math.round(vp.panX.value);
@@ -110,12 +146,38 @@ function strokeW(n: CodespaceLayoutNode): number {
   return isSelected(n.pick) ? 1.75 : 0.85;
 }
 
+function edgeStroke(e: { kind?: 'tree' | 'inheritance' | 'containment' }): string {
+  if (e.kind === 'containment') return '#64748b';
+  if (e.kind === 'inheritance') return '#475569';
+  return '#64748b';
+}
+
+function edgeStrokeWidth(e: { kind?: 'tree' | 'inheritance' | 'containment' }): number {
+  if (e.kind === 'containment') return 1;
+  return 1;
+}
+
+function edgeDash(e: { kind?: 'tree' | 'inheritance' | 'containment' }): string | undefined {
+  return undefined;
+}
+
 function fitView() {
-  vp.zoomToFit(layout.value.bounds, 28);
+  vp.zoomToFit(viewBounds.value, 28);
 }
 
 function originView() {
-  vp.originToContentCenter(layout.value.bounds);
+  vp.originToContentCenter(viewBounds.value);
+}
+
+async function copyRenderDebugInfo() {
+  const text = JSON.stringify(renderDebugSnapshot.value, null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    window.alert('绘制信息已复制到剪贴板');
+  }
+  catch {
+    window.alert('复制失败：当前环境不支持剪贴板写入');
+  }
 }
 
 function mountedFit() {
@@ -208,8 +270,9 @@ onUnmounted(() => {
               :transform="`translate(${contentOffset.x}, ${contentOffset.y})`"
               class="cs-svg-edge"
               fill="none"
-              stroke="#64748b"
-              stroke-width="1"
+              :stroke="edgeStroke(e)"
+              :stroke-width="edgeStrokeWidth(e)"
+              :stroke-dasharray="edgeDash(e)"
               stroke-linecap="round"
               stroke-linejoin="round"
               pointer-events="none"
@@ -264,6 +327,16 @@ onUnmounted(() => {
       </button>
       <button type="button" class="cs-svg-hud-btn cs-svg-hud-wide" :title="csMsg.svgResetTitle" @click="vp.resetZoom">
         {{ csMsg.svgResetLabel }}
+      </button>
+    </div>
+    <div class="cs-svg-debug-actions">
+      <button
+        type="button"
+        class="cs-svg-hud-btn cs-svg-hud-wide"
+        title="复制当前绘制信息到系统剪贴板"
+        @click="copyRenderDebugInfo"
+      >
+        复制绘制信息
       </button>
     </div>
 
@@ -386,6 +459,14 @@ onUnmounted(() => {
 }
 .cs-svg-hud-wide {
   padding-inline: 6px;
+}
+.cs-svg-debug-actions {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
 }
 </style>
 

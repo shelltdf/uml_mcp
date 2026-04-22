@@ -26,6 +26,7 @@ export interface CodespaceLayoutNode {
 /** 树状连线（SVG `path`；三次贝塞尔；权柄纯横向、与竖边正交切线；廊道 `busX`；**实线**） */
 export interface CodespaceLayoutEdge {
   d: string;
+  kind?: 'tree' | 'inheritance' | 'containment';
 }
 
 export interface CodespaceLayoutResult {
@@ -174,7 +175,7 @@ function pushCurvedLREdge(
   extendPoint(bounds, c2x, c2y);
   extendPoint(bounds, tx, ty);
   const d = `M ${sx} ${sy} C ${c1x} ${c1y} ${c2x} ${c2y} ${tx} ${ty}`;
-  edges.push({ d });
+  edges.push({ d, kind: 'tree' });
 }
 
 function pushCurvedAnyDirEdge(
@@ -197,7 +198,44 @@ function pushCurvedAnyDirEdge(
   extendPoint(bounds, c1x, c1y);
   extendPoint(bounds, c2x, c2y);
   extendPoint(bounds, tx, ty);
-  edges.push({ d: `M ${sx} ${sy} C ${c1x} ${c1y} ${c2x} ${c2y} ${tx} ${ty}` });
+  edges.push({ d: `M ${sx} ${sy} C ${c1x} ${c1y} ${c2x} ${c2y} ${tx} ${ty}`, kind: 'inheritance' });
+}
+
+function pushOrthContainmentEdge(
+  edges: CodespaceLayoutEdge[],
+  bounds: CodespaceLayoutResult['bounds'],
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+): void {
+  const midX = tx - 10;
+  extendPoint(bounds, sx, sy);
+  extendPoint(bounds, midX, sy);
+  extendPoint(bounds, midX, ty);
+  extendPoint(bounds, tx, ty);
+  edges.push({ d: `M ${sx} ${sy} L ${midX} ${sy} L ${midX} ${ty} L ${tx} ${ty}`, kind: 'containment' });
+}
+
+function pushTreeEdgeSimple(
+  edges: CodespaceLayoutEdge[],
+  bounds: CodespaceLayoutResult['bounds'],
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+): void {
+  if (Math.hypot(tx - sx, ty - sy) < 0.25) return;
+  const gap = Math.max(8, Math.abs(tx - sx));
+  const arm = Math.max(8, Math.min(36, gap * 0.45));
+  const dir = tx >= sx ? 1 : -1;
+  const c1x = sx + dir * arm;
+  const c2x = tx - dir * arm;
+  extendPoint(bounds, sx, sy);
+  extendPoint(bounds, c1x, sy);
+  extendPoint(bounds, c2x, ty);
+  extendPoint(bounds, tx, ty);
+  edges.push({ d: `M ${sx} ${sy} C ${c1x} ${sy} ${c2x} ${ty} ${tx} ${ty}`, kind: 'tree' });
 }
 
 /** 从左到右树：子树外包宽高（与 `layoutNsTreeLR` 一致；同级叶与子 NS 头共一列宽 `col1w`） */
@@ -300,8 +338,6 @@ function layoutNsTreeLR(
     label: string;
     skipNsEdge?: boolean;
     indent?: number;
-    classKey?: string;
-    classParentKey?: string;
   }[] = [];
   const collectClasses = (
     classes: MvCodespaceClassifier[] | undefined,
@@ -313,7 +349,6 @@ function layoutNsTreeLR(
   ) => {
     const c = classes?.[ci];
     if (!c) return;
-    const k = `class:${c.id || `${path.join('.')}:${ci}:${indent}`}`;
     rowItems.push({
       pick: {
         t: 'class',
@@ -323,27 +358,41 @@ function layoutNsTreeLR(
         classPath: classPath.length ? classPath : undefined,
       },
       label: lbl.classRow(c.name),
-      skipNsEdge: indent > 0 || (c.bases?.length ?? 0) > 0,
+      // 顶层 class 始终保留 namespace 树线；内部类仅用 containment 线。
+      skipNsEdge: indent > 0,
       indent,
-      classKey: k,
-      classParentKey: parentKey,
     });
-    for (let i = 0; i < (c.classes?.length ?? 0); i++) {
-      collectClasses(c.classes, rootCi, i, [...classPath, i], indent + 1, k);
+    const nestedIndexed = (c.classes ?? [])
+      .map((x, i) => ({ x, i }))
+      .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }));
+    for (const it of nestedIndexed) {
+      collectClasses(c.classes, rootCi, it.i, [...classPath, it.i], indent + 1);
     }
   };
-  for (let ci = 0; ci < (ns.classes?.length ?? 0); ci++) {
-    collectClasses(ns.classes, ci, ci, [], 0);
+  const rootClassesIndexed = (ns.classes ?? [])
+    .map((x, i) => ({ x, i }))
+    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }));
+  for (const it of rootClassesIndexed) {
+    collectClasses(ns.classes, it.i, it.i, [], 0);
   }
-  (ns.variables ?? []).forEach((v, vi) => {
-    rowItems.push({ pick: { t: 'var', mi, path, vi }, label: lbl.varRow(v.name) });
-  });
-  (ns.functions ?? []).forEach((f, fi) => {
-    rowItems.push({ pick: { t: 'fn', mi, path, fi }, label: lbl.fnRow(f.name) });
-  });
-  (ns.macros ?? []).forEach((m, maci) => {
-    rowItems.push({ pick: { t: 'macro', mi, path, maci }, label: lbl.macroRow(m.name) });
-  });
+  (ns.variables ?? [])
+    .map((x, i) => ({ x, i }))
+    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
+    .forEach(({ x, i }) => {
+      rowItems.push({ pick: { t: 'var', mi, path, vi: i }, label: lbl.varRow(x.name) });
+    });
+  (ns.functions ?? [])
+    .map((x, i) => ({ x, i }))
+    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
+    .forEach(({ x, i }) => {
+      rowItems.push({ pick: { t: 'fn', mi, path, fi: i }, label: lbl.fnRow(x.name) });
+    });
+  (ns.macros ?? [])
+    .map((x, i) => ({ x, i }))
+    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
+    .forEach(({ x, i }) => {
+      rowItems.push({ pick: { t: 'macro', mi, path, maci: i }, label: lbl.macroRow(x.name) });
+    });
 
   const children = ns.namespaces ?? [];
   let col1w = 0;
@@ -368,13 +417,12 @@ function layoutNsTreeLR(
 
   const childOrder = children
     .map((child, origI) => ({ child, origI, span: measureLrSubtree(child, lbl).w }))
-    .sort((a, b) => b.span - a.span || a.origI - b.origI);
+    .sort((a, b) => (a.child.name ?? '').localeCompare(b.child.name ?? '', undefined, { sensitivity: 'base' }));
 
   const nEdges = rowItems.length + childOrder.length;
   const busXs = busXsInCorridor(sx0, x1, Math.max(1, nEdges));
   let edgeIx = 0;
 
-  const classRectByKey = new Map<string, Rect>();
   for (let i = 0; i < rowItems.length; i++) {
     const it = rowItems[i]!;
     const ind = it.indent ?? 0;
@@ -387,7 +435,6 @@ function layoutNsTreeLR(
       w: r.w,
       h: r.h,
     });
-    if (it.classKey) classRectByKey.set(it.classKey, r);
     extendBounds(bounds, r.x, r.y, r.w, r.h);
     if (!it.skipNsEdge) {
       const pl = leftMid(r);
@@ -404,23 +451,6 @@ function layoutNsTreeLR(
     edgeIx += 1;
     yc += ROW_H;
     if (i < rowItems.length - 1) yc += ROW_GAP;
-  }
-  for (const it of rowItems) {
-    if (!it.classKey || !it.classParentKey) continue;
-    const child = classRectByKey.get(it.classKey);
-    const parent = classRectByKey.get(it.classParentKey);
-    if (!child || !parent) continue;
-    const pr = rightMid(parent);
-    const cl = leftMid(child);
-    pushCurvedLREdge(
-      edges,
-      bounds,
-      pr.x - EDGE_INSET,
-      pr.y,
-      cl.x + EDGE_INSET,
-      cl.y,
-      (pr.x + cl.x) / 2,
-    );
   }
   if (nL && children.length) yc += ROW_GAP;
 
@@ -480,7 +510,7 @@ function layoutModuleStrip(
   const rootHeaders: Rect[] = [];
   const rootOrder = roots
     .map((ns, origI) => ({ ns, origI, span: measureLrSubtree(ns, lbl).w }))
-    .sort((a, b) => b.span - a.span || a.origI - b.origI);
+    .sort((a, b) => (a.ns.name ?? '').localeCompare(b.ns.name ?? '', undefined, { sensitivity: 'base' }));
   rootOrder.forEach(({ ns, origI }) => {
     const { w: cw, h: ch, nsHeader } = layoutNsTreeLR(ns, mi, [origI], innerX, yCur, segment, bounds, edges, lbl);
     rootHeaders.push(nsHeader);
@@ -587,6 +617,223 @@ function appendClassInheritanceEdges(
   }
 }
 
+function resolveClassNodeOverlaps(nodes: CodespaceLayoutNode[]): void {
+  const classNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class');
+  const groups = new Map<string, CodespaceLayoutNode[]>();
+  for (const n of classNodes) {
+    const k = `${n.pick.mi}|${n.pick.path.join('.')}`;
+    const arr = groups.get(k) ?? [];
+    arr.push(n);
+    groups.set(k, arr);
+  }
+  const pad = 8;
+  for (const groupNodes of groups.values()) {
+    for (let iter = 0; iter < 6; iter++) {
+      let moved = false;
+      for (let i = 0; i < groupNodes.length; i++) {
+        for (let j = i + 1; j < groupNodes.length; j++) {
+          const a = groupNodes[i]!;
+          const b = groupNodes[j]!;
+          const overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+          const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+          if (overlapX > 0 && overlapY > 0) {
+            if (a.y <= b.y) b.y += overlapY + pad;
+            else a.y += overlapY + pad;
+            moved = true;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+  }
+}
+
+function classPickKey(p: Extract<CodespaceSvgPick, { t: 'class' }>): string {
+  return `${p.mi}|${p.path.join('.')}|${p.ci}|${(p.classPath ?? []).join('.')}`;
+}
+
+function enforceNestedClassClusterLayout(nodes: CodespaceLayoutNode[]): void {
+  const classNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class');
+  const byKey = new Map<string, CodespaceLayoutNode>();
+  for (const n of classNodes) byKey.set(classPickKey(n.pick), n);
+  const childMap = new Map<string, CodespaceLayoutNode[]>();
+  for (const n of classNodes) {
+    const cp = n.pick.classPath ?? [];
+    if (!cp.length) continue;
+    const parentKey = classPickKey({
+      t: 'class',
+      mi: n.pick.mi,
+      path: n.pick.path,
+      ci: n.pick.ci,
+      classPath: cp.slice(0, -1),
+    });
+    const arr = childMap.get(parentKey) ?? [];
+    arr.push(n);
+    childMap.set(parentKey, arr);
+  }
+  const shiftX = 22;
+  const rowGap = 10;
+  const clusterGap = 14;
+  const measureClusterBottom = (root: CodespaceLayoutNode): number => {
+    let bottom = root.y + root.h;
+    const walk = (parent: CodespaceLayoutNode) => {
+      const kids = childMap.get(classPickKey(parent.pick as Extract<CodespaceSvgPick, { t: 'class' }>)) ?? [];
+      for (const k of kids) {
+        bottom = Math.max(bottom, k.y + k.h);
+        walk(k);
+      }
+    };
+    walk(root);
+    return bottom;
+  };
+  const stackChildren = (parent: CodespaceLayoutNode) => {
+    const kids = childMap.get(classPickKey(parent.pick as Extract<CodespaceSvgPick, { t: 'class' }>)) ?? [];
+    if (!kids.length) return;
+    kids.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+    const totalH = kids.reduce((acc, k, i) => acc + k.h + (i > 0 ? rowGap : 0), 0);
+    let y = parent.y + (parent.h - totalH) / 2;
+    for (const k of kids) {
+      k.x = Math.max(parent.x + parent.w + shiftX, parent.x + shiftX);
+      k.y = y;
+      y = k.y + k.h + rowGap;
+      stackChildren(k);
+    }
+  };
+  const roots = classNodes
+    .filter((n) => (n.pick.classPath?.length ?? 0) === 0)
+    .sort((a, b) => a.y - b.y);
+  for (let i = 0; i < roots.length; i++) {
+    const r = roots[i]!;
+    stackChildren(r);
+    if (i >= roots.length - 1) continue;
+    const bottom = measureClusterBottom(r);
+    const next = roots[i + 1]!;
+    const minTop = bottom + clusterGap;
+    if (next.y < minTop) next.y = minTop;
+  }
+}
+
+function nsPickKey(p: Extract<CodespaceSvgPick, { t: 'ns' }>): string {
+  return `${p.mi}|${p.path.join('.')}`;
+}
+
+function modulePickKey(p: Extract<CodespaceSvgPick, { t: 'module' }>): string {
+  return String(p.mi);
+}
+
+function appendTreeEdgesFromFinalNodes(
+  nodes: CodespaceLayoutNode[],
+  edges: CodespaceLayoutEdge[],
+  bounds: CodespaceLayoutResult['bounds'],
+): void {
+  const moduleNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'module' }> } => n.pick.t === 'module');
+  const nsNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'ns' }> } => n.pick.t === 'ns');
+  const classTopNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class' && (n.pick.classPath?.length ?? 0) === 0);
+  const varNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'var' }> } => n.pick.t === 'var');
+  const fnNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'fn' }> } => n.pick.t === 'fn');
+  const macroNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'macro' }> } => n.pick.t === 'macro');
+
+  const modByMi = new Map<string, CodespaceLayoutNode>();
+  for (const m of moduleNodes) modByMi.set(modulePickKey(m.pick), m);
+  const nsByKey = new Map<string, CodespaceLayoutNode>();
+  for (const n of nsNodes) nsByKey.set(nsPickKey(n.pick), n);
+
+  // module -> root namespaces
+  for (const ns of nsNodes) {
+    if (ns.pick.path.length !== 1) continue;
+    const mod = modByMi.get(String(ns.pick.mi));
+    if (!mod) continue;
+    const s = rightMid({ x: mod.x, y: mod.y, w: mod.w, h: mod.h });
+    const t = leftMid({ x: ns.x, y: ns.y, w: ns.w, h: ns.h });
+    pushTreeEdgeSimple(edges, bounds, s.x - EDGE_INSET, s.y, t.x + EDGE_INSET, t.y);
+  }
+
+  // namespace -> direct children (ns/class/var/fn/macro)
+  for (const ns of nsNodes) {
+    const p = ns.pick.path;
+    const directNs = nsNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length + 1 && x.pick.path.slice(0, p.length).every((v, i) => v === p[i]));
+    const directClass = classTopNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
+    const directVars = varNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
+    const directFns = fnNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
+    const directMacros = macroNodes.filter((x) => x.pick.mi === ns.pick.mi && x.pick.path.length === p.length && x.pick.path.every((v, i) => v === p[i]));
+    const targets = [...directNs, ...directClass, ...directVars, ...directFns, ...directMacros].sort((a, b) => a.y - b.y);
+    const s = rightMid({ x: ns.x, y: ns.y, w: ns.w, h: ns.h });
+    for (const tNode of targets) {
+      const t = leftMid({ x: tNode.x, y: tNode.y, w: tNode.w, h: tNode.h });
+      pushTreeEdgeSimple(edges, bounds, s.x - EDGE_INSET, s.y, t.x + EDGE_INSET, t.y);
+    }
+  }
+}
+
+function appendNestedClassContainmentEdges(
+  nodes: CodespaceLayoutNode[],
+  edges: CodespaceLayoutEdge[],
+  bounds: CodespaceLayoutResult['bounds'],
+): void {
+  const classNodes = nodes.filter((n): n is CodespaceLayoutNode & { pick: Extract<CodespaceSvgPick, { t: 'class' }> } => n.pick.t === 'class');
+  const byKey = new Map<string, CodespaceLayoutNode>();
+  for (const n of classNodes) byKey.set(classPickKey(n.pick), n);
+  for (const child of classNodes) {
+    const cp = child.pick.classPath ?? [];
+    if (!cp.length) continue;
+    const parentPick: Extract<CodespaceSvgPick, { t: 'class' }> = {
+      t: 'class',
+      mi: child.pick.mi,
+      path: child.pick.path,
+      ci: child.pick.ci,
+      classPath: cp.slice(0, -1),
+    };
+    const parent = byKey.get(classPickKey(parentPick));
+    if (!parent) continue;
+    const pr = rightMid({ x: parent.x, y: parent.y, w: parent.w, h: parent.h });
+    const cl = leftMid({ x: child.x, y: child.y, w: child.w, h: child.h });
+    pushOrthContainmentEdge(
+      edges,
+      bounds,
+      pr.x - EDGE_INSET,
+      pr.y,
+      cl.x + EDGE_INSET,
+      cl.y,
+    );
+  }
+}
+
+function recomputeBounds(
+  nodes: CodespaceLayoutNode[],
+  edges: CodespaceLayoutEdge[],
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  if (!nodes.length && !edges.length) return emptyBounds();
+  const b = {
+    minX: Number.POSITIVE_INFINITY,
+    minY: Number.POSITIVE_INFINITY,
+    maxX: Number.NEGATIVE_INFINITY,
+    maxY: Number.NEGATIVE_INFINITY,
+  };
+  for (const n of nodes) {
+    b.minX = Math.min(b.minX, n.x);
+    b.minY = Math.min(b.minY, n.y);
+    b.maxX = Math.max(b.maxX, n.x + n.w);
+    b.maxY = Math.max(b.maxY, n.y + n.h);
+  }
+  for (const e of edges) {
+    const nums = e.d.match(/-?\d+(?:\.\d+)?/g);
+    if (!nums?.length) continue;
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      const x = Number(nums[i]);
+      const y = Number(nums[i + 1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      b.minX = Math.min(b.minX, x);
+      b.minY = Math.min(b.minY, y);
+      b.maxX = Math.max(b.maxX, x);
+      b.maxY = Math.max(b.maxY, y);
+    }
+  }
+  if (!Number.isFinite(b.minX) || !Number.isFinite(b.minY) || !Number.isFinite(b.maxX) || !Number.isFinite(b.maxY)) {
+    return emptyBounds();
+  }
+  return b;
+}
+
 function enforceDerivedClassesOnRight(
   payload: MvModelCodespacePayload,
   nodes: CodespaceLayoutNode[],
@@ -634,15 +881,27 @@ export function layoutCodespaceSvg(
 
   let cursorY = PAD;
   let maxW = 0;
-  modules.forEach((m, mi) => {
+  const modulesOrdered = modules
+    .map((m, mi) => ({ m, mi }))
+    .sort((a, b) => (a.m.name ?? '').localeCompare(b.m.name ?? '', undefined, { sensitivity: 'base' }));
+  modulesOrdered.forEach(({ m, mi }) => {
     const { w, h } = layoutModuleStrip(m, mi, PAD, cursorY, nodesOut, bounds, edgesOut, labels);
     maxW = Math.max(maxW, w);
     cursorY += h + MODULE_GAP;
   });
   enforceDerivedClassesOnRight(payload, nodesOut);
-  appendClassInheritanceEdges(payload, nodesOut, edgesOut, bounds);
-  bounds.maxX = Math.max(bounds.maxX, PAD + maxW + PAD);
-  bounds.maxY = Math.max(bounds.maxY, cursorY - MODULE_GAP + PAD);
-
-  return { nodes: nodesOut, edges: edgesOut, bounds };
+  enforceNestedClassClusterLayout(nodesOut);
+  resolveClassNodeOverlaps(nodesOut);
+  enforceNestedClassClusterLayout(nodesOut);
+  // 线在最终坐标上重建，避免后处理后节点与连线错位。
+  const finalEdges: CodespaceLayoutEdge[] = [];
+  appendTreeEdgesFromFinalNodes(nodesOut, finalEdges, bounds);
+  appendNestedClassContainmentEdges(nodesOut, finalEdges, bounds);
+  appendClassInheritanceEdges(payload, nodesOut, finalEdges, bounds);
+  const finalBounds = recomputeBounds(nodesOut, finalEdges);
+  finalBounds.maxX = Math.max(finalBounds.maxX, PAD + maxW + PAD);
+  finalBounds.maxY = Math.max(finalBounds.maxY, cursorY - MODULE_GAP + PAD);
+  finalBounds.minX = Math.min(finalBounds.minX, PAD);
+  finalBounds.minY = Math.min(finalBounds.minY, PAD);
+  return { nodes: nodesOut, edges: finalEdges, bounds: finalBounds };
 }
