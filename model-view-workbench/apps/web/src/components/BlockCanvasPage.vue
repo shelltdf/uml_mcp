@@ -19,7 +19,9 @@ import {
   parseMarkdownBlocks,
   replaceBlockInnerById,
   slug,
+  type MvCodespaceAssociation,
   type MvCodespaceClassifierBase,
+  type MvCodespaceNamespaceNode,
   type MvMapPayload,
   type MvModelCodespacePayload,
   type MvModelColumnDef,
@@ -305,6 +307,7 @@ function setViewPayloadText(text: string): void {
   if (v.kind === 'uml-class' && !v.observeCodespaceOnly && classCanvasHasValidModelSource.value) {
     if (ensureClassCanvasCodespaceSidePayloadForClassSync()) {
       syncUmlInheritLinksToCodespaceBases(text);
+      syncUmlAssociationEdgesToCodespaceAssociations(text);
     }
   }
   v.payload = fromViewPayloadText(v.kind, text);
@@ -550,7 +553,7 @@ const umlClassPayloadSourceText = computed((): string => {
 const classCanvasAssocTargetsByClassId = computed<Record<string, string[]>>(() => {
   const out: Record<string, string[]> = {};
   const v = viewDraft.value;
-  if (!v || v.kind !== 'mermaid-class') return out;
+  if (!v || (v.kind !== 'mermaid-class' && v.kind !== 'uml-class')) return out;
   const parsed = parseViewPayloadClassDiagram(toViewPayloadText(v.payload));
   for (const l of parsed.state.links) {
     if (l.kind !== 'association') continue;
@@ -565,7 +568,9 @@ const classCanvasAssocTargetsByClassId = computed<Record<string, string[]>>(() =
 function syncAssocTypeFromDiagramToCodespace(): void {
   const v = viewDraft.value;
   const side = classCanvasCodespaceSidePayload.value;
-  if (!v || v.kind !== 'mermaid-class' || !side) return;
+  if (!v || !side) return;
+  if (v.kind !== 'mermaid-class' && v.kind !== 'uml-class') return;
+  if (v.kind === 'uml-class' && v.observeCodespaceOnly) return;
   const targets = classCanvasAssocTargetsByClassId.value;
   const nameById = new Map<string, string>();
   for (const mod of side.modules ?? []) {
@@ -703,6 +708,105 @@ function syncUmlInheritLinksToCodespaceBases(diagramPayloadText: string): void {
       }
     };
     walk(mod.namespaces);
+  }
+}
+
+function directedAssocKey(fromClassifierId: string, toClassifierId: string): string {
+  return `${fromClassifierId}\t${toClassifierId}`;
+}
+
+/**
+ * uml-class：将画布 `association` 边写入同命名空间下 codespace `associations`。
+ * 使用 id 前缀 `diag-asc-` 与手工维护的关联区分；若同向已有非 diag 记录则不覆盖。
+ */
+function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: string): void {
+  const v = viewDraft.value;
+  if (!v || v.kind !== 'uml-class') return;
+  if (v.observeCodespaceOnly) return;
+  if (!classCanvasCodespaceSidePayload.value) return;
+  const side = classCanvasCodespaceSidePayload.value;
+  const { state } = parseUmlClassDiagramPayload(diagramPayloadText);
+  const rows = listCodespaceClassesForClassCanvas(classCanvasSourceMarkdown.value, v.modelRefs ?? []);
+  const nameByDiagramClassId = (id: string): string => {
+    const c = state.classes.find((x) => x.id === id);
+    return (c?.name ?? id).trim() || id;
+  };
+  const resolveCsId = (diagramId: string): string | null =>
+    resolveDiagramClassToCodespaceClassId(diagramId, nameByDiagramClassId(diagramId), rows);
+
+  type DiagramAssoc = { fromCs: string; toCs: string; fromMult?: string; toMult?: string };
+  const diagramAssocs: DiagramAssoc[] = [];
+  for (const l of state.links) {
+    if (l.kind !== 'association') continue;
+    const a = resolveCsId(l.from);
+    const b = resolveCsId(l.to);
+    if (!a || !b || a === b) continue;
+    diagramAssocs.push({
+      fromCs: a,
+      toCs: b,
+      fromMult: l.fromMult,
+      toMult: l.toMult,
+    });
+  }
+
+  function findOwnerNs(
+    nodes: MvCodespaceNamespaceNode[] | undefined,
+    clsId: string,
+  ): MvCodespaceNamespaceNode | null {
+    if (!nodes?.length) return null;
+    for (const n of nodes) {
+      if (n.classes?.some((c) => c.id === clsId)) return n;
+      const sub = findOwnerNs(n.namespaces, clsId);
+      if (sub) return sub;
+    }
+    return null;
+  }
+
+  const byNs = new Map<MvCodespaceNamespaceNode, DiagramAssoc[]>();
+  for (const mod of side.modules ?? []) {
+    const roots = mod.namespaces;
+    for (const d of diagramAssocs) {
+      const nf = findOwnerNs(roots, d.fromCs);
+      const nt = findOwnerNs(roots, d.toCs);
+      if (!nf || nf !== nt) continue;
+      const arr = byNs.get(nf) ?? [];
+      const ix = arr.findIndex((x) => x.fromCs === d.fromCs && x.toCs === d.toCs);
+      if (ix >= 0) arr[ix] = d;
+      else arr.push(d);
+      byNs.set(nf, arr);
+    }
+  }
+
+  function walkNs(nodes: MvCodespaceNamespaceNode[] | undefined, fn: (n: MvCodespaceNamespaceNode) => void): void {
+    if (!nodes?.length) return;
+    for (const n of nodes) {
+      fn(n);
+      walkNs(n.namespaces, fn);
+    }
+  }
+
+  for (const mod of side.modules ?? []) {
+    walkNs(mod.namespaces, (ns) => {
+      const list = byNs.get(ns) ?? [];
+      const manual = (ns.associations ?? []).filter((a) => !String(a.id).startsWith('diag-asc-'));
+      const manualDirected = new Set(manual.map((a) => directedAssocKey(a.fromClassifierId, a.toClassifierId)));
+
+      const fromDiag: MvCodespaceAssociation[] = [];
+      for (const d of list) {
+        const k = directedAssocKey(d.fromCs, d.toCs);
+        if (manualDirected.has(k)) continue;
+        fromDiag.push({
+          id: `diag-asc-${d.fromCs}-${d.toCs}`,
+          kind: 'association',
+          fromClassifierId: d.fromCs,
+          toClassifierId: d.toCs,
+          fromEnd: d.fromMult?.trim() ? { multiplicity: d.fromMult.trim() } : undefined,
+          toEnd: d.toMult?.trim() ? { multiplicity: d.toMult.trim() } : undefined,
+        });
+      }
+      const next = [...manual, ...fromDiag];
+      if (JSON.stringify(ns.associations ?? []) !== JSON.stringify(next)) ns.associations = next;
+    });
   }
 }
 
