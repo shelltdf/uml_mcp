@@ -389,8 +389,9 @@ function addNewClass(): void {
   const el = viewportRef.value;
   if (el) {
     const r = el.getBoundingClientRect();
-    addCtx.x = r.left + 24;
-    addCtx.y = r.top + 24;
+    const p = clampAddCtxPosition(r.left + 24, r.top + 24);
+    addCtx.x = p.x;
+    addCtx.y = p.y;
   }
   addCtx.open = true;
   customClassName.value = '';
@@ -407,6 +408,27 @@ function ensureUniqueClassId(baseId: string): string {
 
 const SEARCH_ALLOWED_RE = /^[A-Za-z0-9_.\s]*$/;
 const CLASS_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+const ADD_CTX_MARGIN = 12;
+const ADD_CTX_MAX_WIDTH = 460;
+const ADD_CTX_MAX_HEIGHT = 520;
+
+function clampAddCtxPosition(x: number, y: number): { x: number; y: number } {
+  const vw = Math.max(window.innerWidth || 0, 0);
+  const vh = Math.max(window.innerHeight || 0, 0);
+  const panelW = Math.min(ADD_CTX_MAX_WIDTH, Math.max(vw - ADD_CTX_MARGIN * 2, 220));
+  const panelH = Math.min(ADD_CTX_MAX_HEIGHT, Math.max(vh - ADD_CTX_MARGIN * 2, 220));
+  const maxX = Math.max(ADD_CTX_MARGIN, vw - panelW - ADD_CTX_MARGIN);
+  const maxY = Math.max(ADD_CTX_MARGIN, vh - panelH - ADD_CTX_MARGIN);
+  return {
+    x: Math.min(Math.max(x, ADD_CTX_MARGIN), maxX),
+    y: Math.min(Math.max(y, ADD_CTX_MARGIN), maxY),
+  };
+}
+
+/** Root namespace is `""` in model; omit empty segments so we never get `.Core` → `[mod]..Core` when joining. */
+function codespaceNsChain(namespacePath: string[]): string {
+  return (namespacePath ?? []).map((s) => (s ?? '').trim()).filter(Boolean).join('.');
+}
 
 function onClassSearchInput(ev: Event): void {
   const raw = (ev.target as HTMLInputElement).value;
@@ -434,7 +456,7 @@ const codespaceClassRows = computed(() => {
   const src = props.codespaceClasses ?? [];
   const rows = src
     .map((it) => {
-      const ns = it.namespacePath.join('.');
+      const ns = codespaceNsChain(it.namespacePath);
       const pathLabel = ns ? `${it.moduleName}.${ns}` : it.moduleName;
       const searchKey = `${it.moduleId}/${ns}/${it.classId}/${it.className}`.toLowerCase();
       const dedupeKey = `${it.moduleId}/${ns}/${it.className}`.toLowerCase();
@@ -453,14 +475,68 @@ const codespaceClassRows = computed(() => {
   return [...uniq.values()];
 });
 
-const codespaceTreeGroups = computed(() => {
-  const groups = new Map<string, { pathLabel: string; items: (typeof codespaceClassRows.value)[number][] }>();
+type AddCtxHierarchyRow =
+  | { kind: 'module'; key: string; label: string; level: number }
+  | { kind: 'namespace'; key: string; label: string; level: number }
+  | { kind: 'class'; key: string; label: string; level: number; item: (typeof codespaceClassRows.value)[number] };
+
+const codespaceHierarchyRows = computed<AddCtxHierarchyRow[]>(() => {
+  const byModule = new Map<string, (typeof codespaceClassRows.value)>();
   for (const row of codespaceClassRows.value) {
-    const g = groups.get(row.pathLabel) ?? { pathLabel: row.pathLabel, items: [] };
-    g.items.push(row);
-    groups.set(row.pathLabel, g);
+    const arr = byModule.get(row.moduleId) ?? [];
+    arr.push(row);
+    byModule.set(row.moduleId, arr);
   }
-  return [...groups.values()].sort((a, b) => a.pathLabel.localeCompare(b.pathLabel));
+  const out: AddCtxHierarchyRow[] = [];
+  const modules = [...byModule.entries()]
+    .map(([moduleId, rows]) => ({
+      moduleId,
+      moduleName: rows[0]?.moduleName ?? moduleId,
+      rows,
+    }))
+    .sort((a, b) => a.moduleName.localeCompare(b.moduleName));
+  for (const mod of modules) {
+    out.push({ kind: 'module', key: `m:${mod.moduleId}`, label: mod.moduleName, level: 0 });
+    const nsSet = new Set<string>();
+    for (const row of mod.rows) {
+      let acc: string[] = [];
+      for (const seg of row.namespacePath) {
+        if (!seg) continue;
+        acc = [...acc, seg];
+        nsSet.add(acc.join('.'));
+      }
+    }
+    const namespaces = [...nsSet].sort((a, b) => a.localeCompare(b));
+    for (const ns of namespaces) {
+      const level = ns.split('.').length;
+      out.push({ kind: 'namespace', key: `n:${mod.moduleId}:${ns}`, label: ns.split('.').pop() ?? ns, level });
+      const classes = mod.rows
+        .filter((r) => r.namespacePath.filter(Boolean).join('.') === ns)
+        .sort((a, b) => a.className.localeCompare(b.className));
+      for (const row of classes) {
+        out.push({
+          kind: 'class',
+          key: `c:${row.moduleId}:${row.namespacePath.join('.')}:${row.classId}`,
+          label: row.className,
+          level: level + 1,
+          item: row,
+        });
+      }
+    }
+    const rootClasses = mod.rows
+      .filter((r) => r.namespacePath.filter(Boolean).length === 0)
+      .sort((a, b) => a.className.localeCompare(b.className));
+    for (const row of rootClasses) {
+      out.push({
+        kind: 'class',
+        key: `c:${row.moduleId}::${row.classId}`,
+        label: row.className,
+        level: 1,
+        item: row,
+      });
+    }
+  }
+  return out;
 });
 
 const boundClassKeySet = computed(() => {
@@ -478,8 +554,9 @@ const classDisplayNameMap = computed(() => {
   const byId = new Map<string, string>();
   const byName = new Map<string, string>();
   for (const r of props.codespaceClasses ?? []) {
-    const ns = r.namespacePath.join('.');
-    const full = ns ? `${ns}.${r.className}` : r.className;
+    const ns = codespaceNsChain(r.namespacePath);
+    const moduleLabel = (r.moduleName ?? '').trim() || r.moduleId;
+    const full = ns ? `[${moduleLabel}].${ns}.${r.className}` : `[${moduleLabel}].${r.className}`;
     if (!byId.has(r.classId)) byId.set(r.classId, full);
     if (!byName.has(r.className)) byName.set(r.className, full);
   }
@@ -501,7 +578,7 @@ const codespaceMembersByKey = computed(() => {
   const byFullName = new Map<string, { attrs: string[]; props: string[]; enums: string[]; meths: string[] }>();
   const byTailName = new Map<string, { attrs: string[]; props: string[]; enums: string[]; meths: string[] }>();
   for (const r of props.codespaceClasses ?? []) {
-    const ns = r.namespacePath.join('.');
+    const ns = codespaceNsChain(r.namespacePath);
     const full = ns ? `${ns}.${r.className}` : r.className;
     const val = {
       attrs: r.attributeLines ?? [],
@@ -775,16 +852,20 @@ function classOutOfBoundModel(c: ClassDef): boolean {
 }
 
 function isClassAlreadyAdded(row: (typeof codespaceClassRows.value)[number]): boolean {
-  return state.classes.some(
-    (c) => c.id === row.classId || c.name === row.className || slug(c.name) === row.classId,
-  );
+  const rowClassId = String(row.classId ?? '').trim();
+  return state.classes.some((c) => {
+    if (rowClassId) return c.id === rowClassId;
+    return c.id === slug(row.className);
+  });
 }
 
 function addClassFromCodespace(row: (typeof codespaceClassRows.value)[number]): void {
   if (layoutOnly.value) return;
-  const existing = state.classes.find(
-    (c) => c.id === row.classId || c.name === row.className || slug(c.name) === row.classId,
-  );
+  const rowClassId = String(row.classId ?? '').trim();
+  const existing = state.classes.find((c) => {
+    if (rowClassId) return c.id === rowClassId;
+    return c.id === slug(row.className);
+  });
   if (existing) {
     selectedIds.value = [existing.id];
     addCtx.open = false;
@@ -818,9 +899,7 @@ function addCustomClassAndSyncModel(): void {
     return;
   }
   const desiredId = slug(raw);
-  const existing = state.classes.find(
-    (c) => c.id === desiredId || c.name === raw || slug(c.name) === desiredId,
-  );
+  const existing = state.classes.find((c) => c.id === desiredId || slug(c.name) === desiredId);
   if (existing) {
     selectedIds.value = [existing.id];
     addCtx.open = false;
@@ -2007,8 +2086,9 @@ function onBackgroundContextMenu(e: MouseEvent): void {
   if (layoutOnly.value) return;
   addCtx.open = true;
   customClassName.value = '';
-  addCtx.x = e.clientX;
-  addCtx.y = e.clientY;
+  const p = clampAddCtxPosition(e.clientX, e.clientY);
+  addCtx.x = p.x;
+  addCtx.y = p.y;
 }
 
 type EdgePathItem = {
@@ -3049,17 +3129,30 @@ function deleteClass(classId: string): void {
           <div v-if="!codespaceClassRows.length" class="cde-addctx-empty">
             {{ locale === 'en' ? 'No class matched for adding' : '未匹配到可添加的 class' }}
           </div>
-          <div v-for="g in codespaceTreeGroups" :key="'grp-' + g.pathLabel" class="cde-addctx-group">
-            <div class="cde-addctx-group-title">{{ g.pathLabel }}</div>
+          <div v-for="row in codespaceHierarchyRows" :key="row.key">
+            <div
+              v-if="row.kind === 'module'"
+              class="cde-addctx-node cde-addctx-node--module"
+              :style="{ paddingLeft: `${row.level * 16}px` }"
+            >
+              {{ row.label }}
+            </div>
+            <div
+              v-else-if="row.kind === 'namespace'"
+              class="cde-addctx-node cde-addctx-node--namespace"
+              :style="{ paddingLeft: `${row.level * 16}px` }"
+            >
+              {{ row.label }}
+            </div>
             <button
-              v-for="row in g.items"
-              :key="`${row.moduleId}/${row.namespacePath.join('.')}/${row.classId}`"
+              v-else
               type="button"
               class="cde-addctx-item"
-              @click="addClassFromCodespace(row)"
+              :style="{ marginLeft: `${row.level * 16}px` }"
+              @click="addClassFromCodespace(row.item)"
             >
-              <span class="cde-addctx-item-class">{{ row.className }}</span>
-              <span v-if="isClassAlreadyAdded(row)" class="cde-addctx-item-added">{{ locale === 'en' ? 'Added' : '已添加' }}</span>
+              <span class="cde-addctx-item-class">{{ row.label }}</span>
+              <span v-if="isClassAlreadyAdded(row.item)" class="cde-addctx-item-added">{{ locale === 'en' ? 'Added' : '已添加' }}</span>
             </button>
           </div>
         </div>
@@ -3523,6 +3616,19 @@ function deleteClass(classId: string): void {
 .cde-addctx-item-added {
   font-size: 0.72rem;
   color: #0f766e;
+}
+.cde-addctx-node {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  padding: 4px 2px;
+}
+.cde-addctx-node--module {
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 4px;
+}
+.cde-addctx-node--namespace {
+  color: #475569;
 }
 .cde-addctx-group {
   border: 1px solid #e2e8f0;

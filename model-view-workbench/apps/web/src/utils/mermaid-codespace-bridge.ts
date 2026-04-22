@@ -37,10 +37,24 @@ function walkClassifiers(
   }
 }
 
-function matchesClass(diagramId: string, diagramName: string, classifierId: string, classifierName: string): boolean {
+/** 严格：仅 codespace `classes[].id` 与类图节点 id 一致（避免跨 NS 重名误开第一个）。 */
+function matchesClassifierIdStrict(diagramClassId: string, classifierId: string): boolean {
+  return !!diagramClassId && diagramClassId === classifierId;
+}
+
+/**
+ * 次要匹配：slug / 名称（仅在 strict 未命中时使用）。
+ * 不包含 `diagramId === classifierId`，否则与 strict 重复且无意义。
+ */
+function matchesClassSecondary(
+  diagramId: string,
+  diagramName: string,
+  classifierId: string,
+  classifierName: string,
+): boolean {
   const cn = classifierName.trim();
   const slugName = slug(cn);
-  if (diagramId && (diagramId === classifierId || diagramId === slugName)) return true;
+  if (diagramId && diagramId === slugName) return true;
   if (diagramName && (diagramName === cn || slug(diagramName) === classifierId)) return true;
   return false;
 }
@@ -73,7 +87,10 @@ export function resolveDiagramClassToCodespaceClassId(
   rows: CodespaceClassTreeItem[],
 ): string | null {
   for (const r of rows) {
-    if (matchesClass(diagramClassId, diagramClassName, r.classId, r.className)) return r.classId;
+    if (matchesClassifierIdStrict(diagramClassId, r.classId)) return r.classId;
+  }
+  for (const r of rows) {
+    if (matchesClassSecondary(diagramClassId, diagramClassName, r.classId, r.className)) return r.classId;
   }
   return null;
 }
@@ -185,8 +202,14 @@ export function findCodespaceClassifierForMermaidClass(
     let found: { mi: number; path: number[]; ci: number } | null = null;
     walkClassifiers(payload, (mi, path, ci, id, name) => {
       if (found) return;
-      if (matchesClass(diagramClassId, diagramClassName, id, name)) found = { mi, path, ci };
+      if (matchesClassifierIdStrict(diagramClassId, id)) found = { mi, path, ci };
     });
+    if (!found) {
+      walkClassifiers(payload, (mi, path, ci, id, name) => {
+        if (found) return;
+        if (matchesClassSecondary(diagramClassId, diagramClassName, id, name)) found = { mi, path, ci };
+      });
+    }
     if (!found) return null;
     const { mi, path, ci } = found;
     return { codespaceBlockId: b.payload.id, payload, mi, path, ci };
@@ -230,7 +253,8 @@ export function listCodespaceClassesForMermaidClass(
       const walkNs = (nodes: MvCodespaceNamespaceNode[] | undefined, nsPath: string[]) => {
         if (!nodes?.length) return;
         for (const n of nodes) {
-          const curPath = [...nsPath, n.name];
+          const nm = (n.name ?? '').trim();
+          const curPath = nm ? [...nsPath, nm] : [...nsPath];
           for (const c of n.classes ?? []) {
             const { attrs, enums, meths } = collectClassifierMemberLines(c);
             const props: string[] = [];

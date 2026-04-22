@@ -3,6 +3,7 @@ import { computed, inject } from 'vue';
 import type { MvCodespaceVariable, MvModelCodespacePayload } from '@mvwb/core';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from '../../../utils/codespace-canvas';
+import { formatModuleScopedPath, resolveNamespacePathLabel } from '../../../utils/codespace-module-path';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
 
 const csMsg = inject(CS_CANVAS_MSG_KEY)!;
@@ -24,6 +25,18 @@ const v = computed((): MvCodespaceVariable | null =>
   getNamespaceAtPath(props.modelValue, props.mi, props.path)?.variables?.[props.vi] ?? null,
 );
 
+const fullScopedTitle = computed(() => {
+  const item = v.value;
+  if (!item) return '';
+  const nm = (item.name ?? '').trim() || (item.id ?? '').trim() || `Var#${props.vi + 1}`;
+  return formatModuleScopedPath(
+    props.modelValue,
+    props.mi,
+    resolveNamespacePathLabel(props.modelValue, props.mi, props.path),
+    nm,
+  );
+});
+
 function patchVar(part: Partial<MvCodespaceVariable>) {
   props.runPatch((d) => {
     const x = getNamespaceAtPath(d, props.mi, props.path)?.variables?.[props.vi];
@@ -43,7 +56,7 @@ function removeVar() {
 <template>
   <CodespaceFloatShell
     :open="open && !!v"
-    :title="v ? csMsg.flVarTitle(v.name) : csMsg.flVarBare"
+    :title="v ? csMsg.flVarTitle(fullScopedTitle) : csMsg.flVarBare"
     @close="emit('close')"
   >
     <template v-if="v">

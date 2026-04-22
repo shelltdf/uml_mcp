@@ -34,6 +34,17 @@ function moduleLabel(mi: number): string {
   const raw = (props.modelValue.modules?.[mi]?.name ?? '').trim();
   return raw ? raw : `Module#${mi + 1}`;
 }
+function splitPathSegments(chain: string): string[] {
+  return String(chain ?? '')
+    .split('.')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+function formatModuleScopedPath(mi: number, ...chains: string[]): string {
+  const modulePart = `[${moduleLabel(mi)}]`;
+  const segs = chains.flatMap((c) => splitPathSegments(c));
+  return segs.length ? `${modulePart}.${segs.join('.')}` : modulePart;
+}
 function resolveNamespacePathLabel(payload: MvModelCodespacePayload, mi: number, path: number[]): string {
   const mod = payload.modules?.[mi];
   const names: string[] = [];
@@ -48,15 +59,17 @@ function resolveNamespacePathLabel(payload: MvModelCodespacePayload, mi: number,
   return names.length ? `.${names.join('.')}` : '.';
 }
 function appendNsChain(parent: string, name: string): string {
-  if (!parent) return name;
-  return `${parent}.${name}`;
+  const nn = (name ?? '').trim();
+  if (!nn) return parent;
+  if (!parent) return nn;
+  return `${parent}.${nn}`;
 }
 const parentPathKey = computed(() => `${props.mi}:${props.path.slice(0, -1).join('.')}`);
 const parentNsOptions = computed(() => {
   const out: Array<{ key: string; label: string; path: number[]; mi: number }> = [
     {
       key: `${props.mi}:`,
-      label: `${moduleLabel(props.mi)} / [root]`,
+      label: formatModuleScopedPath(props.mi),
       path: [],
       mi: props.mi,
     },
@@ -86,7 +99,7 @@ const parentNsOptions = computed(() => {
         const nextNsChain = appendNsChain(nsChain, n.name);
         out.push({
           key: `${mi}:${p.join('.')}`,
-          label: `${moduleLabel(mi)}.${nextNsChain}`,
+          label: formatModuleScopedPath(mi, nextNsChain),
           path: p,
           mi,
         });
@@ -99,7 +112,7 @@ const parentNsOptions = computed(() => {
     if (mi !== selfMi) {
       out.push({
         key: `${mi}:`,
-        label: `${moduleLabel(mi)} / [root]`,
+        label: formatModuleScopedPath(mi),
         path: [],
         mi,
       });
@@ -150,13 +163,15 @@ const groupedParentNsOptions = computed(() => {
   });
 });
 function treeItemLabel(label: string, mi: number): string {
-  const mod = moduleLabel(mi);
-  const p1 = `${mod}.`;
-  const p2 = `${mod} / `;
-  if (label.startsWith(p1)) return label.slice(p1.length);
-  if (label.startsWith(p2)) return label.slice(p2.length);
+  const scoped = `[${moduleLabel(mi)}].`;
+  const plain = `[${moduleLabel(mi)}]`;
+  if (label.startsWith(scoped)) return label.slice(scoped.length);
+  if (label === plain) return '.';
   return label;
 }
+const currentNamespaceFullPathLabel = computed(() =>
+  formatModuleScopedPath(props.mi, resolveNamespacePathLabel(props.modelValue, props.mi, props.path)),
+);
 function namespaceParentItemKind(key: string): 'root' | 'namespace' {
   const path = key.split(':')[1] ?? '';
   return path.trim() ? 'namespace' : 'root';
@@ -252,7 +267,7 @@ watch(
 <template>
   <CodespaceFloatShell
     :open="open && !!ns"
-    :title="ns ? cs.flNsTitle(ns.name) : cs.flNsBare"
+    :title="ns ? cs.flNsTitle(currentNamespaceFullPathLabel) : cs.flNsBare"
     @close="emit('close')"
   >
     <template v-if="ns">

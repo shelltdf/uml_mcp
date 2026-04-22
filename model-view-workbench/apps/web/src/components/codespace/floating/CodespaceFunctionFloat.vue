@@ -3,6 +3,7 @@ import { computed, inject } from 'vue';
 import type { MvCodespaceFunction, MvModelCodespacePayload } from '@mvwb/core';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from '../../../utils/codespace-canvas';
+import { formatModuleScopedPath, resolveNamespacePathLabel } from '../../../utils/codespace-module-path';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
 
 const csMsg = inject(CS_CANVAS_MSG_KEY)!;
@@ -24,6 +25,18 @@ const fn = computed((): MvCodespaceFunction | null =>
   getNamespaceAtPath(props.modelValue, props.mi, props.path)?.functions?.[props.fi] ?? null,
 );
 
+const fullScopedTitle = computed(() => {
+  const item = fn.value;
+  if (!item) return '';
+  const nm = (item.name ?? '').trim() || (item.id ?? '').trim() || `Fn#${props.fi + 1}`;
+  return formatModuleScopedPath(
+    props.modelValue,
+    props.mi,
+    resolveNamespacePathLabel(props.modelValue, props.mi, props.path),
+    nm,
+  );
+});
+
 function patchFn(part: Partial<MvCodespaceFunction>) {
   props.runPatch((d) => {
     const f = getNamespaceAtPath(d, props.mi, props.path)?.functions?.[props.fi];
@@ -43,7 +56,7 @@ function removeFn() {
 <template>
   <CodespaceFloatShell
     :open="open && !!fn"
-    :title="fn ? csMsg.flFnTitle(fn.name) : csMsg.flFnBare"
+    :title="fn ? csMsg.flFnTitle(fullScopedTitle) : csMsg.flFnBare"
     @close="emit('close')"
   >
     <template v-if="fn">

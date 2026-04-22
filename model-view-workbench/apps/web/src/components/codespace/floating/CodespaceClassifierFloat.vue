@@ -59,27 +59,37 @@ type SpecialMethodTemplate = {
 type ClassifierTabKey = 'basic' | 'bases' | 'internals' | 'members' | 'properties' | 'methods';
 
 const SPECIAL_METHOD_TEMPLATES: readonly SpecialMethodTemplate[] = [
-  { id: 'ctor-default', category: '构造/析构', label: '默认构造函数', method: { name: 'constructor', methodKind: 'constructor', type: 'void', params: [] } },
+  {
+    id: 'ctor-default',
+    category: 'Construction / destruction',
+    label: 'Default constructor',
+    method: { name: 'constructor', methodKind: 'constructor', type: 'void', params: [] },
+  },
   {
     id: 'ctor-copy',
-    category: '构造/析构',
-    label: '拷贝构造函数',
+    category: 'Construction / destruction',
+    label: 'Copy constructor',
     method: { name: 'constructor', methodKind: 'constructor', type: 'void', params: [{ name: 'other', type: 'Self', passMode: 'reference', isConst: true }] },
   },
-  { id: 'dtor', category: '构造/析构', label: '析构函数', method: { name: 'destructor', methodKind: 'destructor', type: 'void', params: [] } },
+  {
+    id: 'dtor',
+    category: 'Construction / destruction',
+    label: 'Destructor',
+    method: { name: 'destructor', methodKind: 'destructor', type: 'void', params: [] },
+  },
   {
     id: 'op-eq',
-    category: '运算符',
+    category: 'Operators',
     label: 'operator=',
     method: { name: 'operatorAssign', methodKind: 'operator', operatorSymbol: '=', type: 'Self&', params: [{ name: 'other', type: 'Self', passMode: 'reference', isConst: true }] },
   },
   {
     id: 'op-call',
-    category: '运算符',
+    category: 'Operators',
     label: 'operator()',
     method: { name: 'operatorCall', methodKind: 'operator', operatorSymbol: '()', type: 'void', params: [] },
   },
-  { id: 'dispose', category: '生命周期', label: 'Dispose', method: { name: 'Dispose', methodKind: 'normal', type: 'void', params: [] } },
+  { id: 'dispose', category: 'Lifecycle', label: 'Dispose', method: { name: 'Dispose', methodKind: 'normal', type: 'void', params: [] } },
 ];
 
 const props = defineProps<{
@@ -109,6 +119,17 @@ function moduleLabel(mi: number): string {
   const raw = (props.modelValue.modules?.[mi]?.name ?? '').trim();
   return raw ? raw : `Module#${mi + 1}`;
 }
+function splitPathSegments(chain: string): string[] {
+  return String(chain ?? '')
+    .split('.')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+function formatModuleScopedPath(mi: number, ...chains: string[]): string {
+  const modulePart = `[${moduleLabel(mi)}]`;
+  const segs = chains.flatMap((c) => splitPathSegments(c));
+  return segs.length ? `${modulePart}.${segs.join('.')}` : modulePart;
+}
 function resolveNamespacePathLabel(payload: MvModelCodespacePayload, mi: number, path: number[]): string {
   const mod = payload.modules?.[mi];
   const names: string[] = [];
@@ -123,8 +144,10 @@ function resolveNamespacePathLabel(payload: MvModelCodespacePayload, mi: number,
   return names.length ? `.${names.join('.')}` : '.';
 }
 function appendNsChain(parent: string, name: string): string {
-  if (!parent) return name;
-  return `${parent}.${name}`;
+  const nn = (name ?? '').trim();
+  if (!nn) return parent;
+  if (!parent) return nn;
+  return `${parent}.${nn}`;
 }
 const currentClassParentKey = computed(() => {
   const cp = props.classPath ?? [];
@@ -156,14 +179,15 @@ const classParentOptions = computed(() => {
       const c = classes[i]!;
       const p = [...classPath, i];
       const key = `cls:${mi}:${nsPath.join('.')}|${rootCi}|${p.join('.')}`;
+      const nextClassChain = appendNsChain(classChain, c.name);
       if (c.id !== selfId && !descendantIds.has(c.id)) {
         out.push({
           key,
           mi,
-          label: `${classChain}.${c.name}`,
+          label: formatModuleScopedPath(mi, nextClassChain),
         });
       }
-      walkClasses(c.classes, mi, nsPath, rootCi, p, `${classChain}.${c.name}`);
+      walkClasses(c.classes, mi, nsPath, rootCi, p, nextClassChain);
     }
   };
   const walkNs = (
@@ -180,16 +204,16 @@ const classParentOptions = computed(() => {
       out.push({
         key: `ns:${mi}:${p.join('.')}`,
         mi,
-        label: `${moduleLabel(mi)}.${nextNsChain}`,
+        label: formatModuleScopedPath(mi, nextNsChain),
       });
       for (let ci = 0; ci < (n.classes?.length ?? 0); ci++) {
         const c = n.classes![ci]!;
-        const classChain = `${nextNsChain}.${c.name}`;
+        const classChain = appendNsChain(nextNsChain, c.name);
         if (c.id !== selfId && !descendantIds.has(c.id)) {
           out.push({
             key: `cls:${mi}:${p.join('.')}|${ci}|`,
             mi,
-            label: `${moduleLabel(mi)}.${classChain}`,
+            label: formatModuleScopedPath(mi, classChain),
           });
         }
         walkClasses(c.classes, mi, p, ci, [], classChain);
@@ -233,6 +257,20 @@ const currentClassParentKind = computed<'namespace' | 'class'>(() =>
 const currentClassNamespacePathLabel = computed(() =>
   resolveNamespacePathLabel(props.modelValue, props.mi, props.path),
 );
+const currentClassFullPathLabel = computed(() => {
+  const ns = resolveNamespacePathLabel(props.modelValue, props.mi, props.path);
+  const root = selectedNamespace.value?.classes?.[props.ci];
+  if (!root) return formatModuleScopedPath(props.mi, ns, selectedClass.value?.name ?? '');
+  const names: string[] = [];
+  let cur: MvCodespaceClassifier | undefined = root;
+  names.push((root.name ?? '').trim());
+  for (const idx of props.classPath ?? []) {
+    cur = cur?.classes?.[idx];
+    if (!cur) break;
+    names.push((cur.name ?? '').trim());
+  }
+  return formatModuleScopedPath(props.mi, ns, names.join('.'));
+});
 const filteredClassParentOptions = computed(() => {
   const q = parentSearch.value.trim().toLowerCase();
   if (!q) return classParentOptions.value;
@@ -255,11 +293,10 @@ const groupedClassParentOptions = computed(() => {
   });
 });
 function treeItemLabel(label: string, mi: number): string {
-  const mod = moduleLabel(mi);
-  const p1 = `${mod} (current).`;
-  const p2 = `${mod}.`;
-  if (label.startsWith(p1)) return label.slice(p1.length);
-  if (label.startsWith(p2)) return label.slice(p2.length);
+  const scoped = `[${moduleLabel(mi)}].`;
+  const plain = `[${moduleLabel(mi)}]`;
+  if (label.startsWith(scoped)) return label.slice(scoped.length);
+  if (label === plain) return '.';
   return label;
 }
 function classParentItemKind(key: string): 'namespace' | 'class' {
@@ -931,7 +968,7 @@ watch(
   <CodespaceFloatShell
     :open="open && !!selectedClass"
     :allow-maximize="true"
-    :title="selectedClass ? csMsg.flClassifierTitle(selectedClass.name) : csMsg.flClassifierBare"
+    :title="selectedClass ? csMsg.flClassifierTitle(currentClassFullPathLabel) : csMsg.flClassifierBare"
     @close="emit('close')"
   >
     <template v-if="selectedClass">
@@ -1123,91 +1160,6 @@ watch(
       <section v-if="activeTab === 'properties'" class="cde-section-card">
         <h4 class="cde-section-title">{{ csMsg.flClsFieldsHeading }}</h4>
         <table class="cs-table">
-        <thead>
-          <tr>
-            <th>name</th>
-            <th>visibility</th>
-            <th>type</th>
-            <th>assocCls</th>
-            <th>assocType</th>
-            <th>static</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="{ mem, idx } in fieldRows" :key="'all-' + idx">
-            <td>
-              <input
-                :value="mem.name"
-                :title="csMsg.flClsMemberNameTitle"
-                @input="patchFieldMember(idx, { name: ($event.target as HTMLInputElement).value })"
-              />
-            </td>
-            <td>
-              <select
-                :value="mem.visibility ?? 'public'"
-                :title="csMsg.flClsMemberVisTitle"
-                @change="patchFieldMember(idx, { visibility: ($event.target as HTMLSelectElement).value })"
-              >
-                <option v-for="v in MEMBER_VIS_OPTIONS" :key="'mv-' + v" :value="v">{{ v }}</option>
-              </select>
-            </td>
-            <td>
-              <select
-                :value="mem.type ?? 'int'"
-                :title="csMsg.flClsMemberTypeSigTitle"
-                :disabled="mem.typeFromAssociation === true"
-                @change="patchFieldMember(idx, { type: ($event.target as HTMLSelectElement).value })"
-              >
-                <option v-for="t in MEMBER_TYPE_OPTIONS" :key="'mt-' + t" :value="t">{{ t }}</option>
-                <option v-if="mem.type && !memberTypeKnown(mem.type)" :value="mem.type">
-                  {{ mem.type }}
-                </option>
-              </select>
-            </td>
-            <td>
-              <select
-                class="wide"
-                :value="mem.associatedClassifierId ?? ''"
-                title="Classifier associated with this member (can differ across neighbors)"
-                @change="onFieldMemberAssocClassifierChange(idx, $event)"
-              >
-                <option value="">—</option>
-                <option v-for="cid in classifierOptions" :key="'macf-' + cid" :value="cid">
-                  {{ classifierNameById.get(cid) ?? cid }}
-                </option>
-              </select>
-            </td>
-            <td class="cs-td-center">
-              <input
-                type="checkbox"
-                :checked="mem.typeFromAssociation === true"
-                title="Read-only: controlled by association links"
-                disabled
-              />
-            </td>
-            <td class="cs-td-center">
-              <input
-                type="checkbox"
-                :checked="mem.static === true"
-                :title="csMsg.flClsMemberStaticTitle"
-                @change="patchFieldMember(idx, { static: ($event.target as HTMLInputElement).checked })"
-              />
-            </td>
-            <td>
-              <button type="button" class="link-btn" :title="csMsg.flClsRemoveMemberTitle" @click="removeFieldMember(idx)">
-                {{ csMsg.flClsRemoveMemberLabel }}
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <button type="button" class="add-row" :title="csMsg.flClsAddMemberTitle" @click="addMember">
-        {{ csMsg.flClsAddMemberLabel }}
-      </button>
-
-      <h5 class="cs-subh">{{ csMsg.flClsFieldsHeading }}</h5>
-      <table class="cs-table">
         <thead>
           <tr>
             <th>name</th>

@@ -3,6 +3,11 @@ import { computed, inject } from 'vue';
 import type { MvCodespaceClassEnum, MvModelCodespacePayload } from '@mvwb/core';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from '../../../utils/codespace-canvas';
+import {
+  formatModuleScopedPath,
+  resolveNamespacePathLabel,
+  resolveNestedClassifierNameChain,
+} from '../../../utils/codespace-module-path';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
 
 const csMsg = inject(CS_CANVAS_MSG_KEY)!;
@@ -34,10 +39,24 @@ function resolveEnum(payload: MvModelCodespacePayload): MvCodespaceClassEnum | n
 }
 
 const enumItem = computed(() => resolveEnum(props.modelValue));
-const floatTitle = computed(() => {
-  const name = enumItem.value?.name?.trim() || `Enum#${props.eni + 1}`;
-  return csMsg.value.formatEnumLabel(name);
+const enumFullScopedPath = computed(() => {
+  const e = enumItem.value;
+  if (!e) return '';
+  const nm = e.name?.trim() || `Enum#${props.eni + 1}`;
+  const ns = resolveNamespacePathLabel(props.modelValue, props.mi, props.path);
+  if (props.ci === undefined) {
+    return formatModuleScopedPath(props.modelValue, props.mi, ns, nm);
+  }
+  const chain = resolveNestedClassifierNameChain(
+    props.modelValue,
+    props.mi,
+    props.path,
+    props.ci,
+    props.classPath,
+  );
+  return formatModuleScopedPath(props.modelValue, props.mi, ns, chain, nm);
 });
+const floatTitle = computed(() => csMsg.value.formatEnumLabel(enumFullScopedPath.value));
 
 function patchEnum(part: Partial<MvCodespaceClassEnum>) {
   props.runPatch((d) => {

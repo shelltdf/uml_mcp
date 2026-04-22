@@ -3,6 +3,7 @@ import { computed, inject } from 'vue';
 import type { MvCodespaceMacro, MvModelCodespacePayload } from '@mvwb/core';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from '../../../utils/codespace-canvas';
+import { formatModuleScopedPath, resolveNamespacePathLabel } from '../../../utils/codespace-module-path';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';
 
 const csMsg = inject(CS_CANVAS_MSG_KEY)!;
@@ -24,6 +25,18 @@ const mac = computed((): MvCodespaceMacro | null =>
   getNamespaceAtPath(props.modelValue, props.mi, props.path)?.macros?.[props.maci] ?? null,
 );
 
+const fullScopedTitle = computed(() => {
+  const item = mac.value;
+  if (!item) return '';
+  const nm = (item.name ?? '').trim() || (item.id ?? '').trim() || `Macro#${props.maci + 1}`;
+  return formatModuleScopedPath(
+    props.modelValue,
+    props.mi,
+    resolveNamespacePathLabel(props.modelValue, props.mi, props.path),
+    nm,
+  );
+});
+
 function patchMacro(part: Partial<MvCodespaceMacro>) {
   props.runPatch((d) => {
     const m = getNamespaceAtPath(d, props.mi, props.path)?.macros?.[props.maci];
@@ -43,7 +56,7 @@ function removeMacro() {
 <template>
   <CodespaceFloatShell
     :open="open && !!mac"
-    :title="mac ? csMsg.flMacroTitle(mac.name) : csMsg.flMacroBare"
+    :title="mac ? csMsg.flMacroTitle(fullScopedTitle) : csMsg.flMacroBare"
     @close="emit('close')"
   >
     <template v-if="mac">
