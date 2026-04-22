@@ -91,7 +91,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  (e: 'saved', payload: { markdown: string; relPath: string }): void;
+  (e: 'updated', payload: { markdown: string; relPath: string }): void;
   (e: 'close'): void;
   /** 代码空间画布选中节点摘要与属性行，供主窗口属性 Dock 展示 */
   (e: 'codespaceDockContext', ctx: CodespaceDockContextPayload): void;
@@ -144,6 +144,8 @@ const classCanvasCodespaceFloatOpen = ref(false);
 const classCanvasCodespaceFloat = ref<{ mi: number; path: number[]; ci: number } | null>(null);
 const classCanvasCodespaceSideBlockId = ref<string | null>(null);
 const classCanvasCodespaceSidePayload = ref<MvModelCodespacePayload | null>(null);
+/** 自动内存同步后，忽略同一次回流导致的本地重置 */
+const lastAutoSyncedMarkdown = ref('');
 /** 子表标签「×」删除：页内确认（部分壳层对 window.confirm 不可靠） */
 const subtableDeleteOpen = ref(false);
 const subtableDeleteIndex = ref<number | null>(null);
@@ -151,6 +153,10 @@ const subtableDeleteIndex = ref<number | null>(null);
 watch(
   block,
   (b) => {
+    if (lastAutoSyncedMarkdown.value && props.markdown === lastAutoSyncedMarkdown.value) {
+      lastAutoSyncedMarkdown.value = '';
+      return;
+    }
     modelSqlDraft.value = null;
     activeTableIndex.value = 0;
     subtableDeleteOpen.value = false;
@@ -411,7 +417,7 @@ function tryAutoBindSingleModelRefOnViewOpen(): void {
   if (isMermaidViewKind(v.kind)) {
     next = upsertTrailingMermaidMirror(next, props.blockId, toViewPayloadText(v.payload));
   }
-  emit('saved', { markdown: next, relPath: props.relPath });
+  emit('updated', { markdown: next, relPath: props.relPath });
   window.alert(locale.value === 'en' ? `Auto-bound modelRefs: ${target}` : `已自动绑定 modelRefs：${target}`);
 }
 
@@ -591,7 +597,7 @@ function syncAssocTypeFromDiagramToCodespace(): void {
     }
     return undefined;
   };
-  /** member / properties 上 `associatedClassifierId`：仅推导「当前类 ↔ 指定 Classifier」沿类图存在边时的对端显示名。 */
+  /** members / properties 上 `associatedClassifierId`：仅推导「当前类 ↔ 指定 Classifier」沿类图存在边时的对端显示名。 */
   const resolveTypeForAssociatedClassifier = (
     ownerClassId: string,
     ownerClassName: string,
@@ -617,7 +623,7 @@ function syncAssocTypeFromDiagramToCodespace(): void {
         for (const c of n.classes ?? []) {
           const cn = (c.name ?? c.id).trim();
           const fallback = resolveClassLevelType(c.id, cn);
-          for (const m of c.member ?? []) {
+          for (const m of c.members ?? []) {
             const aid = m.associatedClassifierId?.trim();
             const t = aid ? resolveTypeForAssociatedClassifier(c.id, cn, aid) : fallback;
             m.typeFromAssociation = !!t || undefined;
@@ -716,8 +722,9 @@ function directedAssocKey(fromClassifierId: string, toClassifierId: string): str
 }
 
 /**
- * uml-class：将画布 `association` 边写入同命名空间下 codespace `associations`。
- * 使用 id 前缀 `diag-asc-` 与手工维护的关联区分；若同向已有非 diag 记录则不覆盖。
+ * uml-class：`association` 精确同步到成员/属性（associatedClassifierId），`dependency` 写 class 级 associations。
+ * - association：仅当边上带 fromSlotSection/fromSlotName（来自右侧成员/属性句柄）才回写
+ * - dependency：写入 namespaces[].associations（id 前缀 diag-dep-，不覆盖同向手工记录）
  */
 function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: string): void {
   const v = viewDraft.value;
@@ -734,19 +741,34 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
   const resolveCsId = (diagramId: string): string | null =>
     resolveDiagramClassToCodespaceClassId(diagramId, nameByDiagramClassId(diagramId), rows);
 
-  type DiagramAssoc = { fromCs: string; toCs: string; fromMult?: string; toMult?: string };
-  const diagramAssocs: DiagramAssoc[] = [];
+  type DiagramAssocSlot = {
+    fromCs: string;
+    toCs: string;
+    section: 'members' | 'properties';
+    slotName: string;
+  };
+  type DiagramDep = { fromCs: string; toCs: string; fromMult?: string; toMult?: string };
+  const slotAssocs: DiagramAssocSlot[] = [];
+  const deps: DiagramDep[] = [];
   for (const l of state.links) {
-    if (l.kind !== 'association') continue;
+    if (l.kind !== 'association' && l.kind !== 'dependency') continue;
     const a = resolveCsId(l.from);
     const b = resolveCsId(l.to);
     if (!a || !b || a === b) continue;
-    diagramAssocs.push({
-      fromCs: a,
-      toCs: b,
-      fromMult: l.fromMult,
-      toMult: l.toMult,
-    });
+    if (l.kind === 'dependency') {
+      deps.push({
+        fromCs: a,
+        toCs: b,
+        fromMult: l.fromMult,
+        toMult: l.toMult,
+      });
+      continue;
+    }
+    const section = l.fromSlotSection;
+    const slotName = (l.fromSlotName ?? '').trim();
+    if ((section === 'members' || section === 'properties') && slotName) {
+      slotAssocs.push({ fromCs: a, toCs: b, section, slotName });
+    }
   }
 
   function findOwnerNs(
@@ -762,19 +784,57 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
     return null;
   }
 
-  const byNs = new Map<MvCodespaceNamespaceNode, DiagramAssoc[]>();
+  const byNsDep = new Map<MvCodespaceNamespaceNode, DiagramDep[]>();
   for (const mod of side.modules ?? []) {
     const roots = mod.namespaces;
-    for (const d of diagramAssocs) {
+    for (const d of deps) {
       const nf = findOwnerNs(roots, d.fromCs);
       const nt = findOwnerNs(roots, d.toCs);
       if (!nf || nf !== nt) continue;
-      const arr = byNs.get(nf) ?? [];
+      const arr = byNsDep.get(nf) ?? [];
       const ix = arr.findIndex((x) => x.fromCs === d.fromCs && x.toCs === d.toCs);
       if (ix >= 0) arr[ix] = d;
       else arr.push(d);
-      byNs.set(nf, arr);
+      byNsDep.set(nf, arr);
     }
+  }
+
+  const byClassSlot = new Map<string, string>();
+  for (const a of slotAssocs) {
+    byClassSlot.set(`${a.fromCs}\t${a.section}\t${a.slotName}`, a.toCs);
+  }
+
+  for (const mod of side.modules ?? []) {
+    const walk = (nodes: MvCodespaceNamespaceNode[] | undefined) => {
+      if (!nodes?.length) return;
+      for (const n of nodes) {
+        for (const c of n.classes ?? []) {
+          const patchList = <T extends { name: string; associatedClassifierId?: string; typeFromAssociation?: boolean }>(
+            list: T[] | undefined,
+            section: 'members' | 'properties',
+          ) => {
+            if (!list?.length) return;
+            for (const row of list) {
+              const nm = (row.name ?? '').trim();
+              if (!nm) continue;
+              const key = `${c.id}\t${section}\t${nm}`;
+              const hit = byClassSlot.get(key);
+              if (hit) {
+                row.associatedClassifierId = hit;
+                row.typeFromAssociation = true;
+              } else if (row.typeFromAssociation === true) {
+                row.associatedClassifierId = undefined;
+                row.typeFromAssociation = undefined;
+              }
+            }
+          };
+          patchList(c.members, 'members');
+          patchList(c.properties, 'properties');
+        }
+        walk(n.namespaces);
+      }
+    };
+    walk(mod.namespaces);
   }
 
   function walkNs(nodes: MvCodespaceNamespaceNode[] | undefined, fn: (n: MvCodespaceNamespaceNode) => void): void {
@@ -787,8 +847,8 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
 
   for (const mod of side.modules ?? []) {
     walkNs(mod.namespaces, (ns) => {
-      const list = byNs.get(ns) ?? [];
-      const manual = (ns.associations ?? []).filter((a) => !String(a.id).startsWith('diag-asc-'));
+      const list = byNsDep.get(ns) ?? [];
+      const manual = (ns.associations ?? []).filter((a) => !String(a.id).startsWith('diag-dep-'));
       const manualDirected = new Set(manual.map((a) => directedAssocKey(a.fromClassifierId, a.toClassifierId)));
 
       const fromDiag: MvCodespaceAssociation[] = [];
@@ -796,8 +856,8 @@ function syncUmlAssociationEdgesToCodespaceAssociations(diagramPayloadText: stri
         const k = directedAssocKey(d.fromCs, d.toCs);
         if (manualDirected.has(k)) continue;
         fromDiag.push({
-          id: `diag-asc-${d.fromCs}-${d.toCs}`,
-          kind: 'association',
+          id: `diag-dep-${d.fromCs}-${d.toCs}`,
+          kind: 'dependency',
           fromClassifierId: d.fromCs,
           toClassifierId: d.toCs,
           fromEnd: d.fromMult?.trim() ? { multiplicity: d.fromMult.trim() } : undefined,
@@ -1518,23 +1578,9 @@ watch(
   },
 );
 
-function save() {
+function autoSyncToMarkdownInMemory(): void {
   const inner = buildInnerJson();
-  if (!inner) {
-    const k = block.value?.kind;
-    if (
-      k === 'mv-model-sql' ||
-      k === 'mv-model-kv' ||
-      k === 'mv-model-struct' ||
-      k === 'mv-model-codespace' ||
-      k === 'mv-model-interface'
-    ) {
-      window.alert(
-        '无法保存：JSON 无效或不符合当前围栏契约（mv-model-sql：非空 tables、行须满足列声明、**主键列组合在表内唯一**；KV 每条须为 JSON 对象；结构化层次须含合法 root；代码空间须含非空 modules、全局 id 唯一、bases/associations 端点须指向已声明的 classes[].id；接口模型须含非空 endpoints 且端点 id 唯一）。',
-      );
-    }
-    return;
-  }
+  if (!inner) return;
   let base = props.markdown;
   if (
     block.value?.kind === 'mv-view' &&
@@ -1551,11 +1597,19 @@ function save() {
   if (block.value?.kind === 'mv-view' && viewDraft.value && isMermaidViewKind(viewDraft.value.kind)) {
     next = upsertTrailingMermaidMirror(next, props.blockId, toViewPayloadText(viewDraft.value.payload));
   }
-  classCanvasCodespaceSideBlockId.value = null;
-  classCanvasCodespaceSidePayload.value = null;
-  classCanvasCodespaceFloatOpen.value = false;
-  emit('saved', { markdown: next, relPath: props.relPath });
+  if (next === props.markdown) return;
+  lastAutoSyncedMarkdown.value = next;
+  emit('updated', { markdown: next, relPath: props.relPath });
 }
+
+watch(
+  hasCanvasUnsavedChanges,
+  (dirty) => {
+    if (!dirty) return;
+    autoSyncToMarkdownInMemory();
+  },
+  { flush: 'post' },
+);
 
 function closeWin() {
   emit('close');
@@ -1644,8 +1698,10 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
     id: ev.classId,
     name: ev.className,
     kind: 'class',
-    member: [],
-    method: [],
+    members: [],
+    methods: [],
+    properties: [],
+    enums: [],
   });
 }
 </script>
@@ -1672,15 +1728,6 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           @click="closeWin"
         >
           {{ ui.tbClose }}
-        </button>
-        <button
-          type="button"
-          :class="['tb', 'primary', { 'tb-dirty': hasCanvasUnsavedChanges }]"
-          :disabled="!block"
-          :title="ui.blockCanvasSaveTitle"
-          @click="save"
-        >
-          {{ locale === 'en' ? 'Update' : '更新' }}
         </button>
       </div>
     </header>

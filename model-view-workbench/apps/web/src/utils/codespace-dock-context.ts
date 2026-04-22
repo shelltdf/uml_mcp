@@ -163,7 +163,7 @@ function formatLines(s: CsDockSelection, p: MvModelCodespacePayload, M: Codespac
     push('bases', basesSummary(c.bases, M));
     push(
       M.dockMembersCount,
-      String((c.member?.length ?? 0) + (c.method?.length ?? 0) + (c['enum']?.length ?? 0)),
+      String((c.members?.length ?? 0) + (c.methods?.length ?? 0) + (c.enums?.length ?? 0)),
     );
     return lines;
   }

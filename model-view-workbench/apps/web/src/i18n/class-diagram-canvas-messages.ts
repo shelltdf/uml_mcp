@@ -47,7 +47,7 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeSectionMethods: '操作',
     cdeShortcutsPanel: '快捷键',
     cdeShortcutsBody:
-      '中键拖拽：平移画布\n滚轮：缩放\n左键点击类框：选中；Ctrl/⌘+点击：多选\n左键拖空白：框选\n左键拖拽类框：移动\n双击类框：在 Codespace 中打开类编辑（需 modelRefs 绑定）',
+      '中键拖拽：平移画布\n滚轮：缩放\n左键点击类框：选中；Ctrl/⌘+点击：多选\n左键拖空白：框选\n左键拖拽类框：移动\n右侧成员/属性小三角拖拽：创建 association（同步到 members/properties）\n类框右上小三角拖拽：创建 dependency（class 级）\n双击类框：在 Codespace 中打开类编辑（需 modelRefs 绑定）',
     cdeVisibilityPanel: '显示',
     cdeShowInherit: '继承关系',
     cdeShowAssoc: '关联关系',
@@ -74,7 +74,7 @@ export const classDiagramCanvasMessages: Record<AppLocale, ClassDiagramCanvasMes
     cdeSectionMethods: 'Methods',
     cdeShortcutsPanel: 'Shortcuts',
     cdeShortcutsBody:
-      'Middle-drag: pan\nWheel: zoom\nClick class: select; Ctrl/Cmd+click: multi\nDrag empty: marquee\nDrag class: move\nDouble-click: open Codespace class editor (requires modelRefs)',
+      'Middle-drag: pan\nWheel: zoom\nClick class: select; Ctrl/Cmd+click: multi\nDrag empty: marquee\nDrag class: move\nDrag right member/property handles: create association (sync to members/properties)\nDrag top-right class handle: create dependency (class-level)\nDouble-click: open Codespace class editor (requires modelRefs)',
     cdeVisibilityPanel: 'Show',
     cdeShowInherit: 'Inheritance',
     cdeShowAssoc: 'Associations',

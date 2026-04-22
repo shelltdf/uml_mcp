@@ -25,19 +25,33 @@
                   "id": "cls-widget",
                   "name": "Widget",
                   "kind": "class",
-                  "member": [],
-                  "method": [
-                    { "name": "draw", "visibility": "public", "virtual": true, "signature": "void draw()" }
+                  "members": [],
+                  "methods": [
+                    {
+                      "name": "draw",
+                      "visibility": "public",
+                      "virtual": true,
+                      "signature": "void draw()"
+                    }
                   ]
                 },
                 {
                   "id": "cls-button",
                   "name": "Button",
                   "kind": "class",
-                  "bases": [{ "targetId": "cls-widget", "relation": "generalization" }],
-                  "member": [],
-                  "method": [
-                    { "name": "onClick", "visibility": "public", "signature": "void onClick()" }
+                  "bases": [
+                    {
+                      "targetId": "cls-widget",
+                      "relation": "generalization"
+                    }
+                  ],
+                  "members": [],
+                  "methods": [
+                    {
+                      "name": "onClick",
+                      "visibility": "public",
+                      "signature": "void onClick()"
+                    }
                   ]
                 }
               ],
@@ -52,8 +66,22 @@
               ]
             }
           ],
-          "functions": [{ "id": "fn-run", "name": "runApp", "signature": "void runApp()", "notes": "entry" }],
-          "macros": [{ "id": "mac-log", "name": "LOG", "params": "msg", "definitionSnippet": "/* log */" }]
+          "functions": [
+            {
+              "id": "fn-run",
+              "name": "runApp",
+              "signature": "void runApp()",
+              "notes": "entry"
+            }
+          ],
+          "macros": [
+            {
+              "id": "mac-log",
+              "name": "LOG",
+              "params": "msg",
+              "definitionSnippet": "/* log */"
+            }
+          ]
         }
       ]
     }

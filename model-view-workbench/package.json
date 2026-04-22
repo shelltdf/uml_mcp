@@ -9,6 +9,7 @@
     "vscode-extension"
   ],
   "devDependencies": {
+    "tsx": "^4.20.6",
     "typescript": "~5.7.2"
   },
   "scripts": {
@@ -17,6 +18,7 @@
     "build:vscode": "npm run build && npm run copy:vscode-media && npm run compile --workspace=mvwb-workbench",
     "test": "npm run test -w @mvwb/core",
     "dev:web": "npm run build -w @mvwb/core && npm run dev -w @mvwb/web",
-    "dev:electron": "npm run build -w @mvwb/core && npm run build -w @mvwb/web && npm run dev -w @mvwb/electron"
+    "dev:electron": "npm run build -w @mvwb/core && npm run build -w @mvwb/web && npm run dev -w @mvwb/electron",
+    "migrate:codespace-schema": "tsx scripts/migrate-codespace-schema.ts"
   }
 }

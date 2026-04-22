@@ -129,9 +129,9 @@ function collectClassifierMemberLines(c: MvCodespaceClassifier): {
   enums: string[];
   meths: string[];
 } {
-  const attrs = (c.member ?? []).map(fieldToAttrLine);
-  const enums = (c.enum ?? []).map(enumToLine);
-  const meths = (c.method ?? []).map(methodToLine);
+  const attrs = (c.members ?? []).map(fieldToAttrLine);
+  const enums = (c.enums ?? []).map(enumToLine);
+  const meths = (c.methods ?? []).map(methodToLine);
   return { attrs, enums, meths };
 }
 

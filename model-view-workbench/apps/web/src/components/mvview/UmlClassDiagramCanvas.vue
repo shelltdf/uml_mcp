@@ -117,6 +117,8 @@ const inheritDrag = ref<{ fromId: string } | null>(null);
 const tempInheritLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 const associationDrag = ref<{ fromId: string; sectionIndex: number; lineIndex: number; anchor: 'left' | 'right' } | null>(null);
 const tempAssociationLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+const dependencyDrag = ref<{ fromId: string } | null>(null);
+const tempDependencyLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 const selectedEdgeId = ref<string | null>(null);
 const selectedInheritHandleClassId = ref<string | null>(null);
 const edgeCtx = reactive({ open: false, x: 0, y: 0, edgeId: '' as string });
@@ -540,6 +542,31 @@ function rightHandleRows(c: ClassDef): Array<{ key: string; sectionIndex: number
   const prop = effectiveProperties(c);
   for (let i = 0; i < prop.length; i++) out.push({ key: `p-${i}`, sectionIndex: 1, lineIndex: i });
   return out;
+}
+
+function extractSlotName(rawLine: string): string {
+  const s = String(rawLine ?? '').trim();
+  if (!s || s === '-') return '';
+  const noLead = s.replace(/^[+\-#~$]+/, '').trim();
+  const m = noLead.match(/[A-Za-z_][A-Za-z0-9_]*/);
+  return m ? m[0]! : '';
+}
+
+function fromSlotMeta(c: ClassDef, sectionIndex: number, lineIndex: number): {
+  fromSlotSection: 'members' | 'properties';
+  fromSlotName: string;
+} | null {
+  if (sectionIndex === 0) {
+    const line = effectiveAttributes(c)[lineIndex] ?? '';
+    const name = extractSlotName(line);
+    return name ? { fromSlotSection: 'members', fromSlotName: name } : null;
+  }
+  if (sectionIndex === 1) {
+    const line = effectiveProperties(c)[lineIndex] ?? '';
+    const name = extractSlotName(line);
+    return name ? { fromSlotSection: 'properties', fromSlotName: name } : null;
+  }
+  return null;
 }
 
 function rightHandleTipY(c: ClassDef, h: { sectionIndex: number; lineIndex: number }): number {
@@ -1115,6 +1142,22 @@ function startAssociationDrag(
   tempAssociationLine.value = { x1, y1, x2: w.x, y2: w.y };
 }
 
+function startDependencyDrag(e: PointerEvent, fromId: string): void {
+  if (layoutOnly.value) return;
+  e.stopPropagation();
+  e.preventDefault();
+  const p = positions[fromId];
+  const c = state.classes.find((x) => x.id === fromId);
+  if (!p || !c) return;
+  selectedInheritHandleClassId.value = null;
+  selectedEdgeId.value = null;
+  dependencyDrag.value = { fromId };
+  const x1 = p.x + classBoxSize(c).w + 16;
+  const y1 = p.y + 18;
+  const w = clientToWorld(e.clientX, e.clientY);
+  tempDependencyLine.value = { x1, y1, x2: w.x, y2: w.y };
+}
+
 function onGlobalPointerMove(e: PointerEvent): void {
   const w = clientToWorld(e.clientX, e.clientY);
   if (inheritDrag.value && tempInheritLine.value) {
@@ -1131,17 +1174,26 @@ function onGlobalPointerMove(e: PointerEvent): void {
       y2: w.y,
     };
   }
+  if (dependencyDrag.value && tempDependencyLine.value) {
+    tempDependencyLine.value = {
+      ...tempDependencyLine.value,
+      x2: w.x,
+      y2: w.y,
+    };
+  }
 }
 
 function onGlobalPointerUp(e: PointerEvent): void {
   if (layoutOnly.value) {
     inheritDrag.value = null;
     associationDrag.value = null;
+    dependencyDrag.value = null;
     tempInheritLine.value = null;
     tempAssociationLine.value = null;
+    tempDependencyLine.value = null;
     return;
   }
-  if (!inheritDrag.value && !associationDrag.value) return;
+  if (!inheritDrag.value && !associationDrag.value && !dependencyDrag.value) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const w = clientToWorld(e.clientX, e.clientY);
   const targetId = classIdAtWorldPoint(w.x, w.y);
@@ -1178,11 +1230,15 @@ function onGlobalPointerUp(e: PointerEvent): void {
       // left handle:  source.left  -> target.right => from=target, to=source
       const from = anchor === 'right' ? fromId : anchorTargetId;
       const to = anchor === 'right' ? anchorTargetId : fromId;
+      const fromClass = state.classes.find((x) => x.id === from);
+      const slotMeta =
+        anchor === 'right' && fromClass ? fromSlotMeta(fromClass, dragSectionIndex, dragLineIndex) : null;
       state.links.push({
         id: newId,
         from,
         to,
         kind: 'association',
+        ...(slotMeta ?? {}),
       });
       if (anchor === 'right') {
         associationAnchorByEdge[newId] = {
@@ -1190,6 +1246,22 @@ function onGlobalPointerUp(e: PointerEvent): void {
           lineIndex: dragLineIndex,
         };
       }
+      selectedEdgeId.value = newId;
+      pushPayload();
+    }
+  }
+  if (dependencyDrag.value) {
+    const fromId = dependencyDrag.value.fromId;
+    dependencyDrag.value = null;
+    tempDependencyLine.value = null;
+    if (targetId && targetId !== fromId) {
+      const newId = `dep-${Date.now()}`;
+      state.links.push({
+        id: newId,
+        from: fromId,
+        to: targetId,
+        kind: 'dependency',
+      });
       selectedEdgeId.value = newId;
       pushPayload();
     }
@@ -1720,6 +1792,15 @@ function deleteClass(classId: string): void {
               style="cursor: crosshair"
               @pointerdown.stop="startAssociationDrag($event, c.id, 0, 0, 'left')"
             />
+            <polygon
+              v-if="!layoutOnly"
+              points="248,18 264,10 264,26"
+              :fill="isDarkTheme() ? '#cbd5e1' : '#334155'"
+              class="cde-dependency-handle"
+              @pointerdown.stop="startDependencyDrag($event, c.id)"
+            >
+              <title>{{ locale === 'en' ? 'Drag to target class to create dependency' : '拖到目标类以创建依赖关系' }}</title>
+            </polygon>
             <template v-for="(sec, si) in previewSections(c)" :key="'pv-sec-' + si">
               <text
                 :x="PREVIEW_LABEL_X"
@@ -1993,6 +2074,15 @@ function deleteClass(classId: string): void {
             :d="`M ${tempAssociationLine.x1} ${tempAssociationLine.y1} L ${tempAssociationLine.x2} ${tempAssociationLine.y2}`"
             fill="none"
             stroke="#2563eb"
+            stroke-width="2"
+            stroke-dasharray="6 4"
+            pointer-events="none"
+          />
+          <path
+            v-if="tempDependencyLine"
+            :d="`M ${tempDependencyLine.x1} ${tempDependencyLine.y1} L ${tempDependencyLine.x2} ${tempDependencyLine.y2}`"
+            fill="none"
+            stroke="#64748b"
             stroke-width="2"
             stroke-dasharray="6 4"
             pointer-events="none"
@@ -2370,6 +2460,10 @@ function deleteClass(classId: string): void {
 
 .cde-inherit-handle {
   cursor: crosshair;
+}
+
+.cde-dependency-handle {
+  cursor: alias;
 }
 
 .cde-left-stack {

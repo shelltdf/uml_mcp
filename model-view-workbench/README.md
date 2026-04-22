@@ -40,6 +40,12 @@
 - 文本型扩展（如 `mermaid-*`）保持 `payload` 字符串语义；可搭配 `` ```mermaid `` 镜像段承载正文。
 - `@startuml` 片段视为插件层文本示例，不属于 `mv-*` 核心 JSON 契约。
 - 示例与详细约定见 [`examples/sample-workspace/PAYLOAD_RULES.md`](examples/sample-workspace/PAYLOAD_RULES.md)。
+- 面向用户可读的 schema 文档中心见 [`schema/README.md`](schema/README.md)。
+- 当前版本规范见 [`schema/versions/1-2026-04-22.md`](schema/versions/1-2026-04-22.md)。
+- schema 变更记录见 [`schema/CHANGELOG.md`](schema/CHANGELOG.md)。
+- 本版重点：
+  - `mv-model-codespace` class 字段统一为复数：`members/methods/enums/properties`
+  - `uml-class` 同步语义：`association` 为成员/属性级，`dependency` 为 class 级
 
 ## 结构
 

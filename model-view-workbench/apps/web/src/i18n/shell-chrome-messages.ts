@@ -144,8 +144,6 @@ export type ShellChromeMessages = {
   labelBodyChars: string;
   labelCharsUnit: string;
   labelCanvas: string;
-  /** 块画布工具栏「保存」：写回当前 Markdown */
-  blockCanvasSaveTitle: string;
   /** 独立块画布窗口「关闭」 */
   blockCanvasClosePopupTitle: string;
   blockCanvasNotFound: string;
@@ -390,7 +388,6 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     labelBodyChars: '正文长度',
     labelCharsUnit: '字符',
     labelCanvas: '代码块画布',
-    blockCanvasSaveTitle: '保存到 Markdown — 无全局快捷键',
     blockCanvasClosePopupTitle: '关闭窗口 — 无全局快捷键',
     blockCanvasNotFound: '未找到块',
     blockCanvasBodyAria: 'Markdown 围栏代码块编辑画布',
@@ -617,7 +614,6 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     labelBodyChars: 'Body length',
     labelCharsUnit: 'chars',
     labelCanvas: 'Block canvas',
-    blockCanvasSaveTitle: 'Save to Markdown — no global shortcut',
     blockCanvasClosePopupTitle: 'Close window — no global shortcut',
     blockCanvasNotFound: 'Block not found',
     blockCanvasBodyAria: 'Fence block editing canvas',
@@ -846,14 +842,14 @@ export function trLogOpenedCanvasTab(locale: AppLocale, id: string): string {
   return locale === 'en' ? `Opened block canvas tab: ${id}` : `已打开代码块画布标签：${id}`;
 }
 
-export function trLogCanvasTabSaved(locale: AppLocale, relPath: string): string {
-  return locale === 'en' ? `Block canvas saved: ${relPath}` : `代码块画布已保存：${relPath}`;
+export function trLogCanvasTabUpdated(locale: AppLocale, relPath: string): string {
+  return locale === 'en' ? `Block canvas updated in memory: ${relPath}` : `代码块画布已更新到内存：${relPath}`;
 }
 
 export function trLogMergedFromCanvasWindow(locale: AppLocale, relPath: string): string {
   return locale === 'en'
-    ? `Merged save from block canvas window: ${relPath}`
-    : `已从代码块画布窗口合并保存：${relPath}`;
+    ? `Merged in-memory update from block canvas window: ${relPath}`
+    : `已从代码块画布窗口合并内存更新：${relPath}`;
 }
 
 export function trLogStartup(locale: AppLocale): string {

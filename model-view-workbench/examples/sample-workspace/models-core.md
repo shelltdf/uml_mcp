@@ -87,8 +87,8 @@
               "id": "cls_placeholder",
               "name": "Placeholder",
               "kind": "class",
-              "member": [],
-              "method": []
+              "members": [],
+              "methods": []
             }
           ]
         }

@@ -67,12 +67,12 @@ const selectedNamespace = computed(() => getNamespaceAtPath(props.modelValue, pr
 
 const classifierOptions = computed(() => collectClassifierIds(props.modelValue));
 const fieldRows = computed(() =>
-  (selectedClass.value?.member ?? [])
+  (selectedClass.value?.members ?? [])
     .map((mem, idx) => ({ mem, idx }))
     .filter((r) => r.mem.accessor === undefined || r.mem.accessor === 'none'),
 );
-const methodRows = computed(() => (selectedClass.value?.method ?? []).map((mem, idx) => ({ mem, idx })));
-const enumRows = computed(() => (selectedClass.value?.['enum'] ?? []).map((mem, idx) => ({ mem, idx })));
+const methodRows = computed(() => (selectedClass.value?.methods ?? []).map((mem, idx) => ({ mem, idx })));
+const enumRows = computed(() => (selectedClass.value?.enums ?? []).map((mem, idx) => ({ mem, idx })));
 const propertyRows = computed(() => selectedClass.value?.properties ?? []);
 
 const classifierNameById = computed(() => {
@@ -314,9 +314,9 @@ function addMember() {
   props.runPatch((d) => {
     const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
     if (!c) return;
-    if (!c.member) c.member = [];
+    if (!c.members) c.members = [];
     const name = ensureUniqueClassifierItemName(c, csMsg.value.newMemberName);
-    c.member.push({ name, visibility: 'public', type: 'int' });
+    c.members.push({ name, visibility: 'public', type: 'int' });
   });
 }
 
@@ -341,9 +341,9 @@ function addProperty() {
 
 function allNamesInClassifier(c: MvCodespaceClassifier): Set<string> {
   const used = new Set<string>();
-  for (const m of c.member ?? []) used.add((m.name ?? '').trim());
-  for (const m of c.method ?? []) used.add((m.name ?? '').trim());
-  for (const m of c['enum'] ?? []) used.add((m.name ?? '').trim());
+  for (const m of c.members ?? []) used.add((m.name ?? '').trim());
+  for (const m of c.methods ?? []) used.add((m.name ?? '').trim());
+  for (const m of c.enums ?? []) used.add((m.name ?? '').trim());
   return used;
 }
 
@@ -374,9 +374,9 @@ function addMethodMember() {
   props.runPatch((d) => {
     const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
     if (!c) return;
-    if (!c.method) c.method = [];
+    if (!c.methods) c.methods = [];
     const name = ensureUniqueClassifierItemName(c, 'method');
-    c.method.push({ name, methodKind: 'normal', signature: '()', type: 'int' });
+    c.methods.push({ name, methodKind: 'normal', signature: '()', type: 'int' });
   });
 }
 
@@ -384,9 +384,9 @@ function addEnumMember() {
   props.runPatch((d) => {
     const c = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci];
     if (!c) return;
-    if (!c['enum']) c['enum'] = [];
+    if (!c.enums) c.enums = [];
     const name = ensureUniqueClassifierItemName(c, 'ENUM');
-    c['enum'].push({ name, enumGroup: 'default' });
+    c.enums.push({ name, enumGroup: 'default' });
   });
 }
 
@@ -419,7 +419,7 @@ function removeProperty(pi: number) {
 
 function patchFieldMember(miIdx: number, part: Partial<MvCodespaceClassMember>) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.member?.[miIdx];
+    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.members?.[miIdx];
     if (!mem) return;
     Object.assign(mem, part);
     normalizeFieldMember(mem);
@@ -428,7 +428,7 @@ function patchFieldMember(miIdx: number, part: Partial<MvCodespaceClassMember>) 
 
 function patchMethodMember(miIdx: number, part: Partial<MvCodespaceClassMethod>) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.method?.[miIdx];
+    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.[miIdx];
     if (!mem) return;
     Object.assign(mem, part);
     normalizeMethodMember(mem);
@@ -441,7 +441,7 @@ function patchMethodMember(miIdx: number, part: Partial<MvCodespaceClassMethod>)
 
 function patchEnumMember(miIdx: number, part: Partial<MvCodespaceClassEnum>) {
   props.runPatch((d) => {
-    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.['enum']?.[miIdx];
+    const mem = getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.enums?.[miIdx];
     if (!mem) return;
     Object.assign(mem, part);
     normalizeEnumMember(mem);
@@ -450,19 +450,19 @@ function patchEnumMember(miIdx: number, part: Partial<MvCodespaceClassEnum>) {
 
 function removeFieldMember(miIdx: number) {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.member?.splice(miIdx, 1);
+    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.members?.splice(miIdx, 1);
   });
 }
 
 function removeMethodMember(miIdx: number) {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.method?.splice(miIdx, 1);
+    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.methods?.splice(miIdx, 1);
   });
 }
 
 function removeEnumMember(miIdx: number) {
   props.runPatch((d) => {
-    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.['enum']?.splice(miIdx, 1);
+    getNamespaceAtPath(d, props.mi, props.path)?.classes?.[props.ci]?.enums?.splice(miIdx, 1);
   });
 }
 

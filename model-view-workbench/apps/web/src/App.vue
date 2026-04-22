@@ -41,7 +41,7 @@ import {
   trLogCanvasLaunchInvalid,
   trLogCanvasLaunchMismatch,
   trLogCanvasMissingData,
-  trLogCanvasTabSaved,
+  trLogCanvasTabUpdated,
   trLogElectronWorkspaceLoaded,
   trLogExportFailed,
   trLogExportOk,
@@ -1989,39 +1989,29 @@ function closeCanvasTab(tabId: string) {
   }
 }
 
-async function onEmbeddedCanvasSaved(payload: { markdown: string; relPath: string }) {
+function onEmbeddedCanvasUpdated(payload: { markdown: string; relPath: string }) {
   files.value = new Map(files.value).set(payload.relPath, payload.markdown);
   if (selectedPath.value === payload.relPath) {
     sourceEditorText.value = payload.markdown;
   }
-  if (electronApi.value?.writeWorkspaceFile) {
-    await electronApi.value.writeWorkspaceFile(payload.relPath, payload.markdown);
-  }
-  // 块画布保存不应重置“文档保存”基线；顶栏保存状态仅反映 Markdown 编辑保存链路。
+  // 仅同步内存中的 Markdown 文本；是否写入硬盘由用户后续 Save/SaveAs 决定。
   refreshCanvasTabSubtypesForPath(payload.relPath, payload.markdown);
   const tab = activeCanvasSession.value;
   if (tab) {
     canvasTabs.value = canvasTabs.value.map((t) => (t.id === tab.id ? { ...t, unsaved: false } : t));
   }
-  logLine(trLogCanvasTabSaved(locale.value, payload.relPath), 'info');
+  logLine(trLogCanvasTabUpdated(locale.value, payload.relPath), 'info');
 }
 
-async function onCanvasSavedInPopup(payload: { markdown: string; relPath: string }) {
-  if (electronApi.value?.writeWorkspaceFile) {
-    await electronApi.value.writeWorkspaceFile(payload.relPath, payload.markdown);
-  }
+function onCanvasUpdatedInPopup(payload: { markdown: string; relPath: string }) {
+  // popup 模式同样只做内存同步，不直接写硬盘文件。
   try {
     if (window.opener && !window.opener.closed) {
       window.opener.postMessage(
-        { type: 'mvwb:canvasSaved', relPath: payload.relPath, markdown: payload.markdown },
+        { type: 'mvwb:canvasUpdated', relPath: payload.relPath, markdown: payload.markdown },
         '*',
       );
     }
-  } catch {
-    /* noop */
-  }
-  try {
-    window.close();
   } catch {
     /* noop */
   }
@@ -2035,15 +2025,16 @@ function onCanvasClosePopup() {
   }
 }
 
-function onOpenerCanvasSaved(ev: MessageEvent) {
-  if (ev.data?.type !== 'mvwb:canvasSaved') return;
+function onOpenerCanvasUpdated(ev: MessageEvent) {
+  // 向后兼容：旧窗口仍可能发送 mvwb:canvasSaved
+  if (ev.data?.type !== 'mvwb:canvasUpdated' && ev.data?.type !== 'mvwb:canvasSaved') return;
   const { relPath, markdown } = ev.data as { relPath?: string; markdown?: string };
   if (typeof relPath !== 'string' || typeof markdown !== 'string') return;
   files.value = new Map(files.value).set(relPath, markdown);
   if (selectedPath.value === relPath) {
     sourceEditorText.value = markdown;
   }
-  // 同上：弹窗画布回写也不重置文档保存基线。
+  // 同上：弹窗画布回写（内存更新）也不重置文档保存基线。
   refreshCanvasTabSubtypesForPath(relPath, markdown);
   logLine(trLogMergedFromCanvasWindow(locale.value, relPath), 'info');
 }
@@ -2083,7 +2074,7 @@ onMounted(async () => {
   document.addEventListener('keydown', onGlobalKeyDown, true);
   document.addEventListener('fullscreenchange', syncAppFullscreenFlag);
   document.addEventListener('selectionchange', onMdSourceSelectionSync);
-  window.addEventListener('message', onOpenerCanvasSaved);
+  window.addEventListener('message', onOpenerCanvasUpdated);
   const u = new URLSearchParams(window.location.search);
   const rel = u.get('path') ?? '';
   const bid = u.get('blockId') ?? '';
@@ -2152,7 +2143,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onGlobalKeyDown, true);
   document.removeEventListener('fullscreenchange', syncAppFullscreenFlag);
   document.removeEventListener('selectionchange', onMdSourceSelectionSync);
-  window.removeEventListener('message', onOpenerCanvasSaved);
+  window.removeEventListener('message', onOpenerCanvasUpdated);
   clearTimeout(electronWriteTimer);
 });
 </script>
@@ -2166,7 +2157,7 @@ onUnmounted(() => {
     :workspace-files="canvasWorkspaceFiles"
     :mindmap-dock-command="mindmapDockCommand"
     :ui-design-dock-command="uiDesignDockCommand"
-    @saved="onCanvasSavedInPopup"
+    @updated="onCanvasUpdatedInPopup"
     @close="onCanvasClosePopup"
     @mindmap-dock-state="onMindmapDockState"
     @ui-design-dock-state="onUiDesignDockState"
@@ -2829,7 +2820,7 @@ onUnmounted(() => {
                   :mindmap-dock-command="mindmapDockCommand"
                   :ui-design-dock-command="uiDesignDockCommand"
                   :key="activeCanvasSession.id"
-                  @saved="onEmbeddedCanvasSaved"
+                  @updated="onEmbeddedCanvasUpdated"
                   @close="closeCanvasTab(activeCanvasSession.id)"
                   @codespace-dock-context="onCodespaceDockContext"
                   @mindmap-dock-state="onMindmapDockState"

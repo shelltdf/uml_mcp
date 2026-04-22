@@ -18,6 +18,9 @@ export interface ClassLink {
   kind: ClassLinkKind;
   fromMult?: string;
   toMult?: string;
+  /** 关联边来源槽位（仅 association：members/properties），用于同步到 codespace 明确成员/属性。 */
+  fromSlotSection?: 'members' | 'properties';
+  fromSlotName?: string;
 }
 
 export interface ClassDiagramState {
