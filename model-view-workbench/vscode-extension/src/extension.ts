@@ -39,7 +39,31 @@ export function activate(context: vscode.ExtensionContext): void {
     panel.webview.html = html;
   };
 
+  const setupMcp = async (): Promise<void> => {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) {
+      vscode.window.showErrorMessage('请先打开一个工作区文件夹，再配置 MCP。');
+      return;
+    }
+    const vscodeDir = vscode.Uri.joinPath(folder.uri, '.vscode');
+    await vscode.workspace.fs.createDirectory(vscodeDir);
+    const mcpJsonUri = vscode.Uri.joinPath(vscodeDir, 'mcp.json');
+    const template = {
+      servers: {
+        'mvwb-local': {
+          command: 'node',
+          args: ['packages/mcp-server/dist/server.js'],
+          cwd: '${workspaceFolder}/model-view-workbench',
+        },
+      },
+    };
+    const content = `${JSON.stringify(template, null, 2)}\n`;
+    await vscode.workspace.fs.writeFile(mcpJsonUri, Buffer.from(content, 'utf8'));
+    vscode.window.showInformationMessage('已写入 .vscode/mcp.json（mvwb-local）。请先执行 npm run build:mcp。');
+  };
+
   context.subscriptions.push(vscode.commands.registerCommand('mvwb.open', openPanel));
+  context.subscriptions.push(vscode.commands.registerCommand('mvwb.setupMcp', setupMcp));
 }
 
 export function deactivate(): void {}

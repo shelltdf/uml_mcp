@@ -55,7 +55,8 @@
 | `packages/mermaid` | Mermaid 类图（`classDiagram`）解析/序列化与布局注释能力（扩展包，与 core 解耦） |
 | `apps/web` | Vue3 + Vite 工作区 UI |
 | `apps/electron` | Electron 壳（磁盘工作区、独立块窗口） |
-| `vscode-extension` | VS Code/Cursor 扩展（加载 `media/app` 静态资源） |
+| `vscode-extension` | VS Code/Cursor 扩展（加载 `media/app` 静态资源，含 MCP 配置向导命令） |
+| `packages/mcp-server` | MCP Server（stdio），提供 `mvwb.parse_markdown_blocks` 等工具 |
 | `examples/` | **本仓库自带**示例与测试用工作区（见 [`examples/README.md`](examples/README.md)）；与仓库根其它 `examples/` 无耦合 |
 
 ## OOP 分层（进行中）
@@ -73,9 +74,19 @@ npm test
 npm run build
 npm run dev:web          # 先 build @mvwb/core + @mvwb/mermaid，再 Vite 开发
 npm run dev:electron     # 先 build core + mermaid + web，再以 Electron 打开 dist
+python run_web.py        # 启动 Web 开发服务器（等价于 npm run dev:web，自动检查依赖）
 python run_exe.py        # 同上：先 npm run build 再启动 Electron 套壳
 npm run build:vscode     # build + 复制 dist 到扩展 + tsc 编译扩展
+npm run build:mcp        # build @mvwb/core + @mvwb/mcp-server
+python build.py          # 构建并打包 VS Code 插件，输出 dist/mvwb-workbench.vsix
+python install.py        # 构建并自动安装 VS Code/Cursor 插件
 ```
+
+### VS Code + MCP
+
+1. 在仓库根执行 `npm install`，然后执行 `npm run build:mcp`。
+2. 在 VS Code/Cursor 命令面板执行 `MVWB: Setup MCP config`，会生成 `.vscode/mcp.json`。
+3. 配置使用 `mvwb-local`，启动命令为 `node packages/mcp-server/dist/server.js`，工作目录为 `${workspaceFolder}/model-view-workbench`。
 
 ### 迁移提示（Mermaid 拆包）
 

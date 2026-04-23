@@ -3,6 +3,7 @@
   "displayName": "Model-View MD Workbench",
   "description": "Markdown-centric Model + View workbench (Webview)",
   "version": "0.1.0",
+  "license": "UNLICENSED",
   "publisher": "mvwb",
   "private": true,
   "engines": {
@@ -16,6 +17,10 @@
       {
         "command": "mvwb.open",
         "title": "MVWB: Open workbench"
+      },
+      {
+        "command": "mvwb.setupMcp",
+        "title": "MVWB: Setup MCP config"
       }
     ]
   },

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""开发态：与 run.py 相同，启动 Vite dev。"""
+"""开发态：与 run_web.py 相同，启动 Vite dev。"""
 import subprocess
 import sys
 from pathlib import Path

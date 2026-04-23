@@ -13,7 +13,8 @@
     "typescript": "~5.7.2"
   },
   "scripts": {
-    "build": "npm run build -w @mvwb/core && npm run build -w @mvwb/mermaid && npm run build -w @mvwb/web",
+    "build": "npm run build -w @mvwb/core && npm run build -w @mvwb/mermaid && npm run build -w @mvwb/mcp-server && npm run build -w @mvwb/web",
+    "build:mcp": "npm run build -w @mvwb/core && npm run build -w @mvwb/mcp-server",
     "copy:vscode-media": "node scripts/copy-web-dist.mjs",
     "build:vscode": "npm run build && npm run copy:vscode-media && npm run compile --workspace=mvwb-workbench",
     "test": "npm run test -w @mvwb/core && npm run test -w @mvwb/mermaid",
