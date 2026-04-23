@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 export function activate(context: vscode.ExtensionContext): void {
   const openPanel = (): void => {
     const panel = vscode.window.createWebviewPanel(
-      'mvwbWorkbench',
+      'softwareModelingWorkbench',
       'Software Modeling Workbench',
       vscode.ViewColumn.One,
       {
@@ -25,7 +25,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     let html = fs.readFileSync(htmlPath, 'utf8');
     if (html.includes('</head>')) {
-      html = html.replace('</head>', '<meta name="mvwb-shell" content="vscode" /></head>');
+      html = html.replace('</head>', '<meta name="software-modeling-workbench-shell" content="vscode" /></head>');
     }
     html = html.replace(/(href|src)="(\.\/[^"]+)"/g, (_m: string, attr: string, rel: string) => {
       const clean = rel.replace(/^\.\//, '');
@@ -50,7 +50,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const mcpJsonUri = vscode.Uri.joinPath(vscodeDir, 'mcp.json');
     const template = {
       servers: {
-        'mvwb-local': {
+        'software-modeling-workbench-local': {
           command: 'node',
           args: ['packages/mcp-server/dist/server.js'],
           cwd: '${workspaceFolder}/software-modeling-workbench',
@@ -59,11 +59,52 @@ export function activate(context: vscode.ExtensionContext): void {
     };
     const content = `${JSON.stringify(template, null, 2)}\n`;
     await vscode.workspace.fs.writeFile(mcpJsonUri, Buffer.from(content, 'utf8'));
-    vscode.window.showInformationMessage('已写入 .vscode/mcp.json（mvwb-local）。请先执行 npm run build:mcp。');
+    vscode.window.showInformationMessage('已写入 .vscode/mcp.json（software-modeling-workbench-local）。请先执行 npm run build:mcp。');
   };
 
+  const openCommandId = 'softwareModelingWorkbench.open';
+  const setupMcpCommandId = 'softwareModelingWorkbench.setupMcp';
+  const menuCommandId = 'softwareModelingWorkbench.menu';
+
+  const showMenu = async (): Promise<void> => {
+    const selection = await vscode.window.showQuickPick(
+      [
+        {
+          label: '$(rocket) 打开 Software Modeling Workbench',
+          description: '打开建模工作台 Webview',
+          command: openCommandId,
+        },
+        {
+          label: '$(tools) 配置 MCP（写入 .vscode/mcp.json）',
+          description: '生成本地 MCP 服务器模板',
+          command: setupMcpCommandId,
+        },
+      ],
+      {
+        placeHolder: 'Software Modeling Workbench',
+        title: 'Software Modeling Workbench',
+      },
+    );
+    if (!selection) {
+      return;
+    }
+    await vscode.commands.executeCommand(selection.command);
+  };
+
+  context.subscriptions.push(vscode.commands.registerCommand(openCommandId, openPanel));
+  context.subscriptions.push(vscode.commands.registerCommand(setupMcpCommandId, setupMcp));
+  context.subscriptions.push(vscode.commands.registerCommand(menuCommandId, showMenu));
+
+  // Backward-compatible aliases for earlier command IDs.
   context.subscriptions.push(vscode.commands.registerCommand('mvwb.open', openPanel));
   context.subscriptions.push(vscode.commands.registerCommand('mvwb.setupMcp', setupMcp));
+
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  statusBarItem.text = '$(symbol-class) Modeling Workbench';
+  statusBarItem.tooltip = 'Software Modeling Workbench';
+  statusBarItem.command = menuCommandId;
+  statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
 }
 
 export function deactivate(): void {}

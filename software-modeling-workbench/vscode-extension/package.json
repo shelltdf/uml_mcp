@@ -4,23 +4,27 @@
   "description": "软件建模工作台（Software Modeling Workbench，Webview）",
   "version": "0.1.0",
   "license": "UNLICENSED",
-  "publisher": "mvwb",
+  "publisher": "software-modeling-workbench",
   "private": true,
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": ["Other"],
-  "activationEvents": ["onStartupFinished", "onCommand:mvwb.open"],
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "mvwb.open",
+        "command": "softwareModelingWorkbench.open",
         "title": "Software Modeling Workbench: Open Workbench"
       },
       {
-        "command": "mvwb.setupMcp",
+        "command": "softwareModelingWorkbench.setupMcp",
         "title": "Software Modeling Workbench: Setup MCP Config"
+      },
+      {
+        "command": "softwareModelingWorkbench.menu",
+        "title": "Software Modeling Workbench: Open Menu"
       }
     ]
   },
