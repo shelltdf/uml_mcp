@@ -10,7 +10,7 @@ import {
   diagramBounds,
   parseViewPayloadClassDiagram,
   slug,
-} from '@mvwb/mermaid';
+} from '@smw/mermaid';
 import { useAppLocale } from '../../composables/useAppLocale';
 import { classDiagramCanvasMessages } from '../../i18n/class-diagram-canvas-messages';
 import type { CodespaceClassTreeItem } from '../../utils/class-canvas-codespace-bridge';
@@ -20,7 +20,7 @@ const props = defineProps<{
   modelValue: string;
   /** 用于 SVG marker id 去重 */
   canvasId: string;
-  /** 当前 mv-view 绑定 modelRefs 解析出的 codespace 类树（同文件） */
+  /** 当前 smw-view 绑定 modelRefs 解析出的 codespace 类树（同文件） */
   codespaceClasses?: CodespaceClassTreeItem[];
   /** model 来源是否有效（由父层按 modelRefs 校验） */
   modelSourceValid?: boolean;

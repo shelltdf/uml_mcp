@@ -67,9 +67,6 @@ export {
   isUmlViewKind,
 } from './types.js';
 
-/** Compatibility aliases: kept for older callers, prefer core API names above */
-export { MV_PLANTUML_VIEW_KINDS, isPlantUmlViewKind } from './types.js';
-
 export { parseMarkdownBlocks, replaceBlockInnerById, getBlockFenceSlice, findMvModelSqlTable } from './parse/blocks.js';
 export { parseRefUri, normalizeRelPath, resolveRefPath, detectRefCycle } from './refs/resolve.js';
 export { UmlDiagramTypePolicy } from './domain/uml/UmlDiagramTypePolicy.js';

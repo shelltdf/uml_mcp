@@ -1,4 +1,4 @@
-import type { MvModelCodespacePayload } from '@mvwb/core';
+import type { MvModelCodespacePayload } from '@smw/core';
 import { getNamespaceAtPath } from './codespace-canvas';
 
 export function moduleLabelFromPayload(payload: MvModelCodespacePayload, mi: number): string {

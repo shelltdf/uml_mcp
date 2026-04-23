@@ -155,7 +155,7 @@ function migrateCodespacePayload(payload: AnyObj, stats: MigrationStats): boolea
 }
 
 function migrateMarkdown(source: string, stats: MigrationStats): { output: string; changed: boolean; hasFence: boolean } {
-  const fenceRe = /^```mv-model-codespace\s*\r?\n([\s\S]*?)\r?\n```/gm;
+  const fenceRe = /^```smw-model-codespace\s*\r?\n([\s\S]*?)\r?\n```/gm;
   let changed = false;
   let hasFence = false;
   const output = source.replace(fenceRe, (whole, body: string) => {
@@ -173,7 +173,7 @@ function migrateMarkdown(source: string, stats: MigrationStats): { output: strin
     changed = true;
     stats.fencesChanged++;
     const nextInner = JSON.stringify(parsed, null, 2);
-    return `\`\`\`mv-model-codespace\n${nextInner}\n\`\`\``;
+    return `\`\`\`smw-model-codespace\n${nextInner}\n\`\`\``;
   });
   return { output, changed, hasFence };
 }

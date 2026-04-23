@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue';
-import type { MvCodespaceClassEnum, MvModelCodespacePayload } from '@mvwb/core';
+import type { MvCodespaceClassEnum, MvModelCodespacePayload } from '@smw/core';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from '../../../utils/codespace-canvas';
 import {

@@ -2979,7 +2979,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve2.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3006,7 +3006,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve2(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3221,8 +3221,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path) {
-      let input = path;
+    function removeDotSegments(path2) {
+      let input = path2;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3421,8 +3421,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path && path !== "/" ? path : void 0;
+        const [path2, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path2 && path2 !== "/" ? path2 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -3581,55 +3581,55 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative = parse3(serialize(relative, options), options);
+        relative2 = parse3(serialize(relative2, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative2.scheme) {
+        target.scheme = relative2.scheme;
+        target.userinfo = relative2.userinfo;
+        target.host = relative2.host;
+        target.port = relative2.port;
+        target.path = removeDotSegments(relative2.path || "");
+        target.query = relative2.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
+          target.userinfo = relative2.userinfo;
+          target.host = relative2.host;
+          target.port = relative2.port;
+          target.path = removeDotSegments(relative2.path || "");
+          target.query = relative2.query;
         } else {
-          if (!relative.path) {
+          if (!relative2.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative2.query !== void 0) {
+              target.query = relative2.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative2.path[0] === "/") {
+              target.path = removeDotSegments(relative2.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative2.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative2.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative2.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3637,7 +3637,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative2.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -3808,7 +3808,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve2,
       resolveComponent,
       equal,
       serialize,
@@ -6784,12 +6784,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs, exportName) {
+    function addFormats(ajv, list, fs2, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs[f]);
+        ajv.addFormat(f, fs2[f]);
     }
     module2.exports = exports2 = formatsPlugin;
     Object.defineProperty(exports2, "__esModule", { value: true });
@@ -7275,8 +7275,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path, errorMaps, issueData } = params;
-  const fullPath = [...path, ...issueData.path || []];
+  const { data, path: path2, errorMaps, issueData } = params;
+  const fullPath = [...path2, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -7392,11 +7392,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path, key) {
+  constructor(parent, value, path2, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path;
+    this._path = path2;
     this._key = key;
   }
   get path() {
@@ -11033,10 +11033,10 @@ function assignProp(target, prop, value) {
     configurable: true
   });
 }
-function getElementAtPath(obj, path) {
-  if (!path)
+function getElementAtPath(obj, path2) {
+  if (!path2)
     return obj;
-  return path.reduce((acc, key) => acc?.[key], obj);
+  return path2.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -11356,11 +11356,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path, issues) {
+function prefixIssues(path2, issues) {
   return issues.map((iss) => {
     var _a;
     (_a = iss).path ?? (_a.path = []);
-    iss.path.unshift(path);
+    iss.path.unshift(path2);
     return iss;
   });
 }
@@ -18888,7 +18888,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -18905,7 +18905,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -18983,7 +18983,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve(parseResult.data);
+            resolve2(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -19244,12 +19244,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve, interval);
+      const timeoutId = setTimeout(resolve2, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -20349,7 +20349,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -20998,16 +20998,20 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve();
+        resolve2();
       } else {
-        this._stdout.once("drain", resolve);
+        this._stdout.once("drain", resolve2);
       }
     });
   }
 };
+
+// packages/mcp-server/src/server.ts
+var fs = __toESM(require("node:fs"), 1);
+var path = __toESM(require("node:path"), 1);
 
 // packages/core/dist/types.js
 var MV_VIEW_KINDS = [
@@ -21118,15 +21122,15 @@ var UmlViewPayloadValidator = class {
         parsed = JSON.parse(s);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, message: `mv-view: ${kind} payload must be valid JSON (${msg})` };
+        return { ok: false, message: `smw-view: ${kind} payload must be valid JSON (${msg})` };
       }
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        return { ok: false, message: `mv-view: ${kind} payload must be a JSON object` };
+        return { ok: false, message: `smw-view: ${kind} payload must be a JSON object` };
       }
       return this.validateObject(kind, parsed);
     }
     if (typeof payload !== "object" || Array.isArray(payload)) {
-      return { ok: false, message: `mv-view: ${kind} payload must be a JSON object or JSON string` };
+      return { ok: false, message: `smw-view: ${kind} payload must be a JSON object or JSON string` };
     }
     return this.validateObject(kind, payload);
   }
@@ -21134,11 +21138,11 @@ var UmlViewPayloadValidator = class {
     const expectedDiagramType = this.policy.expectedDiagramType(kind);
     if (!expectedDiagramType)
       return { ok: true };
-    if (payload.schema !== "mvwb-uml/v1") {
-      return { ok: false, message: `mv-view: ${kind} payload.schema must be "mvwb-uml/v1"` };
+    if (payload.schema !== "smw-uml/v1") {
+      return { ok: false, message: `smw-view: ${kind} payload.schema must be "smw-uml/v1"` };
     }
     if (payload.diagramType !== expectedDiagramType) {
-      return { ok: false, message: `mv-view: ${kind} payload.diagramType must be "${expectedDiagramType}"` };
+      return { ok: false, message: `smw-view: ${kind} payload.diagramType must be "${expectedDiagramType}"` };
     }
     if (kind === "uml-class") {
       const classesCheck = this.validateClassEntities(payload);
@@ -21154,11 +21158,11 @@ var UmlViewPayloadValidator = class {
     if (!("classes" in payload) || payload.classes === void 0)
       return { ok: true };
     if (!Array.isArray(payload.classes)) {
-      return { ok: false, message: "mv-view: uml-class payload.classes must be an array when present" };
+      return { ok: false, message: "smw-view: uml-class payload.classes must be an array when present" };
     }
     for (let i = 0; i < payload.classes.length; i++) {
       const c = payload.classes[i];
-      const p = `mv-view: uml-class payload.classes[${i}]`;
+      const p = `smw-view: uml-class payload.classes[${i}]`;
       if (!c || typeof c !== "object" || Array.isArray(c))
         return { ok: false, message: `${p} must be an object` };
       const co = c;
@@ -21173,11 +21177,11 @@ var UmlViewPayloadValidator = class {
     if (!("relations" in payload) || payload.relations === void 0)
       return { ok: true };
     if (!Array.isArray(payload.relations)) {
-      return { ok: false, message: "mv-view: uml-class payload.relations must be an array when present" };
+      return { ok: false, message: "smw-view: uml-class payload.relations must be an array when present" };
     }
     for (let i = 0; i < payload.relations.length; i++) {
       const r = payload.relations[i];
-      const p = `mv-view: uml-class payload.relations[${i}]`;
+      const p = `smw-view: uml-class payload.relations[${i}]`;
       if (!r || typeof r !== "object" || Array.isArray(r))
         return { ok: false, message: `${p} must be an object` };
       const ro = r;
@@ -21198,7 +21202,7 @@ var UmlViewPayloadValidator = class {
 };
 
 // packages/core/dist/parse/blocks.js
-var FENCE = /^```(mv-model-sql|mv-model-kv|mv-model-struct|mv-model-codespace|mv-model-interface|mv-view|mv-map)\s*$/m;
+var FENCE = /^```(smw-model-sql|smw-model-kv|smw-model-struct|smw-model-codespace|smw-model-interface|smw-view|smw-map)\s*$/m;
 var umlViewPayloadValidator = new UmlViewPayloadValidator();
 function lineNumberAt(source, offset) {
   let n = 1;
@@ -21256,36 +21260,36 @@ function parseJsonPayload(inner, kind) {
     return { ok: false, error: `invalid JSON: ${msg}` };
   }
 }
-function validateMvModelSqlTable(obj, path) {
+function validateMvModelSqlTable(obj, path2) {
   if (typeof obj.id !== "string" || !obj.id.trim()) {
-    return { ok: false, message: `${path}.id must be a non-empty string` };
+    return { ok: false, message: `${path2}.id must be a non-empty string` };
   }
   if ("title" in obj && obj.title !== void 0 && typeof obj.title !== "string") {
-    return { ok: false, message: `${path}.title must be a string when present` };
+    return { ok: false, message: `${path2}.title must be a string when present` };
   }
   const colsRaw = obj.columns;
   if (!Array.isArray(colsRaw) || colsRaw.length === 0) {
-    return { ok: false, message: `${path}.columns must be a non-empty array` };
+    return { ok: false, message: `${path2}.columns must be a non-empty array` };
   }
   const names = /* @__PURE__ */ new Set();
   for (let i = 0; i < colsRaw.length; i++) {
     const c = colsRaw[i];
     if (!c || typeof c !== "object" || Array.isArray(c)) {
-      return { ok: false, message: `${path}.columns[${i}] must be an object` };
+      return { ok: false, message: `${path2}.columns[${i}] must be an object` };
     }
     const o = c;
     if (typeof o.name !== "string" || !o.name.trim()) {
-      return { ok: false, message: `${path}.columns[${i}].name must be a non-empty string` };
+      return { ok: false, message: `${path2}.columns[${i}].name must be a non-empty string` };
     }
     if (names.has(o.name)) {
-      return { ok: false, message: `${path}: duplicate column name "${o.name}"` };
+      return { ok: false, message: `${path2}: duplicate column name "${o.name}"` };
     }
     names.add(o.name);
     if ("primaryKey" in o && o.primaryKey !== void 0 && typeof o.primaryKey !== "boolean") {
-      return { ok: false, message: `${path}.columns[${i}].primaryKey must be boolean when present` };
+      return { ok: false, message: `${path2}.columns[${i}].primaryKey must be boolean when present` };
     }
     if ("unique" in o && o.unique !== void 0 && typeof o.unique !== "boolean") {
-      return { ok: false, message: `${path}.columns[${i}].unique must be boolean when present` };
+      return { ok: false, message: `${path2}.columns[${i}].unique must be boolean when present` };
     }
     if ("defaultValue" in o && o.defaultValue !== void 0) {
       const dv = o.defaultValue;
@@ -21293,29 +21297,29 @@ function validateMvModelSqlTable(obj, path) {
       if (!dvOk) {
         return {
           ok: false,
-          message: `${path}.columns[${i}].defaultValue must be string, number, boolean, or null`
+          message: `${path2}.columns[${i}].defaultValue must be string, number, boolean, or null`
         };
       }
     }
     if ("comment" in o && o.comment !== void 0 && typeof o.comment !== "string") {
-      return { ok: false, message: `${path}.columns[${i}].comment must be a string when present` };
+      return { ok: false, message: `${path2}.columns[${i}].comment must be a string when present` };
     }
   }
   const rowsRaw = obj.rows;
   if (!Array.isArray(rowsRaw)) {
-    return { ok: false, message: `${path}.rows must be an array` };
+    return { ok: false, message: `${path2}.rows must be an array` };
   }
   for (let ri = 0; ri < rowsRaw.length; ri++) {
     const row = rowsRaw[ri];
     if (!row || typeof row !== "object" || Array.isArray(row)) {
-      return { ok: false, message: `${path}.rows[${ri}] must be an object (one table row)` };
+      return { ok: false, message: `${path2}.rows[${ri}] must be an object (one table row)` };
     }
     const r = row;
     for (const key of Object.keys(r)) {
       if (!names.has(key)) {
         return {
           ok: false,
-          message: `${path}.rows[${ri}] has unknown property "${key}" (not among declared columns)`
+          message: `${path2}.rows[${ri}] has unknown property "${key}" (not among declared columns)`
         };
       }
     }
@@ -21323,7 +21327,7 @@ function validateMvModelSqlTable(obj, path) {
       const colName = c.name;
       const nullable2 = c.nullable === true;
       if (!(colName in r) && !nullable2) {
-        return { ok: false, message: `${path}.rows[${ri}] missing required column "${colName}"` };
+        return { ok: false, message: `${path2}.rows[${ri}] missing required column "${colName}"` };
       }
     }
   }
@@ -21342,7 +21346,7 @@ function validateMvModelSqlTable(obj, path) {
       if (seenPk.has(sig)) {
         return {
           ok: false,
-          message: `${path}.rows: duplicate primary key (PK columns: ${pkCols.map((c) => c.name).join(", ")})`
+          message: `${path2}.rows: duplicate primary key (PK columns: ${pkCols.map((c) => c.name).join(", ")})`
         };
       }
       seenPk.add(sig);
@@ -21352,27 +21356,27 @@ function validateMvModelSqlTable(obj, path) {
 }
 function validateMvModelSql(obj) {
   if (typeof obj.id !== "string" || !obj.id.trim()) {
-    return { ok: false, message: "mv-model-sql: id must be a non-empty string" };
+    return { ok: false, message: "smw-model-sql: id must be a non-empty string" };
   }
   if ("title" in obj && obj.title !== void 0 && typeof obj.title !== "string") {
-    return { ok: false, message: "mv-model-sql: title must be a string when present" };
+    return { ok: false, message: "smw-model-sql: title must be a string when present" };
   }
   const tabs = obj.tables;
   if (!Array.isArray(tabs) || tabs.length === 0) {
-    return { ok: false, message: "mv-model-sql: tables must be a non-empty array" };
+    return { ok: false, message: "smw-model-sql: tables must be a non-empty array" };
   }
   const seen = /* @__PURE__ */ new Set();
   for (let i = 0; i < tabs.length; i++) {
     const t = tabs[i];
     if (!t || typeof t !== "object" || Array.isArray(t)) {
-      return { ok: false, message: `mv-model-sql.tables[${i}] must be an object` };
+      return { ok: false, message: `smw-model-sql.tables[${i}] must be an object` };
     }
-    const path = `mv-model-sql.tables[${i}]`;
-    const vt = validateMvModelSqlTable(t, path);
+    const path2 = `smw-model-sql.tables[${i}]`;
+    const vt = validateMvModelSqlTable(t, path2);
     if (!vt.ok)
       return vt;
     if (seen.has(vt.table.id)) {
-      return { ok: false, message: `mv-model-sql: duplicate table id "${vt.table.id}"` };
+      return { ok: false, message: `smw-model-sql: duplicate table id "${vt.table.id}"` };
     }
     seen.add(vt.table.id);
   }
@@ -21380,61 +21384,61 @@ function validateMvModelSql(obj) {
 }
 function validateMvModelKv(obj) {
   if (typeof obj.id !== "string" || !obj.id.trim()) {
-    return { ok: false, message: "mv-model-kv: id must be a non-empty string" };
+    return { ok: false, message: "smw-model-kv: id must be a non-empty string" };
   }
   if ("title" in obj && obj.title !== void 0 && typeof obj.title !== "string") {
-    return { ok: false, message: "mv-model-kv: title must be a string when present" };
+    return { ok: false, message: "smw-model-kv: title must be a string when present" };
   }
   const docs = obj.documents;
   if (!Array.isArray(docs)) {
-    return { ok: false, message: "mv-model-kv: documents must be an array" };
+    return { ok: false, message: "smw-model-kv: documents must be an array" };
   }
   for (let i = 0; i < docs.length; i++) {
     const d = docs[i];
     if (!d || typeof d !== "object" || Array.isArray(d)) {
-      return { ok: false, message: `mv-model-kv: documents[${i}] must be a JSON object (not array or null)` };
+      return { ok: false, message: `smw-model-kv: documents[${i}] must be a JSON object (not array or null)` };
     }
   }
   return { ok: true, data: obj };
 }
-function validateStructGroup(g, path) {
+function validateStructGroup(g, path2) {
   if (!g || typeof g !== "object" || Array.isArray(g)) {
-    return { ok: false, message: `${path} must be an object` };
+    return { ok: false, message: `${path2} must be an object` };
   }
   const o = g;
   if (typeof o.name !== "string" || !o.name.trim()) {
-    return { ok: false, message: `${path}.name must be a non-empty string` };
+    return { ok: false, message: `${path2}.name must be a non-empty string` };
   }
   if ("attributes" in o && o.attributes !== void 0) {
     if (!o.attributes || typeof o.attributes !== "object" || Array.isArray(o.attributes)) {
-      return { ok: false, message: `${path}.attributes must be an object when present` };
+      return { ok: false, message: `${path2}.attributes must be an object when present` };
     }
   }
   if ("groups" in o && o.groups !== void 0) {
     if (!Array.isArray(o.groups)) {
-      return { ok: false, message: `${path}.groups must be an array when present` };
+      return { ok: false, message: `${path2}.groups must be an array when present` };
     }
     for (let i = 0; i < o.groups.length; i++) {
-      const r = validateStructGroup(o.groups[i], `${path}.groups[${i}]`);
+      const r = validateStructGroup(o.groups[i], `${path2}.groups[${i}]`);
       if (!r.ok)
         return r;
     }
   }
   if ("datasets" in o && o.datasets !== void 0) {
     if (!Array.isArray(o.datasets)) {
-      return { ok: false, message: `${path}.datasets must be an array when present` };
+      return { ok: false, message: `${path2}.datasets must be an array when present` };
     }
     for (let i = 0; i < o.datasets.length; i++) {
       const d = o.datasets[i];
       if (!d || typeof d !== "object" || Array.isArray(d)) {
-        return { ok: false, message: `${path}.datasets[${i}] must be an object` };
+        return { ok: false, message: `${path2}.datasets[${i}] must be an object` };
       }
       const dd = d;
       if (typeof dd.name !== "string" || !dd.name.trim()) {
-        return { ok: false, message: `${path}.datasets[${i}].name must be a non-empty string` };
+        return { ok: false, message: `${path2}.datasets[${i}].name must be a non-empty string` };
       }
       if ("dtype" in dd && dd.dtype !== void 0 && typeof dd.dtype !== "string") {
-        return { ok: false, message: `${path}.datasets[${i}].dtype must be a string when present` };
+        return { ok: false, message: `${path2}.datasets[${i}].dtype must be a string when present` };
       }
     }
   }
@@ -21442,14 +21446,14 @@ function validateStructGroup(g, path) {
 }
 function validateMvModelStruct(obj) {
   if (typeof obj.id !== "string" || !obj.id.trim()) {
-    return { ok: false, message: "mv-model-struct: id must be a non-empty string" };
+    return { ok: false, message: "smw-model-struct: id must be a non-empty string" };
   }
   if ("title" in obj && obj.title !== void 0 && typeof obj.title !== "string") {
-    return { ok: false, message: "mv-model-struct: title must be a string when present" };
+    return { ok: false, message: "smw-model-struct: title must be a string when present" };
   }
   const vg = validateStructGroup(obj.root, "root");
   if (!vg.ok) {
-    return { ok: false, message: `mv-model-struct: ${vg.message}` };
+    return { ok: false, message: `smw-model-struct: ${vg.message}` };
   }
   return { ok: true, data: obj };
 }
@@ -21467,21 +21471,21 @@ var CODESPACE_ASSOCIATION_KINDS = /* @__PURE__ */ new Set([
   "composition",
   "dependency"
 ]);
-function codespaceAddUniqueId(ctx, id, path) {
+function codespaceAddUniqueId(ctx, id, path2) {
   if (typeof id !== "string" || !id.trim()) {
-    return { ok: false, message: `${path}: id must be a non-empty string` };
+    return { ok: false, message: `${path2}: id must be a non-empty string` };
   }
   const t = id.trim();
   if (ctx.seenIds.has(t)) {
-    return { ok: false, message: `mv-model-codespace: duplicate id "${t}" (${path})` };
+    return { ok: false, message: `smw-model-codespace: duplicate id "${t}" (${path2})` };
   }
   ctx.seenIds.add(t);
   return { ok: true, id: t };
 }
-function validateCodespaceOptionalString(o, path, keys) {
+function validateCodespaceOptionalString(o, path2, keys) {
   for (const key of keys) {
     if (key in o && o[key] !== void 0 && typeof o[key] !== "string") {
-      return { ok: false, message: `${path}.${key} must be a string when present` };
+      return { ok: false, message: `${path2}.${key} must be a string when present` };
     }
   }
   return { ok: true };
@@ -21648,48 +21652,48 @@ function validateCodespaceClassifierEnum(mem, mp) {
   }
   return { ok: true };
 }
-function validateCodespaceNamespaceNode(node, path, ctx) {
+function validateCodespaceNamespaceNode(node, path2, ctx) {
   if (!node || typeof node !== "object" || Array.isArray(node)) {
-    return { ok: false, message: `${path} must be an object` };
+    return { ok: false, message: `${path2} must be an object` };
   }
   const n = node;
-  const idRes = codespaceAddUniqueId(ctx, n.id, `${path}.id`);
+  const idRes = codespaceAddUniqueId(ctx, n.id, `${path2}.id`);
   if (!idRes.ok)
     return idRes;
   if (typeof n.name !== "string") {
-    return { ok: false, message: `${path}.name must be a string` };
+    return { ok: false, message: `${path2}.name must be a string` };
   }
   const nsName = n.name.trim();
-  const isModuleRootNs = /modules\[\d+\]\.namespaces\[0\]$/.test(path);
+  const isModuleRootNs = /modules\[\d+\]\.namespaces\[0\]$/.test(path2);
   const isRootNs = isModuleRootNs && nsName === CODESPACE_ROOT_NAMESPACE_NAME;
   if (!isRootNs && !nsName) {
-    return { ok: false, message: `${path}.name must be a non-empty string` };
+    return { ok: false, message: `${path2}.name must be a non-empty string` };
   }
   if (!isRootNs && !CODESPACE_ENGLISH_NAME.test(nsName)) {
     return {
       ok: false,
-      message: `${path}.name must use English letters/digits/underscore and start with a letter or underscore (or empty string for module root namespace)`
+      message: `${path2}.name must use English letters/digits/underscore and start with a letter or underscore (or empty string for module root namespace)`
     };
   }
-  const os = validateCodespaceOptionalString(n, path, ["qualifiedName", "notes"]);
+  const os = validateCodespaceOptionalString(n, path2, ["qualifiedName", "notes"]);
   if (!os.ok)
     return os;
   if ("namespaces" in n && n.namespaces !== void 0) {
     if (!Array.isArray(n.namespaces)) {
-      return { ok: false, message: `${path}.namespaces must be an array when present` };
+      return { ok: false, message: `${path2}.namespaces must be an array when present` };
     }
     for (let i = 0; i < n.namespaces.length; i++) {
-      const vn = validateCodespaceNamespaceNode(n.namespaces[i], `${path}.namespaces[${i}]`, ctx);
+      const vn = validateCodespaceNamespaceNode(n.namespaces[i], `${path2}.namespaces[${i}]`, ctx);
       if (!vn.ok)
         return vn;
     }
   }
   if ("classes" in n && n.classes !== void 0) {
     if (!Array.isArray(n.classes)) {
-      return { ok: false, message: `${path}.classes must be an array when present` };
+      return { ok: false, message: `${path2}.classes must be an array when present` };
     }
     for (let i = 0; i < n.classes.length; i++) {
-      const cp = `${path}.classes[${i}]`;
+      const cp = `${path2}.classes[${i}]`;
       const c = n.classes[i];
       if (!c || typeof c !== "object" || Array.isArray(c)) {
         return { ok: false, message: `${cp} must be an object` };
@@ -21859,10 +21863,10 @@ function validateCodespaceNamespaceNode(node, path, ctx) {
   }
   if ("enums" in n && n.enums !== void 0) {
     if (!Array.isArray(n.enums)) {
-      return { ok: false, message: `${path}.enums must be an array when present` };
+      return { ok: false, message: `${path2}.enums must be an array when present` };
     }
     for (let i = 0; i < n.enums.length; i++) {
-      const ep = `${path}.enums[${i}]`;
+      const ep = `${path2}.enums[${i}]`;
       const er = validateCodespaceClassifierEnum(n.enums[i], ep);
       if (!er.ok)
         return er;
@@ -21873,11 +21877,11 @@ function validateCodespaceNamespaceNode(node, path, ctx) {
     if (!(key in n) || n[key] === void 0)
       continue;
     if (!Array.isArray(n[key])) {
-      return { ok: false, message: `${path}.${key} must be an array when present` };
+      return { ok: false, message: `${path2}.${key} must be an array when present` };
     }
     const arr = n[key];
     for (let i = 0; i < arr.length; i++) {
-      const itemp = `${path}.${key}[${i}]`;
+      const itemp = `${path2}.${key}[${i}]`;
       const item = arr[i];
       if (!item || typeof item !== "object" || Array.isArray(item)) {
         return { ok: false, message: `${itemp} must be an object` };
@@ -21897,10 +21901,10 @@ function validateCodespaceNamespaceNode(node, path, ctx) {
   }
   if ("associations" in n && n.associations !== void 0) {
     if (!Array.isArray(n.associations)) {
-      return { ok: false, message: `${path}.associations must be an array when present` };
+      return { ok: false, message: `${path2}.associations must be an array when present` };
     }
     for (let i = 0; i < n.associations.length; i++) {
-      const ap = `${path}.associations[${i}]`;
+      const ap = `${path2}.associations[${i}]`;
       const a = n.associations[i];
       if (!a || typeof a !== "object" || Array.isArray(a)) {
         return { ok: false, message: `${ap} must be an object` };
@@ -21950,17 +21954,17 @@ function validateCodespaceNamespaceNode(node, path, ctx) {
 }
 function validateMvModelCodespace(obj) {
   if (typeof obj.id !== "string" || !obj.id.trim()) {
-    return { ok: false, message: "mv-model-codespace: id must be a non-empty string" };
+    return { ok: false, message: "smw-model-codespace: id must be a non-empty string" };
   }
   if ("title" in obj && obj.title !== void 0 && typeof obj.title !== "string") {
-    return { ok: false, message: "mv-model-codespace: title must be a string when present" };
+    return { ok: false, message: "smw-model-codespace: title must be a string when present" };
   }
   if ("workspaceRoot" in obj && obj.workspaceRoot !== void 0 && typeof obj.workspaceRoot !== "string") {
-    return { ok: false, message: "mv-model-codespace: workspaceRoot must be a string when present" };
+    return { ok: false, message: "smw-model-codespace: workspaceRoot must be a string when present" };
   }
   const mods = obj.modules;
   if (!Array.isArray(mods) || mods.length === 0) {
-    return { ok: false, message: "mv-model-codespace: modules must be a non-empty array" };
+    return { ok: false, message: "smw-model-codespace: modules must be a non-empty array" };
   }
   const ctx = {
     seenIds: /* @__PURE__ */ new Set(),
@@ -21971,34 +21975,34 @@ function validateMvModelCodespace(obj) {
   };
   for (let i = 0; i < mods.length; i++) {
     const m = mods[i];
-    const path = `mv-model-codespace.modules[${i}]`;
+    const path2 = `smw-model-codespace.modules[${i}]`;
     if (!m || typeof m !== "object" || Array.isArray(m)) {
-      return { ok: false, message: `${path} must be an object` };
+      return { ok: false, message: `${path2} must be an object` };
     }
     const o = m;
-    const mid = codespaceAddUniqueId(ctx, o.id, `${path}.id`);
+    const mid = codespaceAddUniqueId(ctx, o.id, `${path2}.id`);
     if (!mid.ok)
       return mid;
     if (typeof o.name !== "string" || !o.name.trim()) {
-      return { ok: false, message: `${path}.name must be a non-empty string` };
+      return { ok: false, message: `${path2}.name must be a non-empty string` };
     }
     if (!CODESPACE_ENGLISH_NAME.test(o.name)) {
       return {
         ok: false,
-        message: `${path}.name must use English letters/digits/underscore and start with a letter or underscore`
+        message: `${path2}.name must use English letters/digits/underscore and start with a letter or underscore`
       };
     }
     for (const key of ["path", "role", "notes"]) {
       if (key in o && o[key] !== void 0 && typeof o[key] !== "string") {
-        return { ok: false, message: `${path}.${key} must be a string when present` };
+        return { ok: false, message: `${path2}.${key} must be a string when present` };
       }
     }
     if ("namespaces" in o && o.namespaces !== void 0) {
       if (!Array.isArray(o.namespaces)) {
-        return { ok: false, message: `${path}.namespaces must be an array when present` };
+        return { ok: false, message: `${path2}.namespaces must be an array when present` };
       }
       for (let j = 0; j < o.namespaces.length; j++) {
-        const vn = validateCodespaceNamespaceNode(o.namespaces[j], `${path}.namespaces[${j}]`, ctx);
+        const vn = validateCodespaceNamespaceNode(o.namespaces[j], `${path2}.namespaces[${j}]`, ctx);
         if (!vn.ok)
           return vn;
       }
@@ -22038,36 +22042,36 @@ function validateMvModelCodespace(obj) {
 }
 function validateMvModelInterface(obj) {
   if (typeof obj.id !== "string" || !obj.id.trim()) {
-    return { ok: false, message: "mv-model-interface: id must be a non-empty string" };
+    return { ok: false, message: "smw-model-interface: id must be a non-empty string" };
   }
   if ("title" in obj && obj.title !== void 0 && typeof obj.title !== "string") {
-    return { ok: false, message: "mv-model-interface: title must be a string when present" };
+    return { ok: false, message: "smw-model-interface: title must be a string when present" };
   }
   const eps = obj.endpoints;
   if (!Array.isArray(eps) || eps.length === 0) {
-    return { ok: false, message: "mv-model-interface: endpoints must be a non-empty array" };
+    return { ok: false, message: "smw-model-interface: endpoints must be a non-empty array" };
   }
   const seen = /* @__PURE__ */ new Set();
   for (let i = 0; i < eps.length; i++) {
     const m = eps[i];
-    const path = `mv-model-interface.endpoints[${i}]`;
+    const path2 = `smw-model-interface.endpoints[${i}]`;
     if (!m || typeof m !== "object" || Array.isArray(m)) {
-      return { ok: false, message: `${path} must be an object` };
+      return { ok: false, message: `${path2} must be an object` };
     }
     const o = m;
     if (typeof o.id !== "string" || !o.id.trim()) {
-      return { ok: false, message: `${path}.id must be a non-empty string` };
+      return { ok: false, message: `${path2}.id must be a non-empty string` };
     }
     if (typeof o.name !== "string" || !o.name.trim()) {
-      return { ok: false, message: `${path}.name must be a non-empty string` };
+      return { ok: false, message: `${path2}.name must be a non-empty string` };
     }
     if (seen.has(o.id)) {
-      return { ok: false, message: `mv-model-interface: duplicate endpoint id "${o.id}"` };
+      return { ok: false, message: `smw-model-interface: duplicate endpoint id "${o.id}"` };
     }
     seen.add(o.id);
     for (const key of ["method", "path", "notes"]) {
       if (key in o && o[key] !== void 0 && typeof o[key] !== "string") {
-        return { ok: false, message: `${path}.${key} must be a string when present` };
+        return { ok: false, message: `${path2}.${key} must be a string when present` };
       }
     }
   }
@@ -22078,22 +22082,22 @@ function isMvViewKind(k) {
 }
 function validateMvView(obj) {
   if (typeof obj.id !== "string" || !obj.id.trim()) {
-    return { ok: false, message: "mv-view: id must be a non-empty string" };
+    return { ok: false, message: "smw-view: id must be a non-empty string" };
   }
   if ("title" in obj && obj.title !== void 0 && typeof obj.title !== "string") {
-    return { ok: false, message: "mv-view: title must be a string when present" };
+    return { ok: false, message: "smw-view: title must be a string when present" };
   }
   if (!isMvViewKind(obj.kind)) {
     return {
       ok: false,
-      message: `mv-view: unknown kind "${String(obj.kind)}" (expected one of: ${MV_VIEW_KINDS.join(", ")})`
+      message: `smw-view: unknown kind "${String(obj.kind)}" (expected one of: ${MV_VIEW_KINDS.join(", ")})`
     };
   }
   if (!Array.isArray(obj.modelRefs) || !obj.modelRefs.every((x) => typeof x === "string")) {
-    return { ok: false, message: "mv-view: modelRefs must be an array of strings" };
+    return { ok: false, message: "smw-view: modelRefs must be an array of strings" };
   }
   if ("payload" in obj && obj.payload !== void 0 && typeof obj.payload !== "string" && (typeof obj.payload !== "object" || obj.payload === null || Array.isArray(obj.payload))) {
-    return { ok: false, message: "mv-view: payload must be a string or JSON object when present" };
+    return { ok: false, message: "smw-view: payload must be a string or JSON object when present" };
   }
   if (typeof obj.kind === "string" && obj.kind in MV_UML_KIND_DIAGRAM_TYPE) {
     const up = umlViewPayloadValidator.validate(obj.kind, obj.payload);
@@ -22148,7 +22152,7 @@ function parseMarkdownBlocks(source) {
     }
     const obj = parsed.value;
     let payload = null;
-    if (kind === "mv-model-sql") {
+    if (kind === "smw-model-sql") {
       const mv = validateMvModelSql(obj);
       if (!mv.ok) {
         errors.push({
@@ -22158,7 +22162,7 @@ function parseMarkdownBlocks(source) {
       } else {
         payload = mv.data;
       }
-    } else if (kind === "mv-model-kv") {
+    } else if (kind === "smw-model-kv") {
       const kv = validateMvModelKv(obj);
       if (!kv.ok) {
         errors.push({
@@ -22168,7 +22172,7 @@ function parseMarkdownBlocks(source) {
       } else {
         payload = kv.data;
       }
-    } else if (kind === "mv-model-struct") {
+    } else if (kind === "smw-model-struct") {
       const st = validateMvModelStruct(obj);
       if (!st.ok) {
         errors.push({
@@ -22178,7 +22182,7 @@ function parseMarkdownBlocks(source) {
       } else {
         payload = st.data;
       }
-    } else if (kind === "mv-model-codespace") {
+    } else if (kind === "smw-model-codespace") {
       const cs = validateMvModelCodespace(obj);
       if (!cs.ok) {
         errors.push({
@@ -22188,7 +22192,7 @@ function parseMarkdownBlocks(source) {
       } else {
         payload = cs.data;
       }
-    } else if (kind === "mv-model-interface") {
+    } else if (kind === "smw-model-interface") {
       const iface = validateMvModelInterface(obj);
       if (!iface.ok) {
         errors.push({
@@ -22198,7 +22202,7 @@ function parseMarkdownBlocks(source) {
       } else {
         payload = iface.data;
       }
-    } else if (kind === "mv-view") {
+    } else if (kind === "smw-view") {
       const vv = validateMvView(obj);
       if (!vv.ok) {
         errors.push({
@@ -22211,7 +22215,7 @@ function parseMarkdownBlocks(source) {
     } else {
       if (!validateMap(obj)) {
         errors.push({
-          message: "mv-map: require id (string) and rules [{ modelId, targetPath, ... }]",
+          message: "smw-map: require id (string) and rules [{ modelId, targetPath, ... }]",
           line: lineNumberAt(source, innerStartOffset)
         });
       } else {
@@ -22223,7 +22227,7 @@ function parseMarkdownBlocks(source) {
       let blockEndOffset = endOffset;
       let endLine = lineNumberAt(source, closeIdx);
       let mermaidMirror;
-      if (kind === "mv-view") {
+      if (kind === "smw-view") {
         const view = payload;
         const mirror = tryParseTrailingMermaidFence(source, endOffset);
         if (isMermaidViewKind(view.kind)) {
@@ -22268,15 +22272,165 @@ function parseMarkdownBlocks(source) {
   }
   return { blocks: unique, errors };
 }
+function replaceBlockInnerById(source, blockId, newInnerJson) {
+  const { blocks } = parseMarkdownBlocks(source);
+  const block = blocks.find((b) => b.payload.id === blockId);
+  if (!block)
+    return null;
+  const formatted = newInnerJson.endsWith("\n") ? newInnerJson : `${newInnerJson}
+`;
+  let s = source.slice(0, block.innerStartOffset) + formatted + source.slice(block.innerEndOffset);
+  if (block.kind === "smw-view" && block.mermaidMirror) {
+    try {
+      const view = JSON.parse(formatted.replace(/^\uFEFF/, "").trim());
+      if (isMermaidViewKind(view.kind) && typeof view.payload === "string") {
+        const r2 = parseMarkdownBlocks(s);
+        const b2 = r2.blocks.find((b) => b.payload.id === blockId);
+        if (b2?.kind === "smw-view" && b2.mermaidMirror) {
+          const body = view.payload;
+          s = s.slice(0, b2.mermaidMirror.innerStartOffset) + body + s.slice(b2.mermaidMirror.innerEndOffset);
+        }
+      }
+    } catch {
+    }
+  }
+  return s;
+}
 
 // packages/mcp-server/src/server.ts
 var server = new McpServer({
   name: "software-modeling-workbench-mcp-server",
   version: "0.1.0"
 });
+function asTextResult(payload) {
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(payload, null, 2)
+      }
+    ]
+  };
+}
+function ensureWorkspaceRoot(workspaceRoot) {
+  const abs = path.resolve(workspaceRoot);
+  if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) {
+    throw new Error(`workspace_root not found or not a directory: ${workspaceRoot}`);
+  }
+  return abs;
+}
+function resolveInsideWorkspace(workspaceRoot, relPath) {
+  const root = ensureWorkspaceRoot(workspaceRoot);
+  const abs = path.resolve(root, relPath);
+  const rootWithSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  if (abs !== root && !abs.startsWith(rootWithSep)) {
+    throw new Error(`path escapes workspace_root: ${relPath}`);
+  }
+  return abs;
+}
+function toRelWorkspacePath(workspaceRoot, absPath) {
+  return path.relative(workspaceRoot, absPath).split(path.sep).join("/");
+}
+function listMarkdownFiles(root, under) {
+  const base = resolveInsideWorkspace(root, under);
+  if (!fs.existsSync(base) || !fs.statSync(base).isDirectory()) return [];
+  const out = [];
+  const walk = (dir) => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        walk(abs);
+      } else if (ent.isFile() && ent.name.toLowerCase().endsWith(".md")) {
+        out.push(toRelWorkspacePath(root, abs));
+      }
+    }
+  };
+  walk(base);
+  out.sort((a, b) => a.localeCompare(b));
+  return out;
+}
+function normalizePayloadJson(payloadJson) {
+  if (typeof payloadJson === "string") {
+    const parsed = JSON.parse(payloadJson);
+    return `${JSON.stringify(parsed, null, 2)}
+`;
+  }
+  return `${JSON.stringify(payloadJson, null, 2)}
+`;
+}
+function buildFence(kind, payloadJsonPretty) {
+  const body = payloadJsonPretty.endsWith("\n") ? payloadJsonPretty : `${payloadJsonPretty}
+`;
+  return `\`\`\`${kind}
+${body}\`\`\`
+`;
+}
+var SMW_KIND_TO_MV_KIND = {
+  "smw-model-sql": "smw-model-sql",
+  "smw-model-kv": "smw-model-kv",
+  "smw-model-struct": "smw-model-struct",
+  "smw-model-codespace": "smw-model-codespace",
+  "smw-model-interface": "smw-model-interface",
+  "smw-view": "smw-view",
+  "smw-map": "smw-map"
+};
+function normalizeFenceKind(kind) {
+  const trimmed = kind.trim();
+  return SMW_KIND_TO_MV_KIND[trimmed] ?? trimmed;
+}
+function readParsedMarkdownFile(workspaceRoot, relPath) {
+  const abs = resolveInsideWorkspace(workspaceRoot, relPath);
+  const source = fs.readFileSync(abs, "utf8");
+  return { abs, source, parsed: parseMarkdownBlocks(source) };
+}
+function saveBlockPayloadById(source, blockId, payloadObj) {
+  const pretty = `${JSON.stringify(payloadObj, null, 2)}
+`;
+  const next = replaceBlockInnerById(source, blockId, pretty);
+  if (!next) throw new Error(`block not found: ${blockId}`);
+  return next;
+}
+function parseJsonPath(pathExpr) {
+  const src = pathExpr.trim();
+  if (!src) throw new Error("json_path is empty");
+  const raw = src.startsWith("/") ? src.slice(1).split("/") : src.split(".");
+  return raw.filter((x) => x.length > 0).map((seg) => {
+    const n = Number(seg);
+    return Number.isInteger(n) && String(n) === seg ? n : seg;
+  });
+}
+function setByPath(root, pathExpr, value) {
+  const toks = parseJsonPath(pathExpr);
+  if (toks.length === 0) return value;
+  const cloned = structuredClone(root);
+  let cur = cloned;
+  for (let i = 0; i < toks.length - 1; i++) {
+    const key = toks[i];
+    const nextKey = toks[i + 1];
+    if (typeof key === "number") {
+      if (!Array.isArray(cur)) throw new Error(`json_path expects array at segment ${i}`);
+      if (cur[key] === void 0) cur[key] = typeof nextKey === "number" ? [] : {};
+      cur = cur[key];
+    } else {
+      if (!cur || typeof cur !== "object" || Array.isArray(cur)) throw new Error(`json_path expects object at segment ${i}`);
+      const obj = cur;
+      if (obj[key] === void 0) obj[key] = typeof nextKey === "number" ? [] : {};
+      cur = obj[key];
+    }
+  }
+  const last = toks[toks.length - 1];
+  if (typeof last === "number") {
+    if (!Array.isArray(cur)) throw new Error("json_path final segment expects array");
+    cur[last] = value;
+  } else {
+    if (!cur || typeof cur !== "object" || Array.isArray(cur)) throw new Error("json_path final segment expects object");
+    cur[last] = value;
+  }
+  return cloned;
+}
 server.tool(
   "smw_parse_markdown_blocks",
-  "\u89E3\u6790 Markdown \u4E2D\u7684 mv-* \u56F4\u680F\u5757\uFF0C\u8FD4\u56DE blocks \u4E0E errors\u3002",
+  "\u89E3\u6790 Markdown \u4E2D\u7684 smw-* \u56F4\u680F\u5757\uFF0C\u8FD4\u56DE blocks \u4E0E errors\u3002",
   {
     markdown: external_exports.string().describe("\u5B8C\u6574 Markdown \u6587\u672C")
   },
@@ -22293,38 +22447,405 @@ server.tool(
   }
 );
 server.tool(
-  "parse_markdown_blocks",
-  "\u89E3\u6790 Markdown \u4E2D\u7684 mv-* \u56F4\u680F\u5757\uFF0C\u8FD4\u56DE blocks \u4E0E errors\u3002",
+  "smw_ls_md",
+  "\u9012\u5F52\u5217\u51FA\u5DE5\u4F5C\u533A\u5185 Markdown \u6587\u4EF6\u76F8\u5BF9\u8DEF\u5F84\u3002",
   {
-    markdown: external_exports.string().describe("\u5B8C\u6574 Markdown \u6587\u672C")
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    under: external_exports.string().optional().describe('\u53EF\u9009\u5B50\u76EE\u5F55\uFF08\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\uFF09\uFF0C\u9ED8\u8BA4 "."')
   },
-  async ({ markdown }) => {
-    const result = parseMarkdownBlocks(markdown);
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(result, null, 2)
-        }
-      ]
+  async ({ workspace_root, under }) => {
+    const root = ensureWorkspaceRoot(workspace_root);
+    const files = listMarkdownFiles(root, under ?? ".");
+    return asTextResult({ workspace_root: root, count: files.length, files });
+  }
+);
+server.tool(
+  "smw_read_text",
+  "\u8BFB\u53D6\u5DE5\u4F5C\u533A\u5185\u6587\u672C\u6587\u4EF6\u5185\u5BB9\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684\u6587\u4EF6\u8DEF\u5F84")
+  },
+  async ({ workspace_root, rel_path }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+      throw new Error(`file not found: ${rel_path}`);
+    }
+    const text = fs.readFileSync(abs, "utf8");
+    return asTextResult({ rel_path, bytes: Buffer.byteLength(text, "utf8"), text });
+  }
+);
+server.tool(
+  "smw_write_text",
+  "\u5199\u5165\u5DE5\u4F5C\u533A\u5185\u6587\u672C\u6587\u4EF6\uFF08\u53EF\u521B\u5EFA\u7236\u76EE\u5F55\uFF09\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684\u6587\u4EF6\u8DEF\u5F84"),
+    text: external_exports.string().describe("\u5B8C\u6574\u6587\u672C\u5185\u5BB9"),
+    create_dirs: external_exports.boolean().optional().describe("\u662F\u5426\u81EA\u52A8\u521B\u5EFA\u7236\u76EE\u5F55\uFF0C\u9ED8\u8BA4 true")
+  },
+  async ({ workspace_root, rel_path, text, create_dirs }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    if (create_dirs ?? true) {
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+    }
+    fs.writeFileSync(abs, text, "utf8");
+    return asTextResult({
+      rel_path,
+      bytes: Buffer.byteLength(text, "utf8"),
+      ok: true
+    });
+  }
+);
+server.tool(
+  "smw_read_blocks",
+  "\u89E3\u6790\u5DE5\u4F5C\u533A\u5185 Markdown \u6587\u4EF6\u4E2D\u7684 mv-* \u56F4\u680F\u5757\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84")
+  },
+  async ({ workspace_root, rel_path }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    const source = fs.readFileSync(abs, "utf8");
+    const result = parseMarkdownBlocks(source);
+    return asTextResult({
+      rel_path,
+      block_count: result.blocks.length,
+      error_count: result.errors.length,
+      result
+    });
+  }
+);
+server.tool(
+  "smw_read_blocks_batch",
+  "\u6279\u91CF\u89E3\u6790\u591A\u4E2A Markdown \u6587\u4EF6\u4E2D\u7684 mv-* \u56F4\u680F\u5757\uFF0C\u51CF\u5C11\u591A\u6B21\u5F80\u8FD4\u8C03\u7528\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_paths: external_exports.array(external_exports.string()).min(1).max(100).describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84\u6570\u7EC4"),
+    include_payload: external_exports.boolean().optional().describe("\u662F\u5426\u8FD4\u56DE\u5B8C\u6574 payload\uFF08\u9ED8\u8BA4 true\uFF1B\u4EC5\u8981\u76EE\u5F55\u65F6\u53EF\u4F20 false \u4EE5\u51CF\u5C11\u54CD\u5E94\u4F53\u79EF\uFF09")
+  },
+  async ({ workspace_root, rel_paths, include_payload }) => {
+    const root = ensureWorkspaceRoot(workspace_root);
+    const wantPayload = include_payload ?? true;
+    const files = rel_paths.map((p) => {
+      const abs = resolveInsideWorkspace(root, p);
+      if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+        return { rel_path: p, error: "file_not_found" };
+      }
+      const source = fs.readFileSync(abs, "utf8");
+      const parsed = parseMarkdownBlocks(source);
+      const blocks = parsed.blocks.map((b) => ({
+        kind: b.kind,
+        id: b.payload.id,
+        startLine: b.startLine,
+        endLine: b.endLine,
+        ...wantPayload ? { payload: b.payload } : {}
+      }));
+      return {
+        rel_path: p,
+        block_count: parsed.blocks.length,
+        error_count: parsed.errors.length,
+        blocks,
+        errors: parsed.errors
+      };
+    });
+    return asTextResult({
+      workspace_root: root,
+      file_count: files.length,
+      include_payload: wantPayload,
+      files
+    });
+  }
+);
+server.tool(
+  "smw_set_block_json",
+  "\u6309 block id \u66F4\u65B0\u56F4\u680F\u5757 JSON \u5185\u6587\uFF08\u81EA\u52A8\u683C\u5F0F\u5316\uFF09\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84"),
+    block_id: external_exports.string().describe("\u76EE\u6807 block id"),
+    payload_json: external_exports.union([external_exports.string(), external_exports.record(external_exports.string(), external_exports.unknown())]).describe("\u65B0 JSON\uFF08\u5B57\u7B26\u4E32\u6216\u5BF9\u8C61\uFF09")
+  },
+  async ({ workspace_root, rel_path, block_id, payload_json }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    const source = fs.readFileSync(abs, "utf8");
+    const pretty = normalizePayloadJson(payload_json);
+    const next = replaceBlockInnerById(source, block_id, pretty);
+    if (!next) {
+      throw new Error(`block not found: ${block_id}`);
+    }
+    fs.writeFileSync(abs, next, "utf8");
+    const parsed = parseMarkdownBlocks(next);
+    const updated = parsed.blocks.find((b) => b.payload.id === block_id) ?? null;
+    return asTextResult({ rel_path, block_id, ok: true, updated });
+  }
+);
+server.tool(
+  "smw_add_block_json",
+  "\u65B0\u589E\u4E00\u4E2A mv-* \u56F4\u680F\u5757\uFF08\u8FFD\u52A0\u5230\u6587\u672B\uFF09\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84"),
+    kind: external_exports.string().describe("\u56F4\u680F\u7C7B\u578B\uFF0C\u5982 smw-view / smw-model-sql"),
+    payload_json: external_exports.union([external_exports.string(), external_exports.record(external_exports.string(), external_exports.unknown())]).describe("JSON\uFF08\u5B57\u7B26\u4E32\u6216\u5BF9\u8C61\uFF09")
+  },
+  async ({ workspace_root, rel_path, kind, payload_json }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    const source = fs.existsSync(abs) ? fs.readFileSync(abs, "utf8") : "";
+    const pretty = normalizePayloadJson(payload_json);
+    const normalizedKind = normalizeFenceKind(kind);
+    const trimmed = source.trimEnd();
+    const sep2 = trimmed.length > 0 ? "\n\n" : "";
+    const next = `${trimmed}${sep2}${buildFence(normalizedKind, pretty)}`;
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, next, "utf8");
+    const parsed = parseMarkdownBlocks(next);
+    const id = (() => {
+      try {
+        return typeof payload_json === "string" ? JSON.parse(payload_json).id : payload_json.id;
+      } catch {
+        return void 0;
+      }
+    })();
+    const block = id ? parsed.blocks.find((b) => b.payload.id === String(id)) : null;
+    return asTextResult({
+      rel_path,
+      kind: normalizedKind,
+      kind_input: kind,
+      block_id: id ?? null,
+      ok: true,
+      block,
+      block_count: parsed.blocks.length
+    });
+  }
+);
+server.tool(
+  "smw_del_block",
+  "\u6309 block id \u5220\u9664\u56F4\u680F\u5757\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84"),
+    block_id: external_exports.string().describe("\u76EE\u6807 block id")
+  },
+  async ({ workspace_root, rel_path, block_id }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    const source = fs.readFileSync(abs, "utf8");
+    const parsed = parseMarkdownBlocks(source);
+    const hit = parsed.blocks.find((b) => b.payload.id === block_id);
+    if (!hit) {
+      throw new Error(`block not found: ${block_id}`);
+    }
+    let next = source.slice(0, hit.startOffset) + source.slice(hit.endOffset);
+    next = next.replace(/\n{3,}/g, "\n\n");
+    fs.writeFileSync(abs, next, "utf8");
+    const reparsed = parseMarkdownBlocks(next);
+    return asTextResult({
+      rel_path,
+      block_id,
+      ok: true,
+      block_count: reparsed.blocks.length
+    });
+  }
+);
+var blockOpSchema = external_exports.discriminatedUnion("action", [
+  external_exports.object({
+    action: external_exports.literal("set_json"),
+    rel_path: external_exports.string(),
+    block_id: external_exports.string(),
+    payload_json: external_exports.union([external_exports.string(), external_exports.record(external_exports.string(), external_exports.unknown())])
+  }),
+  external_exports.object({
+    action: external_exports.literal("patch_path"),
+    rel_path: external_exports.string(),
+    block_id: external_exports.string(),
+    json_path: external_exports.string(),
+    value: external_exports.unknown()
+  }),
+  external_exports.object({
+    action: external_exports.literal("add_json"),
+    rel_path: external_exports.string(),
+    kind: external_exports.string(),
+    payload_json: external_exports.union([external_exports.string(), external_exports.record(external_exports.string(), external_exports.unknown())])
+  }),
+  external_exports.object({
+    action: external_exports.literal("delete_block"),
+    rel_path: external_exports.string(),
+    block_id: external_exports.string()
+  })
+]);
+server.tool(
+  "smw_apply_block_ops",
+  "\u6279\u91CF\u6267\u884C block \u64CD\u4F5C\uFF08set_json / patch_path / add_json / delete_block\uFF09\uFF0C\u6309\u6587\u4EF6\u5408\u5E76\u8BFB\u5199\u4EE5\u63D0\u9AD8\u6548\u7387\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    ops: external_exports.array(blockOpSchema).min(1).max(200).describe("\u64CD\u4F5C\u6570\u7EC4\uFF0C\u6309\u7ED9\u5B9A\u987A\u5E8F\u6267\u884C")
+  },
+  async ({ workspace_root, ops }) => {
+    const root = ensureWorkspaceRoot(workspace_root);
+    const fileCache = /* @__PURE__ */ new Map();
+    const getFile = (relPath) => {
+      const key = relPath;
+      const existing = fileCache.get(key);
+      if (existing) return existing;
+      const abs = resolveInsideWorkspace(root, relPath);
+      const source = fs.existsSync(abs) ? fs.readFileSync(abs, "utf8") : "";
+      const item = { abs, source, touched: false };
+      fileCache.set(key, item);
+      return item;
     };
+    const results = [];
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i];
+      try {
+        const file = getFile(op.rel_path);
+        if (op.action === "set_json") {
+          const pretty = normalizePayloadJson(op.payload_json);
+          const next = replaceBlockInnerById(file.source, op.block_id, pretty);
+          if (!next) throw new Error(`block not found: ${op.block_id}`);
+          file.source = next;
+          file.touched = true;
+          results.push({ op_index: i, rel_path: op.rel_path, block_id: op.block_id, action: op.action, ok: true });
+          continue;
+        }
+        if (op.action === "patch_path") {
+          const parsed = parseMarkdownBlocks(file.source);
+          const hit = parsed.blocks.find((b) => b.payload.id === op.block_id);
+          if (!hit) throw new Error(`block not found: ${op.block_id}`);
+          const payloadObj = structuredClone(hit.payload);
+          const patched = setByPath(payloadObj, op.json_path, op.value);
+          const next = saveBlockPayloadById(file.source, op.block_id, patched);
+          file.source = next;
+          file.touched = true;
+          results.push({ op_index: i, rel_path: op.rel_path, block_id: op.block_id, action: op.action, ok: true });
+          continue;
+        }
+        if (op.action === "add_json") {
+          const pretty = normalizePayloadJson(op.payload_json);
+          const normalizedKind = normalizeFenceKind(op.kind);
+          const trimmed = file.source.trimEnd();
+          const sep2 = trimmed.length > 0 ? "\n\n" : "";
+          file.source = `${trimmed}${sep2}${buildFence(normalizedKind, pretty)}`;
+          file.touched = true;
+          results.push({
+            op_index: i,
+            rel_path: op.rel_path,
+            action: `${op.action}:${normalizedKind}`,
+            ok: true
+          });
+          continue;
+        }
+        if (op.action === "delete_block") {
+          const parsed = parseMarkdownBlocks(file.source);
+          const hit = parsed.blocks.find((b) => b.payload.id === op.block_id);
+          if (!hit) throw new Error(`block not found: ${op.block_id}`);
+          let next = file.source.slice(0, hit.startOffset) + file.source.slice(hit.endOffset);
+          next = next.replace(/\n{3,}/g, "\n\n");
+          file.source = next;
+          file.touched = true;
+          results.push({ op_index: i, rel_path: op.rel_path, block_id: op.block_id, action: op.action, ok: true });
+          continue;
+        }
+      } catch (error2) {
+        const message = error2 instanceof Error ? error2.message : String(error2);
+        results.push({
+          op_index: i,
+          rel_path: op.rel_path,
+          block_id: "block_id" in op ? op.block_id : void 0,
+          action: op.action,
+          ok: false,
+          message
+        });
+      }
+    }
+    let written_files = 0;
+    for (const [relPath, item] of fileCache.entries()) {
+      if (!item.touched) continue;
+      fs.mkdirSync(path.dirname(item.abs), { recursive: true });
+      fs.writeFileSync(item.abs, item.source, "utf8");
+      written_files += 1;
+      const finalParsed = parseMarkdownBlocks(item.source);
+      results.push({
+        op_index: -1,
+        rel_path: relPath,
+        action: "final_parse",
+        ok: true,
+        message: `block_count=${finalParsed.blocks.length}, error_count=${finalParsed.errors.length}`
+      });
+    }
+    const success = results.filter((r) => r.op_index >= 0 && r.ok).length;
+    const failed = results.filter((r) => r.op_index >= 0 && !r.ok).length;
+    return asTextResult({
+      workspace_root: root,
+      op_count: ops.length,
+      success,
+      failed,
+      written_files,
+      results
+    });
+  }
+);
+server.tool(
+  "smw_patch_block_json_path",
+  "\u6309 json_path \u66F4\u65B0\u67D0\u4E2A block payload \u7684\u5C40\u90E8\u5B57\u6BB5\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84"),
+    block_id: external_exports.string().describe("\u76EE\u6807 block id"),
+    json_path: external_exports.string().describe("\u8DEF\u5F84\uFF0C\u5982 payload.kind / tables.0.columns.1.name / /tables/0/id"),
+    value: external_exports.unknown().describe("\u8981\u5199\u5165\u7684\u65B0\u503C")
+  },
+  async ({ workspace_root, rel_path, block_id, json_path, value }) => {
+    const { abs, source, parsed } = readParsedMarkdownFile(workspace_root, rel_path);
+    const hit = parsed.blocks.find((b) => b.payload.id === block_id);
+    if (!hit) throw new Error(`block not found: ${block_id}`);
+    const payloadObj = structuredClone(hit.payload);
+    const patched = setByPath(payloadObj, json_path, value);
+    const next = saveBlockPayloadById(source, block_id, patched);
+    fs.writeFileSync(abs, next, "utf8");
+    return asTextResult({ rel_path, block_id, json_path, ok: true });
+  }
+);
+server.tool(
+  "smw_sql_upsert_row",
+  "\u9488\u5BF9 smw-model-sql\uFF1A\u65B0\u589E\u6216\u66FF\u6362\u6307\u5B9A\u5B50\u8868\u7684\u4E00\u884C\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84"),
+    block_id: external_exports.string().describe("smw-model-sql block id"),
+    table_id: external_exports.string().describe("\u5B50\u8868 id"),
+    row: external_exports.record(external_exports.string(), external_exports.unknown()).describe("\u884C\u5BF9\u8C61"),
+    row_index: external_exports.number().int().min(0).optional().describe("\u53EF\u9009\uFF1A\u66FF\u6362\u7684\u884C\u4E0B\u6807\uFF1B\u4E0D\u4F20\u5219\u8FFD\u52A0")
+  },
+  async ({ workspace_root, rel_path, block_id, table_id, row, row_index }) => {
+    const { abs, source, parsed } = readParsedMarkdownFile(workspace_root, rel_path);
+    const hit = parsed.blocks.find((b) => b.payload.id === block_id);
+    if (!hit || hit.kind !== "smw-model-sql") throw new Error(`smw-model-sql block not found: ${block_id}`);
+    const payloadObj = structuredClone(hit.payload);
+    const tables = payloadObj.tables;
+    if (!Array.isArray(tables)) throw new Error("invalid smw-model-sql payload: tables missing");
+    const table = tables.find((t) => t?.id === table_id);
+    if (!table) throw new Error(`table not found: ${table_id}`);
+    if (!Array.isArray(table.rows)) table.rows = [];
+    if (row_index === void 0) {
+      table.rows.push(row);
+    } else {
+      if (row_index >= table.rows.length) throw new Error(`row_index out of range: ${row_index}`);
+      table.rows[row_index] = row;
+    }
+    const next = saveBlockPayloadById(source, block_id, payloadObj);
+    fs.writeFileSync(abs, next, "utf8");
+    return asTextResult({
+      rel_path,
+      block_id,
+      table_id,
+      row_index: row_index ?? table.rows.length - 1,
+      row_count: table.rows.length,
+      ok: true
+    });
   }
 );
 server.tool(
   "smw_health",
-  "\u5065\u5EB7\u68C0\u67E5\uFF0C\u7528\u4E8E\u786E\u8BA4 MCP \u670D\u52A1\u5DF2\u542F\u52A8\u3002",
-  {},
-  async () => ({
-    content: [
-      {
-        type: "text",
-        text: "ok"
-      }
-    ]
-  })
-);
-server.tool(
-  "health",
   "\u5065\u5EB7\u68C0\u67E5\uFF0C\u7528\u4E8E\u786E\u8BA4 MCP \u670D\u52A1\u5DF2\u542F\u52A8\u3002",
   {},
   async () => ({

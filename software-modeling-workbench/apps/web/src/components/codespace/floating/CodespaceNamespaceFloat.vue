@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue';
-import type { MvCodespaceNamespaceNode, MvModelCodespacePayload } from '@mvwb/core';
+import type { MvCodespaceNamespaceNode, MvModelCodespacePayload } from '@smw/core';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath, rebuildPathIdsForModule } from '../../../utils/codespace-canvas';
 import CodespaceFloatShell from '../CodespaceFloatShell.vue';

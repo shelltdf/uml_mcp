@@ -1,5 +1,5 @@
-import type { IUmlKindMapper, IViewPayloadCodec } from '@mvwb/core';
-import { MV_UML_KIND_DIAGRAM_TYPE, type MvViewKind } from '@mvwb/core';
+import type { IUmlKindMapper, IViewPayloadCodec } from '@smw/core';
+import { MV_UML_KIND_DIAGRAM_TYPE, type MvViewKind } from '@smw/core';
 
 export class WebJsonViewPayloadCodec implements IViewPayloadCodec {
   public encode(payload: unknown): string {

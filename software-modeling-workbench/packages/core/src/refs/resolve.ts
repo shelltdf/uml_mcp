@@ -1,6 +1,6 @@
 import type { ResolvedRef } from '../types.js';
 
-/** ref:path.md#blockId 或 ref:path.md#blockId#tableId（mv-model-sql 子表）；路径段内不得含 # */
+/** ref:path.md#blockId 或 ref:path.md#blockId#tableId（smw-model-sql 子表）；路径段内不得含 # */
 const REF_RE = /^ref:(.+?)#([^#]+)(?:#([^#]+))?$/;
 
 /**

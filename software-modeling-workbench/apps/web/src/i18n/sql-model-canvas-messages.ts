@@ -1,5 +1,5 @@
 import type { AppLocale } from './app-locale';
-import type { MvModelColumnDef } from '@mvwb/core';
+import type { MvModelColumnDef } from '@smw/core';
 
 export interface SqlModelCanvasColDataTooltip {
   pivot: (name: string) => string;
@@ -99,9 +99,9 @@ export interface SqlModelCanvasUi {
 
 const zh: SqlModelCanvasUi = {
   formatHintIntro:
-    '本围栏为 Model（mv-model-sql）：一个代码块内可含多张子表；mv-view 为 View，通过 modelRefs 绑定 块id#子表id（见下方属性区说明）。子表用标签切换；可对子表做增删。',
+    '本围栏为 Model（smw-model-sql）：一个代码块内可含多张子表；smw-view 为 View，通过 modelRefs 绑定 块id#子表id（见下方属性区说明）。子表用标签切换；可对子表做增删。',
   metaSectionTitle: 'Model 组 · 元数据',
-  modelIdInputTitle: '围栏块 id，与 mv-view 的 modelRefs 第一段对齐 — 无全局快捷键',
+  modelIdInputTitle: '围栏块 id，与 smw-view 的 modelRefs 第一段对齐 — 无全局快捷键',
   groupCommentLabel: '组 COMMENT（title）',
   optionalPlaceholder: '可选',
   subtableTablistAria: '子表（标签切换）',
@@ -115,7 +115,7 @@ const zh: SqlModelCanvasUi = {
   tooltipDdlFold: (expanded) =>
     (expanded ? '折叠' : '展开') + ' DDL · 当前子表列定义 — 无全局快捷键',
   ddlFormatHint:
-    '以 SQL 表设计语义呈现：COLUMN / 逻辑类型映射为示意 TYPE、NULL / NOT NULL、PRIMARY KEY（多列即联合）、UNIQUE、DEFAULT、列级 -- comment。下方 CREATE TABLE 为只读示意（对应当前子表）；落盘为 mv-model-sql JSON。默认值输入仍按 JSON 字面量解析。子表 id 可编辑（失焦校验唯一）。',
+    '以 SQL 表设计语义呈现：COLUMN / 逻辑类型映射为示意 TYPE、NULL / NOT NULL、PRIMARY KEY（多列即联合）、UNIQUE、DEFAULT、列级 -- comment。下方 CREATE TABLE 为只读示意（对应当前子表）；落盘为 smw-model-sql JSON。默认值输入仍按 JSON 字面量解析。子表 id 可编辑（失焦校验唯一）。',
   tableIdInputTitle: '子表 id；须在同组内唯一 — 无全局快捷键',
   subtableCommentLabel: '子表 COMMENT（title）',
   ddlPreviewAria: 'CREATE TABLE 示意',
@@ -161,11 +161,11 @@ const zh: SqlModelCanvasUi = {
   readonlyPreviewSectionAria: '当前子表只读平铺预览',
   readonlyPreviewSectionTitle: 'SELECT * 风格 · 只读（当前子表）',
   readonlyPreviewHint: (tableId, filtered, total) =>
-    `与上方 DML 为同一子表 ${tableId}；行集与 WHERE 子串筛选一致（仅展示 ${filtered} / ${total} 行）。只读单元格，与只读表预览一致；未保存修改即时反映；落盘为 mv-model-sql JSON。`,
+    `与上方 DML 为同一子表 ${tableId}；行集与 WHERE 子串筛选一致（仅展示 ${filtered} / ${total} 行）。只读单元格，与只读表预览一致；未保存修改即时反映；落盘为 smw-model-sql JSON。`,
   tooltipSchemaNullable:
     '可空（NULLABLE）：该列在每一行 JSON 中可以不出现键，表示「未填」；数据区把单元格清空也会移除该键。取消可空后，每行必须包含此键，保存前会为缺键行自动补「默认值」或空串。解析会拒绝「必填列却缺键」的行。此为模式设计，不等同于单元格内 SQL NULL 字面量。无全局快捷键。',
   tooltipSchemaPk:
-    '主键（PRIMARY KEY，PK）：勾选表示该列属于表的主键；多列同时勾选表示联合主键。标记会写入 mv-model-sql JSON，便于与 SQL 表设计对齐。当前工作台不会在保存时校验主键唯一、非空或自增。无全局快捷键。',
+    '主键（PRIMARY KEY，PK）：勾选表示该列属于表的主键；多列同时勾选表示联合主键。标记会写入 smw-model-sql JSON，便于与 SQL 表设计对齐。当前工作台不会在保存时校验主键唯一、非空或自增。无全局快捷键。',
   tooltipSchemaUq:
     '唯一（UNIQUE，UQ）：勾选表示业务上希望该列在整张表内取值不重复（类似 SQL UNIQUE）。标记会写入 JSON；当前不会自动扫描全部行做重复校验，若需真唯一请在业务或后续校验中实现。无全局快捷键。',
   colDataTooltip: {
@@ -179,9 +179,9 @@ const zh: SqlModelCanvasUi = {
     tail: '无全局快捷键。',
   },
   ddlPreviewNoColumns: '-- （无列，无法生成 DDL）',
-  ddlPreviewHeaderLine: '-- 示意 DDL（不执行；保存仍为 mv-model-sql JSON）',
+  ddlPreviewHeaderLine: '-- 示意 DDL（不执行；保存仍为 smw-model-sql JSON）',
   alertCannotDeleteLastSubtable:
-    '【警告】无法删除：Model 组内须至少保留一张子表。\n\n若需移除整组数据模型，请在主文档中删除对应的 mv-model-sql 围栏块。',
+    '【警告】无法删除：Model 组内须至少保留一张子表。\n\n若需移除整组数据模型，请在主文档中删除对应的 smw-model-sql 围栏块。',
   alertSubtableIdEmpty: '子表 id 不能为空。',
   alertSubtableIdConflict: '子表 id 与同组其它表冲突。',
   alertTableMinOneColumn: '表至少保留一列。',
@@ -204,9 +204,9 @@ const zh: SqlModelCanvasUi = {
 
 const en: SqlModelCanvasUi = {
   formatHintIntro:
-    'This fenced block is a Model (mv-model-sql): one block can hold multiple child tables; mv-view is a View and binds via modelRefs as blockId#tableId (see the property panel). Switch tables with tabs; you can add or remove tables.',
+    'This fenced block is a Model (smw-model-sql): one block can hold multiple child tables; smw-view is a View and binds via modelRefs as blockId#tableId (see the property panel). Switch tables with tabs; you can add or remove tables.',
   metaSectionTitle: 'Model group · metadata',
-  modelIdInputTitle: 'Fence block id — first segment of mv-view modelRefs — no global shortcut',
+  modelIdInputTitle: 'Fence block id — first segment of smw-view modelRefs — no global shortcut',
   groupCommentLabel: 'Group COMMENT (title)',
   optionalPlaceholder: 'Optional',
   subtableTablistAria: 'Child tables (tab switcher)',
@@ -221,7 +221,7 @@ const en: SqlModelCanvasUi = {
   tooltipDdlFold: (expanded) =>
     (expanded ? 'Collapse' : 'Expand') + ' DDL · column definitions (active table) — no global shortcut',
   ddlFormatHint:
-    'Uses SQL-style table design semantics: COLUMN / logical types map to illustrative TYPE, NULL / NOT NULL, PRIMARY KEY (composite if multiple), UNIQUE, DEFAULT, and per-column -- comment. The CREATE TABLE below is read-only (current table); persisted payload remains mv-model-sql JSON. Default values are parsed as JSON literals. Table id is editable (blur validates uniqueness in the group).',
+    'Uses SQL-style table design semantics: COLUMN / logical types map to illustrative TYPE, NULL / NOT NULL, PRIMARY KEY (composite if multiple), UNIQUE, DEFAULT, and per-column -- comment. The CREATE TABLE below is read-only (current table); persisted payload remains smw-model-sql JSON. Default values are parsed as JSON literals. Table id is editable (blur validates uniqueness in the group).',
   tableIdInputTitle: 'Child table id — must be unique within this model group — no global shortcut',
   subtableCommentLabel: 'Table COMMENT (title)',
   ddlPreviewAria: 'Illustrative CREATE TABLE',
@@ -267,11 +267,11 @@ const en: SqlModelCanvasUi = {
   readonlyPreviewSectionAria: 'Read-only grid preview for the active table',
   readonlyPreviewSectionTitle: 'SELECT * style · read-only (active table)',
   readonlyPreviewHint: (tableId, filtered, total) =>
-    `Same table as DML above (${tableId}). Rows respect the WHERE filter (${filtered} / ${total} shown). Read-only cells; unsaved edits show immediately; persisted as mv-model-sql JSON.`,
+    `Same table as DML above (${tableId}). Rows respect the WHERE filter (${filtered} / ${total} shown). Read-only cells; unsaved edits show immediately; persisted as smw-model-sql JSON.`,
   tooltipSchemaNullable:
     'NULLABLE: each row JSON may omit this key meaning unset; clearing the cell removes the key. When not nullable, every row must include the key; missing keys are filled with default or empty string before save. Parser rejects rows missing required keys. This is schema design, not the SQL NULL literal in a cell. No global shortcut.',
   tooltipSchemaPk:
-    'PRIMARY KEY (PK): checked columns belong to the primary key; multiple checked columns form a composite key. Stored in mv-model-sql JSON for SQL alignment. The workbench does not enforce uniqueness, NOT NULL, or autoincrement on save. No global shortcut.',
+    'PRIMARY KEY (PK): checked columns belong to the primary key; multiple checked columns form a composite key. Stored in smw-model-sql JSON for SQL alignment. The workbench does not enforce uniqueness, NOT NULL, or autoincrement on save. No global shortcut.',
   tooltipSchemaUq:
     'UNIQUE (UQ): indicates values should not repeat across the table (SQL UNIQUE semantics). Flag is stored in JSON; rows are not automatically scanned for duplicates. No global shortcut.',
   colDataTooltip: {
@@ -285,9 +285,9 @@ const en: SqlModelCanvasUi = {
     tail: 'No global shortcut.',
   },
   ddlPreviewNoColumns: '-- (no columns; cannot render DDL)',
-  ddlPreviewHeaderLine: '-- Illustrative DDL (not executed; save remains mv-model-sql JSON)',
+  ddlPreviewHeaderLine: '-- Illustrative DDL (not executed; save remains smw-model-sql JSON)',
   alertCannotDeleteLastSubtable:
-    'Cannot delete: a model group must keep at least one table.\n\nTo remove the whole model, delete the mv-model-sql fence block in the document.',
+    'Cannot delete: a model group must keep at least one table.\n\nTo remove the whole model, delete the smw-model-sql fence block in the document.',
   alertSubtableIdEmpty: 'Table id cannot be empty.',
   alertSubtableIdConflict: 'Table id conflicts with another table in this group.',
   alertTableMinOneColumn: 'A table must keep at least one column.',

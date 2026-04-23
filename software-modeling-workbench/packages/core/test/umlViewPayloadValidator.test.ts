@@ -6,7 +6,7 @@ describe('UmlViewPayloadValidator', () => {
 
   it('accepts valid uml-class object payload', () => {
     const res = validator.validate('uml-class', {
-      schema: 'mvwb-uml/v1',
+      schema: 'smw-uml/v1',
       diagramType: 'class',
       classes: [{ id: 'a', name: 'A' }],
     });
@@ -15,7 +15,7 @@ describe('UmlViewPayloadValidator', () => {
 
   it('rejects invalid diagramType', () => {
     const res = validator.validate('uml-class', {
-      schema: 'mvwb-uml/v1',
+      schema: 'smw-uml/v1',
       diagramType: 'sequence',
     });
     expect(res.ok).toBe(false);

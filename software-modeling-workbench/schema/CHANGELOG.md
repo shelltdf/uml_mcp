@@ -6,7 +6,7 @@
 
 ### Breaking
 
-`mv-model-codespace` 的 class 成员字段统一为复数字段，并移除 legacy 支持：
+`smw-model-codespace` 的 class 成员字段统一为复数字段，并移除 legacy 支持：
 
 - `member` -> `members`
 - `method` -> `methods`

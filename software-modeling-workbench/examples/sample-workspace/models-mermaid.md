@@ -4,7 +4,7 @@
 
 统一规则见：[`PAYLOAD_RULES.md`](PAYLOAD_RULES.md)。
 
-```mv-model-sql
+```smw-model-sql
 {
   "id": "sql_demo",
   "title": "演示 SQL Model 组",
@@ -19,11 +19,11 @@
 ```
 
 > 约定：
-> - 每个 `mermaid-*` 示例均为一对 `` ```mv-view `` + `` ```mermaid ``。
+> - 每个 `mermaid-*` 示例均为一对 `` ```smw-view `` + `` ```mermaid ``。
 > - 这类扩展语法属于“文本 payload”，因此 `payload` 保持字符串语义（此处用空串），由镜像段承载正文。
 > - 与之对应，`models-core.md` 中的 JSON 型 payload（如 `uml-*`、`mindmap-ui`）直接写对象。
 
-```mv-view
+```smw-view
 {"id":"mmd_architecture","kind":"mermaid-architecture","title":"mermaid-architecture","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -33,7 +33,7 @@ architecture-beta
     }
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_block","kind":"mermaid-block","title":"mermaid-block","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -42,7 +42,7 @@ columns 1
   block:a["Block A"]
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_c4","kind":"mermaid-c4","title":"mermaid-c4","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -53,7 +53,7 @@ C4Context
     Rel(user, sys, "Uses")
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_class","kind":"mermaid-class","title":"mermaid-class","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -61,7 +61,7 @@ classDiagram
   class Example
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_er","kind":"mermaid-er","title":"mermaid-er","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -69,7 +69,7 @@ erDiagram
     CUSTOMER ||--o{ ORDER : places
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_flow","kind":"mermaid-flowchart","title":"mermaid-flowchart","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -79,7 +79,7 @@ flowchart TD
     B -->|No| D[End]
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_gantt","kind":"mermaid-gantt","title":"mermaid-gantt","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -90,7 +90,7 @@ gantt
     Task1 :a1, 2024-01-01, 3d
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_git","kind":"mermaid-gitgraph","title":"mermaid-gitgraph","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -101,7 +101,7 @@ gitGraph
     commit
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_journey","kind":"mermaid-journey","title":"mermaid-journey","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -111,7 +111,7 @@ journey
       Make tea: 5: Me
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_kanban","kind":"mermaid-kanban","title":"mermaid-kanban","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -122,7 +122,7 @@ kanban
   Done[]
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_mindmap","kind":"mermaid-mindmap","title":"mermaid-mindmap","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -133,7 +133,7 @@ mindmap
     B
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_packet","kind":"mermaid-packet","title":"mermaid-packet","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -142,7 +142,7 @@ packet-beta
 16-31: "Destination Port"
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_pie","kind":"mermaid-pie","title":"mermaid-pie","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -152,7 +152,7 @@ pie title Example
     "C" : 25
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_quad","kind":"mermaid-quadrant","title":"mermaid-quadrant","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -163,7 +163,7 @@ quadrantChart
     Campaign: [0.3, 0.6]
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_req","kind":"mermaid-requirement","title":"mermaid-requirement","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -180,7 +180,7 @@ requirementDiagram
     e1 - satisfies -> req1
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_sankey","kind":"mermaid-sankey","title":"mermaid-sankey","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -191,7 +191,7 @@ A,B,50
 A,C,50
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_seq","kind":"mermaid-sequence","title":"mermaid-sequence","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -200,7 +200,7 @@ sequenceDiagram
     Bob-->>Alice: Hi
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_state","kind":"mermaid-state","title":"mermaid-state","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -209,7 +209,7 @@ stateDiagram-v2
     Idle --> [*]
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_time","kind":"mermaid-timeline","title":"mermaid-timeline","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -219,7 +219,7 @@ timeline
     2021 : Milestone B
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_xy","kind":"mermaid-xychart","title":"mermaid-xychart","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid
@@ -230,7 +230,7 @@ xychart-beta
     bar [2, 5, 8]
 ```
 
-```mv-view
+```smw-view
 {"id":"mmd_zen","kind":"mermaid-zenuml","title":"mermaid-zenuml","modelRefs":["sql_demo#person"],"payload":""}
 ```
 ```mermaid

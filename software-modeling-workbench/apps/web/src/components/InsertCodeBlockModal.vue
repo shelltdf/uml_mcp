@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { modelRefsSchemeDoc, MV_MERMAID_UML_INSERT_KINDS, getMermaidNonUmlViewKinds } from '@mvwb/core';
+import { modelRefsSchemeDoc, MV_MERMAID_UML_INSERT_KINDS, getMermaidNonUmlViewKinds } from '@smw/core';
 import type { InsertCodeBlockKind } from '../utils/code-block-insert';
 import { useAppLocale } from '../composables/useAppLocale';
 import {

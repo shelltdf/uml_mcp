@@ -1,5 +1,5 @@
 {
-  "name": "@mvwb/web",
+  "name": "@smw/web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@mvwb/core": "file:../../packages/core",
-    "@mvwb/mermaid": "file:../../packages/mermaid",
+    "@smw/core": "file:../../packages/core",
+    "@smw/mermaid": "file:../../packages/mermaid",
     "html-to-image": "^1.11.13",
     "vditor": "^3.11.2",
     "vue": "^3.5.13"

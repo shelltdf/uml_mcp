@@ -2,7 +2,7 @@ import type {
   MvCodespaceNamespaceNode,
   MvModelCodespaceModule,
   MvModelCodespacePayload,
-} from '@mvwb/core';
+} from '@smw/core';
 
 export const CODESPACE_ROOT_NAMESPACE_NAME = '';
 

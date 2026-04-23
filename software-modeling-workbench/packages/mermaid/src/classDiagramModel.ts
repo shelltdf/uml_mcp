@@ -429,7 +429,7 @@ export function diagramBounds(
   return { minX, minY, maxX, maxY };
 }
 
-/** ``mv-view`` 的 payload：裸 ``classDiagram``、或含 `` ```mermaid`` 围栏、或尾随布局 HTML 注释 */
+/** ``smw-view`` 的 payload：裸 ``classDiagram``、或含 `` ```mermaid`` 围栏、或尾随布局 HTML 注释 */
 export function extractClassDiagramSourceFromPayload(payload: string): string | null {
   const fb = extractFirstMermaidBlock(payload);
   if (fb) return fb.trim();
@@ -438,7 +438,7 @@ export function extractClassDiagramSourceFromPayload(payload: string): string | 
   return null;
 }
 
-/** 从 ``mv-view.payload`` 解析类图状态与布局（无图源时返回占位图） */
+/** 从 ``smw-view.payload`` 解析类图状态与布局（无图源时返回占位图） */
 export function parseViewPayloadClassDiagram(payload: string): {
   state: ClassDiagramState;
   positions: ClassPositions;
@@ -476,7 +476,7 @@ export function parseViewPayloadClassDiagram(payload: string): {
   };
 }
 
-/** 将类图状态写回 ``mv-view.payload`` 字符串（仅 Mermaid 正文，不混入布局注释） */
+/** 将类图状态写回 ``smw-view.payload`` 字符串（仅 Mermaid 正文，不混入布局注释） */
 export function buildClassDiagramViewPayload(
   previousPayload: string,
   state: ClassDiagramState,

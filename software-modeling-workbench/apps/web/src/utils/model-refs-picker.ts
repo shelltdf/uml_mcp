@@ -1,5 +1,5 @@
 /**
- * mv-view「modelRefs」选取：枚举某份 Markdown 内全部 mv-model-* 围栏并生成约定地址串。
+ * smw-view「modelRefs」选取：枚举某份 Markdown 内全部 smw-model-* 围栏并生成约定地址串。
  */
 import {
   normalizeRelPath,
@@ -8,7 +8,7 @@ import {
   resolveRefPath,
   type MvFenceKind,
   type MvModelSqlPayload,
-} from '@mvwb/core';
+} from '@smw/core';
 
 export type ModelRefCandidate = {
   /** 展示用 */
@@ -17,16 +17,16 @@ export type ModelRefCandidate = {
   value: string;
   blockId: string;
   fenceKind: MvFenceKind;
-  /** 仅 mv-model-sql 多表时有值 */
+  /** 仅 smw-model-sql 多表时有值 */
   tableId?: string;
 };
 
 const MODEL_KINDS: ReadonlySet<MvFenceKind> = new Set([
-  'mv-model-sql',
-  'mv-model-kv',
-  'mv-model-struct',
-  'mv-model-codespace',
-  'mv-model-interface',
+  'smw-model-sql',
+  'smw-model-kv',
+  'smw-model-struct',
+  'smw-model-codespace',
+  'smw-model-interface',
 ]);
 
 /** 从 ``fromFileRel`` 所在目录到 ``toFileRel`` 的相对路径（posix，不含前导 ./） */
@@ -48,7 +48,7 @@ export function relativePathFromFileToFile(fromFileRel: string, toFileRel: strin
 }
 
 /**
- * 枚举 markdown 中所有可绑定的 model 项（不含 mv-view / mv-map）。
+ * 枚举 markdown 中所有可绑定的 model 项（不含 smw-view / smw-map）。
  */
 export function listModelRefCandidates(markdown: string): ModelRefCandidate[] {
   const { blocks } = parseMarkdownBlocks(markdown);
@@ -56,13 +56,13 @@ export function listModelRefCandidates(markdown: string): ModelRefCandidate[] {
   for (const b of blocks) {
     if (!MODEL_KINDS.has(b.kind)) continue;
     const id = b.payload.id;
-    if (b.kind === 'mv-model-sql') {
+    if (b.kind === 'smw-model-sql') {
       const p = b.payload as MvModelSqlPayload;
       const tables = p.tables ?? [];
       const isSingle = tables.length === 1;
       for (const t of tables) {
         out.push({
-          label: `mv-model-sql · ${id} · 表 ${t.id}`,
+          label: `smw-model-sql · ${id} · 表 ${t.id}`,
           value: isSingle ? id : `${id}#${t.id}`,
           blockId: id,
           fenceKind: b.kind,
@@ -71,7 +71,7 @@ export function listModelRefCandidates(markdown: string): ModelRefCandidate[] {
       }
       continue;
     }
-    const kindLabel = b.kind.replace('mv-model-', '');
+    const kindLabel = b.kind.replace('smw-model-', '');
     out.push({
       label: `${b.kind} · ${id}`,
       value: id,
@@ -84,7 +84,7 @@ export function listModelRefCandidates(markdown: string): ModelRefCandidate[] {
 
 /**
  * 生成一条 modelRef 串。
- * @param viewFileRel 当前 mv-view 所在 .md（工作区相对路径）
+ * @param viewFileRel 当前 smw-view 所在 .md（工作区相对路径）
  * @param targetFileRel 目标 model 所在 .md（已解析的绝对相对路径）；与 view 相同时走同文件简写
  * @param blockId 围栏块 id
  * @param tableId sql 子表 id；其它 kind 忽略

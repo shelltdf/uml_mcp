@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onMounted, onUnmounted, ref } from 'vue';
-import type { MvModelCodespacePayload } from '@mvwb/core';
+import type { MvModelCodespacePayload } from '@smw/core';
 import { useCanvasViewport } from '../../composables/useCanvasViewport';
 import { CS_CANVAS_MSG_KEY, makeCodespaceLayoutLabels } from '../../i18n/codespace-canvas-messages';
 import { layoutCodespaceSvg, type CodespaceLayoutNode, type CodespaceSvgPick } from '../../utils/codespace-svg-layout';

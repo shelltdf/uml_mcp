@@ -1,8 +1,8 @@
-# 示例：mv-model-codespace（模块 + 命名空间 + Classifier）
+# 示例：smw-model-codespace（模块 + 命名空间 + Classifier）
 
 用于验证 **UML 风格代码空间** JSON：`modules[].namespaces` 递归、`classes`、`bases`、`associations`（字段含义见 `md-mv-core/spec.md`）。
 
-```mv-model-codespace
+```smw-model-codespace
 {
   "id": "demo_codespace",
   "title": "示例代码空间",

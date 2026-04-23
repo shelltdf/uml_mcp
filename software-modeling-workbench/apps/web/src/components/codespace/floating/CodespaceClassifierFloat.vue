@@ -13,8 +13,8 @@ import type {
   MvCodespaceMethodParamPassMode,
   MvCodespaceProperty,
   MvModelCodespacePayload,
-} from '@mvwb/core';
-import { slug } from '@mvwb/mermaid';
+} from '@smw/core';
+import { slug } from '@smw/mermaid';
 import { CS_CANVAS_MSG_KEY } from '../../../i18n/codespace-canvas-messages';
 import {
   collectClassifierIds,

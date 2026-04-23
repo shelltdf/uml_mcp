@@ -9,8 +9,8 @@ const markerId = ref(`dtt-arr-${Math.random().toString(36).slice(2, 11)}`);
 
 <template>
   <svg class="dtt" viewBox="0 0 88 52" aria-hidden="true" focusable="false">
-    <!-- mv-model-sql：多表 Model 组 -->
-    <g v-if="variant === 'mv-model-sql'">
+    <!-- smw-model-sql：多表 Model 组 -->
+    <g v-if="variant === 'smw-model-sql'">
       <rect x="6" y="10" width="34" height="28" rx="2" fill="#e2e8f0" stroke="#64748b" stroke-width="1" />
       <line x1="6" y1="17" x2="40" y2="17" stroke="#64748b" stroke-width="0.8" />
       <line x1="20" y1="10" x2="20" y2="38" stroke="#94a3b8" stroke-width="0.6" />
@@ -18,29 +18,29 @@ const markerId = ref(`dtt-arr-${Math.random().toString(36).slice(2, 11)}`);
       <line x1="48" y1="17" x2="82" y2="17" stroke="#64748b" stroke-width="0.8" />
       <line x1="62" y1="10" x2="62" y2="38" stroke="#94a3b8" stroke-width="0.6" />
     </g>
-    <!-- mv-model-kv：文档卡片叠放 -->
-    <g v-else-if="variant === 'mv-model-kv'">
+    <!-- smw-model-kv：文档卡片叠放 -->
+    <g v-else-if="variant === 'smw-model-kv'">
       <rect x="12" y="8" width="56" height="22" rx="2" fill="#ecfdf5" stroke="#059669" stroke-width="1" />
       <rect x="18" y="14" width="56" height="22" rx="2" fill="#d1fae5" stroke="#047857" stroke-width="1" />
       <text x="46" y="28" text-anchor="middle" font-size="9" fill="#065f46" font-family="system-ui,sans-serif">KV</text>
     </g>
-    <!-- mv-model-struct：树块 -->
-    <g v-else-if="variant === 'mv-model-struct'">
+    <!-- smw-model-struct：树块 -->
+    <g v-else-if="variant === 'smw-model-struct'">
       <rect x="36" y="6" width="40" height="14" rx="2" fill="#fef3c7" stroke="#b45309" stroke-width="1" />
       <rect x="10" y="26" width="32" height="14" rx="2" fill="#fffbeb" stroke="#d97706" stroke-width="1" />
       <rect x="48" y="26" width="32" height="14" rx="2" fill="#fffbeb" stroke="#d97706" stroke-width="1" />
       <path d="M56 20 L56 24 M26 26 L26 24 M64 26 L64 24" stroke="#b45309" stroke-width="1" fill="none" />
     </g>
-    <!-- mv-model-codespace：根目录 + 子文件夹 -->
-    <g v-else-if="variant === 'mv-model-codespace'">
+    <!-- smw-model-codespace：根目录 + 子文件夹 -->
+    <g v-else-if="variant === 'smw-model-codespace'">
       <rect x="30" y="4" width="52" height="12" rx="1" fill="#e0e7ff" stroke="#4338ca" stroke-width="1" />
       <text x="56" y="12" text-anchor="middle" font-size="6" fill="#312e81" font-family="system-ui,sans-serif">root</text>
       <rect x="8" y="22" width="34" height="22" rx="2" fill="#eef2ff" stroke="#6366f1" stroke-width="1" />
       <rect x="46" y="22" width="34" height="22" rx="2" fill="#eef2ff" stroke="#6366f1" stroke-width="1" />
       <path d="M44 16 L26 22 M44 16 L62 22" stroke="#4338ca" stroke-width="0.8" fill="none" />
     </g>
-    <!-- mv-model-interface：Client — API → Server -->
-    <g v-else-if="variant === 'mv-model-interface'">
+    <!-- smw-model-interface：Client — API → Server -->
+    <g v-else-if="variant === 'smw-model-interface'">
       <defs>
         <marker :id="markerId" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
           <path d="M0,0 L6,3 L0,6 Z" fill="#0d9488" />

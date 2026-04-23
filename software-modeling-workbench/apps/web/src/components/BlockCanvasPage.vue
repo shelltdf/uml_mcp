@@ -3,8 +3,8 @@ import { computed, nextTick, provide, ref, watch } from 'vue';
 import CodespaceCanvasEditor from './codespace/CodespaceCanvasEditor.vue';
 import FormatHint from './common/FormatHint.vue';
 import CodespaceClassifierFloat from './codespace/floating/CodespaceClassifierFloat.vue';
-import MermaidClassDiagramCanvas from './mvview/MermaidClassDiagramCanvas.vue';
-import UmlClassDiagramCanvas from './mvview/UmlClassDiagramCanvas.vue';
+import MermaidClassDiagramCanvas from './canvas/MermaidClassDiagramCanvas.vue';
+import UmlClassDiagramCanvas from './canvas/UmlClassDiagramCanvas.vue';
 import MindmapCanvas from './mindmap/MindmapCanvas.vue';
 import type { MindmapDockCommand, MindmapDockState } from './mindmap/MindmapCanvas.vue';
 import UiDesignCanvas from './UiDesignCanvas.vue';
@@ -29,8 +29,8 @@ import {
   type MvViewKind,
   type MvViewPayload,
   type ParsedFenceBlock,
-} from '@mvwb/core';
-import { parseViewPayloadClassDiagram, slug } from '@mvwb/mermaid';
+} from '@smw/core';
+import { parseViewPayloadClassDiagram, slug } from '@smw/mermaid';
 import {
   mergeInheritIntoClassDiagramPayload,
   parseViewPayloadClassDiagram as parseUmlClassDiagramPayload,
@@ -39,7 +39,7 @@ import {
 import { useAppLocale } from '../composables/useAppLocale';
 import { CS_CANVAS_MSG_KEY, codespaceCanvasMessages } from '../i18n/codespace-canvas-messages';
 import { blockCanvasSurfaceTitle } from '../i18n/insert-modal-locale';
-import { mvViewKindStrings } from '../i18n/mv-view-kind-locale';
+import { mvViewKindStrings } from '../i18n/smw-view-kind-locale';
 import { kvModelCanvasMessagesFor } from '../i18n/kv-model-canvas-messages';
 import {
   buildColumnDataHeaderTooltip,
@@ -119,10 +119,10 @@ const modelDraft = computed((): MvModelSqlTable | null => {
 });
 /** 行数据区：按单元格全文筛选（不写入 JSON） */
 const modelRowFilter = ref('');
-/** DDL / DML 分区折叠（仅 mv-model-sql 画布） */
+/** DDL / DML 分区折叠（仅 smw-model-sql 画布） */
 const sqlDdlSectionOpen = ref(true);
 const sqlDmlSectionOpen = ref(true);
-/** mv-model-sql 画布内嵌只读平铺表：当前子表 + 与 DML 相同 WHERE 筛选 */
+/** smw-model-sql 画布内嵌只读平铺表：当前子表 + 与 DML 相同 WHERE 筛选 */
 const showModelReadonlyPreview = ref(false);
 const kvDraft = ref<MvModelKvPayload | null>(null);
 /** 与 documents 平行的 JSON 文本，便于逐条编辑 */
@@ -131,12 +131,12 @@ const structJsonText = ref('');
 const codespaceDraft = ref<MvModelCodespacePayload | null>(null);
 const interfaceJsonText = ref('');
 const viewDraft = ref<MvViewPayload | null>(null);
-/** modelRefs：相对当前 mv-view 所在 .md 目录的路径，空=当前文件 */
+/** modelRefs：相对当前 smw-view 所在 .md 目录的路径，空=当前文件 */
 const modelRefsRelPathInput = ref('');
 const mapJsonText = ref('');
 /** mermaid-class：payload 编辑模式 */
 const classCanvasPayloadMode = ref<'meta' | 'canvas' | 'source'>('canvas');
-/** ui-design mv-view：绑定区与 SVG 画布分区 */
+/** ui-design smw-view：绑定区与 SVG 画布分区 */
 const uiDesignMvTab = ref<'refs' | 'canvas'>('canvas');
 /** 类图双击 / 浮窗编辑的 codespace 侧车副本（与 modelRefs 指向块同步保存） */
 const classCanvasCodespaceFloatOpen = ref(false);
@@ -175,23 +175,23 @@ watch(
     classCanvasCodespaceSideBlockId.value = null;
     classCanvasCodespaceSidePayload.value = null;
     if (!b) return;
-    if (b.kind === 'mv-model-sql') {
+    if (b.kind === 'smw-model-sql') {
       modelRowFilter.value = '';
       sqlDdlSectionOpen.value = true;
       sqlDmlSectionOpen.value = true;
       modelSqlDraft.value = JSON.parse(JSON.stringify(b.payload)) as MvModelSqlPayload;
       activeTableIndex.value = 0;
-    } else if (b.kind === 'mv-model-kv') {
+    } else if (b.kind === 'smw-model-kv') {
       const p = JSON.parse(JSON.stringify(b.payload)) as MvModelKvPayload;
       kvDraft.value = p;
       kvDocStrings.value = p.documents.map((d) => JSON.stringify(d, null, 2));
-    } else if (b.kind === 'mv-model-struct') {
+    } else if (b.kind === 'smw-model-struct') {
       structJsonText.value = JSON.stringify(b.payload, null, 2);
-    } else if (b.kind === 'mv-model-codespace') {
+    } else if (b.kind === 'smw-model-codespace') {
       codespaceDraft.value = JSON.parse(JSON.stringify(b.payload)) as MvModelCodespacePayload;
-    } else if (b.kind === 'mv-model-interface') {
+    } else if (b.kind === 'smw-model-interface') {
       interfaceJsonText.value = JSON.stringify(b.payload, null, 2);
-    } else if (b.kind === 'mv-view') {
+    } else if (b.kind === 'smw-view') {
       viewDraft.value = JSON.parse(JSON.stringify(b.payload)) as MvViewPayload;
       if (!Array.isArray(viewDraft.value.modelRefs)) viewDraft.value.modelRefs = [];
       if (
@@ -210,7 +210,7 @@ watch(
       // 用户要求：路径输入框默认保持空字符串，不做 modelRefs 自动反推。
       modelRefsRelPathInput.value = '';
       tryAutoBindSingleModelRefOnViewOpen();
-    } else if (b.kind === 'mv-map') {
+    } else if (b.kind === 'smw-map') {
       mapJsonText.value = JSON.stringify(b.payload as MvMapPayload, null, 2);
     }
   },
@@ -233,13 +233,13 @@ watch(subtableDeleteOpen, async (open) => {
 const canvasSurfaceTitle = computed(() => {
   const b = block.value;
   if (!b) return '';
-  if (b.kind === 'mv-model-sql') return blockCanvasSurfaceTitle('mv-model-sql', locale.value);
-  if (b.kind === 'mv-model-kv') return blockCanvasSurfaceTitle('mv-model-kv', locale.value);
-  if (b.kind === 'mv-model-struct') return blockCanvasSurfaceTitle('mv-model-struct', locale.value);
-  if (b.kind === 'mv-model-codespace') return ui.value.canvasTitleMvModelCodespace;
-  if (b.kind === 'mv-model-interface') return blockCanvasSurfaceTitle('mv-model-interface', locale.value);
-  if (b.kind === 'mv-map') return blockCanvasSurfaceTitle('mv-map', locale.value);
-  if (b.kind === 'mv-view') {
+  if (b.kind === 'smw-model-sql') return blockCanvasSurfaceTitle('smw-model-sql', locale.value);
+  if (b.kind === 'smw-model-kv') return blockCanvasSurfaceTitle('smw-model-kv', locale.value);
+  if (b.kind === 'smw-model-struct') return blockCanvasSurfaceTitle('smw-model-struct', locale.value);
+  if (b.kind === 'smw-model-codespace') return ui.value.canvasTitleMvModelCodespace;
+  if (b.kind === 'smw-model-interface') return blockCanvasSurfaceTitle('smw-model-interface', locale.value);
+  if (b.kind === 'smw-map') return blockCanvasSurfaceTitle('smw-map', locale.value);
+  if (b.kind === 'smw-view') {
     const k = (b.payload as MvViewPayload).kind;
     return mvViewKindStrings(k, locale.value).canvasTitle;
   }
@@ -248,13 +248,13 @@ const canvasSurfaceTitle = computed(() => {
 
 const viewKindDescription = computed(() => {
   const b = block.value;
-  if (!b || b.kind !== 'mv-view' || !viewDraft.value) return '';
+  if (!b || b.kind !== 'smw-view' || !viewDraft.value) return '';
   return mvViewKindStrings(viewDraft.value.kind as MvViewKind, locale.value).description;
 });
 
 const viewPayloadPlaceholder = computed(() => {
   const b = block.value;
-  if (!b || b.kind !== 'mv-view' || !viewDraft.value) return '';
+  if (!b || b.kind !== 'smw-view' || !viewDraft.value) return '';
   return mvViewKindStrings(viewDraft.value.kind as MvViewKind, locale.value).payloadPlaceholder;
 });
 const viewUsesCoreUmlPayloadMapping = computed(() => {
@@ -276,7 +276,7 @@ function defaultUmlPayloadObject(kind: MvViewKind): Record<string, unknown> | nu
   const diagramType = MV_UML_KIND_DIAGRAM_TYPE[kind];
   if (!diagramType) return null;
   const base: Record<string, unknown> = {
-    schema: 'mvwb-uml/v1',
+    schema: 'smw-uml/v1',
     diagramType,
   };
   if (kind === 'uml-class') {
@@ -397,19 +397,19 @@ function toggleModelRefCandidate(c: ModelRefCandidate) {
 function tryAutoBindSingleModelRefOnViewOpen(): void {
   const v = viewDraft.value;
   const b = block.value;
-  if (!v || !b || b.kind !== 'mv-view') return;
+  if (!v || !b || b.kind !== 'smw-view') return;
   const parsed = parseMarkdownBlocks(props.markdown);
   const modelBlocks = parsed.blocks.filter((x) =>
-    x.kind === 'mv-model-sql' ||
-    x.kind === 'mv-model-kv' ||
-    x.kind === 'mv-model-struct' ||
-    x.kind === 'mv-model-codespace' ||
-    x.kind === 'mv-model-interface',
+    x.kind === 'smw-model-sql' ||
+    x.kind === 'smw-model-kv' ||
+    x.kind === 'smw-model-struct' ||
+    x.kind === 'smw-model-codespace' ||
+    x.kind === 'smw-model-interface',
   );
   if (modelBlocks.length !== 1) return;
   const only = modelBlocks[0]!;
   let tableId: string | undefined;
-  if (only.kind === 'mv-model-sql') {
+  if (only.kind === 'smw-model-sql') {
     const p = only.payload as MvModelSqlPayload;
     tableId = p.tables[0]?.id;
   }
@@ -559,7 +559,7 @@ const umlClassCanvasModelValue = computed((): string => {
   return mergeInheritIntoClassDiagramPayload(stripped, edges);
 });
 
-/** 源码 tab：与保存到 md 的 mv-view 一致，不展示 inherit（继承只在 codespace `bases`）。 */
+/** 源码 tab：与保存到 md 的 smw-view 一致，不展示 inherit（继承只在 codespace `bases`）。 */
 const umlClassPayloadSourceText = computed((): string => {
   const v = viewDraft.value;
   const raw = toViewPayloadText(v?.payload);
@@ -1501,40 +1501,40 @@ function removeKvDocument(i: number) {
 function buildInnerJson(): string | null {
   const b = block.value;
   if (!b) return null;
-  if (b.kind === 'mv-model-sql' && modelSqlDraft.value) {
+  if (b.kind === 'smw-model-sql' && modelSqlDraft.value) {
     normalizeModelRowsForSave();
     const inner = JSON.stringify(modelSqlDraft.value, null, 2);
-    return fenceInnerParsesOk('mv-model-sql', inner) ? inner : null;
+    return fenceInnerParsesOk('smw-model-sql', inner) ? inner : null;
   }
-  if (b.kind === 'mv-model-kv' && kvDraft.value) {
+  if (b.kind === 'smw-model-kv' && kvDraft.value) {
     const resolvedDocs = kvResolvedDocumentsLoose();
     if (!resolvedDocs) return null;
     const inner = JSON.stringify({ ...kvDraft.value, documents: resolvedDocs }, null, 2);
-    return fenceInnerParsesOk('mv-model-kv', inner) ? inner : null;
+    return fenceInnerParsesOk('smw-model-kv', inner) ? inner : null;
   }
-  if (b.kind === 'mv-model-struct') {
+  if (b.kind === 'smw-model-struct') {
     try {
       const parsed = JSON.parse(structJsonText.value) as Record<string, unknown>;
       const inner = JSON.stringify(parsed, null, 2);
-      return fenceInnerParsesOk('mv-model-struct', inner) ? inner : null;
+      return fenceInnerParsesOk('smw-model-struct', inner) ? inner : null;
     } catch {
       return null;
     }
   }
-  if (b.kind === 'mv-model-codespace' && codespaceDraft.value) {
+  if (b.kind === 'smw-model-codespace' && codespaceDraft.value) {
     const inner = JSON.stringify(codespaceDraft.value, null, 2);
-    return fenceInnerParsesOk('mv-model-codespace', inner) ? inner : null;
+    return fenceInnerParsesOk('smw-model-codespace', inner) ? inner : null;
   }
-  if (b.kind === 'mv-model-interface') {
+  if (b.kind === 'smw-model-interface') {
     try {
       const parsed = JSON.parse(interfaceJsonText.value) as Record<string, unknown>;
       const inner = JSON.stringify(parsed, null, 2);
-      return fenceInnerParsesOk('mv-model-interface', inner) ? inner : null;
+      return fenceInnerParsesOk('smw-model-interface', inner) ? inner : null;
     } catch {
       return null;
     }
   }
-  if (b.kind === 'mv-view' && viewDraft.value) {
+  if (b.kind === 'smw-view' && viewDraft.value) {
     const v = { ...viewDraft.value };
     if (!Array.isArray(v.modelRefs)) v.modelRefs = [];
     // Mermaid view must store source in a dedicated ```mermaid``` block.
@@ -1550,7 +1550,7 @@ function buildInnerJson(): string | null {
     }
     return JSON.stringify(v, null, 2);
   }
-  if (b.kind === 'mv-map') {
+  if (b.kind === 'smw-map') {
     try {
       const parsed = JSON.parse(mapJsonText.value) as MvMapPayload;
       if (parsed && typeof parsed.id === 'string' && Array.isArray(parsed.rules)) {
@@ -1565,7 +1565,7 @@ function buildInnerJson(): string | null {
 
 function upsertTrailingMermaidMirror(source: string, viewBlockId: string, body: string): string {
   const r = parseMarkdownBlocks(source);
-  const b = r.blocks.find((x) => x.payload.id === viewBlockId && x.kind === 'mv-view');
+  const b = r.blocks.find((x) => x.payload.id === viewBlockId && x.kind === 'smw-view');
   if (!b) return source;
   const mermaidBody = (body ?? '').replace(/\r\n/g, '\n').trimEnd();
   if (b.mermaidMirror) {
@@ -1589,13 +1589,13 @@ function originalInnerJsonForCurrentBlock(): string | null {
 function currentDraftInnerLoose(): string | null {
   const b = block.value;
   if (!b) return null;
-  if (b.kind === 'mv-model-sql' && modelSqlDraft.value) return JSON.stringify(modelSqlDraft.value, null, 2);
-  if (b.kind === 'mv-model-kv' && kvDraft.value) return JSON.stringify(kvDraft.value, null, 2);
-  if (b.kind === 'mv-model-struct') return structJsonText.value.trim();
-  if (b.kind === 'mv-model-codespace' && codespaceDraft.value) return JSON.stringify(codespaceDraft.value, null, 2);
-  if (b.kind === 'mv-model-interface') return interfaceJsonText.value.trim();
-  if (b.kind === 'mv-view' && viewDraft.value) return JSON.stringify(viewDraft.value, null, 2);
-  if (b.kind === 'mv-map') return mapJsonText.value.trim();
+  if (b.kind === 'smw-model-sql' && modelSqlDraft.value) return JSON.stringify(modelSqlDraft.value, null, 2);
+  if (b.kind === 'smw-model-kv' && kvDraft.value) return JSON.stringify(kvDraft.value, null, 2);
+  if (b.kind === 'smw-model-struct') return structJsonText.value.trim();
+  if (b.kind === 'smw-model-codespace' && codespaceDraft.value) return JSON.stringify(codespaceDraft.value, null, 2);
+  if (b.kind === 'smw-model-interface') return interfaceJsonText.value.trim();
+  if (b.kind === 'smw-view' && viewDraft.value) return JSON.stringify(viewDraft.value, null, 2);
+  if (b.kind === 'smw-map') return mapJsonText.value.trim();
   return null;
 }
 
@@ -1604,7 +1604,7 @@ function currentDraftInnerLoose(): string | null {
  */
 function draftInnerLooseForDirtyCheck(): string | null {
   const b = block.value;
-  if (b?.kind === 'mv-model-kv' && kvDraft.value) {
+  if (b?.kind === 'smw-model-kv' && kvDraft.value) {
     const resolved = kvResolvedDocumentsLoose();
     if (resolved !== null) return JSON.stringify({ ...kvDraft.value, documents: resolved }, null, 2);
     return `${JSON.stringify(kvDraft.value, null, 2)}\n__kv_docs__\n${kvDocStrings.value.join('\x1e')}`;
@@ -1618,11 +1618,11 @@ const hasCanvasUnsavedChanges = computed(() => {
   const orig = originalInnerJsonForCurrentBlock();
   const cur = draftInnerLooseForDirtyCheck();
   const mainDirty = (orig ?? '').trim() !== (cur ?? '').trim();
-  if (!mainDirty && b.kind !== 'mv-view') return false;
+  if (!mainDirty && b.kind !== 'smw-view') return false;
 
-  // mv-view 里还可能带同文件 codespace 侧车改动：也应触发“保存”变色。
+  // smw-view 里还可能带同文件 codespace 侧车改动：也应触发“保存”变色。
   let sideDirty = false;
-  if (b.kind === 'mv-view' && classCanvasCodespaceSideBlockId.value && classCanvasCodespaceSidePayload.value) {
+  if (b.kind === 'smw-view' && classCanvasCodespaceSideBlockId.value && classCanvasCodespaceSidePayload.value) {
     const sideBlockId = classCanvasCodespaceSideBlockId.value;
     const sideInnerNow = JSON.stringify(classCanvasCodespaceSidePayload.value, null, 2).trim();
     const { blocks } = parseMarkdownBlocks(props.markdown);
@@ -1672,7 +1672,7 @@ function autoSyncToMarkdownInMemory(): void {
   if (!inner) return;
   let base = props.markdown;
   if (
-    block.value?.kind === 'mv-view' &&
+    block.value?.kind === 'smw-view' &&
     classCanvasCodespaceSideBlockId.value &&
     classCanvasCodespaceSidePayload.value &&
     classCanvasCodespaceSideBlockId.value !== props.blockId
@@ -1683,7 +1683,7 @@ function autoSyncToMarkdownInMemory(): void {
   }
   let next = replaceBlockInnerById(base, props.blockId, inner);
   if (!next) return;
-  if (block.value?.kind === 'mv-view' && viewDraft.value && isMermaidViewKind(viewDraft.value.kind)) {
+  if (block.value?.kind === 'smw-view' && viewDraft.value && isMermaidViewKind(viewDraft.value.kind)) {
     next = upsertTrailingMermaidMirror(next, props.blockId, toViewPayloadText(viewDraft.value.payload));
   }
   if (next === props.markdown) return;
@@ -1693,7 +1693,7 @@ function autoSyncToMarkdownInMemory(): void {
 
 /**
  * 内存 md 同步：必须在「每一次」草稿实质变化时尝试写回，不能只监听 hasCanvasUnsavedChanges 的布尔翻转。
- * 覆盖：mv-view 各类画布、mv-model-kv 文档 textarea、codespace、SQL、map 等所有围栏编辑态。
+ * 覆盖：smw-view 各类画布、smw-model-kv 文档 textarea、codespace、SQL、map 等所有围栏编辑态。
  */
 watch(
   [
@@ -1730,8 +1730,8 @@ function onClassCanvasOpenClassifier(ev: { classDiagramClassId: string; classNam
   if (vd.kind === 'uml-class' && vd.observeCodespaceOnly) {
     window.alert(
       locale.value === 'en'
-        ? 'This view is observe-only. Open the mv-model-codespace fence to edit the model.'
-        : '当前为仅观察视图。请直接打开 mv-model-codespace 围栏编辑模型。',
+        ? 'This view is observe-only. Open the smw-model-codespace fence to edit the model.'
+        : '当前为仅观察视图。请直接打开 smw-model-codespace 围栏编辑模型。',
     );
     return;
   }
@@ -1744,8 +1744,8 @@ function onClassCanvasOpenClassifier(ev: { classDiagramClassId: string; classNam
   if (!hit) {
     window.alert(
       locale.value === 'en'
-        ? 'No matching class in a same-file mv-model-codespace listed in modelRefs (ref: cross-file not supported here yet).'
-        : '未在同文件 modelRefs 所绑定的 mv-model-codespace 中找到该类（暂不支持 ref: 跨文件打开浮窗）。',
+        ? 'No matching class in a same-file smw-model-codespace listed in modelRefs (ref: cross-file not supported here yet).'
+        : '未在同文件 modelRefs 所绑定的 smw-model-codespace 中找到该类（暂不支持 ref: 跨文件打开浮窗）。',
     );
     return;
   }
@@ -1769,8 +1769,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
     if (!first) {
       window.alert(
         locale.value === 'en'
-          ? 'No same-file mv-model-codespace found in modelRefs; cannot sync new class to model.'
-          : 'modelRefs 未绑定同文件 mv-model-codespace，无法把新 class 同步到 model。',
+          ? 'No same-file smw-model-codespace found in modelRefs; cannot sync new class to model.'
+          : 'modelRefs 未绑定同文件 smw-model-codespace，无法把新 class 同步到 model。',
       );
       return;
     }
@@ -1833,7 +1833,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
 
     <main v-if="block" class="canvas-body">
       <div class="canvas-surface" :aria-label="ui.blockCanvasBodyAria">
-        <template v-if="block.kind === 'mv-model-sql' && modelSqlDraft">
+        <template v-if="block.kind === 'smw-model-sql' && modelSqlDraft">
           <div class="model-sql-surface">
           <FormatHint>{{ sqlUi.formatHintIntro }}</FormatHint>
           <h3 class="model-section-title">{{ sqlUi.metaSectionTitle }}</h3>
@@ -2159,7 +2159,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           </div>
         </template>
 
-        <template v-else-if="block.kind === 'mv-model-kv' && kvDraft">
+        <template v-else-if="block.kind === 'smw-model-kv' && kvDraft">
           <h3 class="model-section-title">{{ kvUi.sectionTitle }}</h3>
           <FormatHint>{{ kvUi.formatHintIntro }}</FormatHint>
           <div class="model-meta-grid">
@@ -2191,7 +2191,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           <button type="button" class="add-row" @click="addKvDocument">{{ kvUi.addDocumentButton }}</button>
         </template>
 
-        <template v-else-if="block.kind === 'mv-model-struct'">
+        <template v-else-if="block.kind === 'smw-model-struct'">
           <h3 class="model-section-title">{{ structUi.sectionTitle }}</h3>
           <FormatHint>{{ structUi.formatHintIntro }}</FormatHint>
           <textarea
@@ -2203,7 +2203,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           />
         </template>
 
-        <template v-else-if="block.kind === 'mv-model-codespace' && codespaceDraft">
+        <template v-else-if="block.kind === 'smw-model-codespace' && codespaceDraft">
           <CodespaceCanvasEditor
             :model-value="codespaceDraft"
             :compact-layout="embedded"
@@ -2212,7 +2212,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           />
         </template>
 
-        <template v-else-if="block.kind === 'mv-model-interface'">
+        <template v-else-if="block.kind === 'smw-model-interface'">
           <h3 class="model-section-title">{{ interfaceUi.sectionTitle }}</h3>
           <FormatHint>{{ interfaceUi.formatHintIntro }}</FormatHint>
           <textarea
@@ -2224,13 +2224,13 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           />
         </template>
 
-        <template v-else-if="block.kind === 'mv-view' && viewDraft">
+        <template v-else-if="block.kind === 'smw-view' && viewDraft">
           <div
-            class="mv-view-shell"
+            class="smw-view-shell"
             :class="{
-              'mv-view-shell--class-canvas': isClassCanvasKind && classCanvasPayloadMode === 'canvas',
-              'mv-view-shell--mindmap-canvas': isMindmapCanvasKind,
-              'mv-view-shell--ui-design-canvas': isUiDesignCanvasKind,
+              'smw-view-shell--class-canvas': isClassCanvasKind && classCanvasPayloadMode === 'canvas',
+              'smw-view-shell--mindmap-canvas': isMindmapCanvasKind,
+              'smw-view-shell--ui-design-canvas': isUiDesignCanvasKind,
             }"
           >
           <template v-if="isClassCanvasKind">
@@ -2286,11 +2286,11 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 <span class="mv-title-row-label">{{ ui.labelTitle }}</span>
                 <input v-model="viewDraft.title" type="text" class="wide" />
               </label>
-              <div class="mv-model-refs-picker">
-                <div class="mv-model-refs-panel" role="region" :aria-label="ui.modelRefsPickerTablistAria">
+              <div class="smw-model-refs-picker">
+                <div class="smw-model-refs-panel" role="region" :aria-label="ui.modelRefsPickerTablistAria">
                   <label class="field">
                     <span>{{ ui.modelRefsPickerPathLabel }}</span>
-                    <div class="mv-model-refs-path-row">
+                    <div class="smw-model-refs-path-row">
                       <input
                         v-model="modelRefsRelPathInput"
                         type="text"
@@ -2310,8 +2310,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     {{ ui.modelRefsPickerFileMissing }}
                   </FormatHint>
                   <FormatHint v-else>{{ ui.modelRefsPickerBindListHintSingle }}</FormatHint>
-                  <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
-                    <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
+                  <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="smw-model-refs-cb-list" role="group">
+                    <label v-for="c in modelRefsCandidates" :key="c.value" class="smw-model-refs-cb">
                       <input
                         type="radio"
                         name="model-refs-single"
@@ -2322,10 +2322,10 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     </label>
                   </div>
                   <FormatHint v-else-if="!modelRefsTargetMissing">（{{ ui.dockViewModelRefsNone }}）</FormatHint>
-                  <div v-if="modelRefsOrphanRefs.length" class="mv-model-refs-orphans-block">
+                  <div v-if="modelRefsOrphanRefs.length" class="smw-model-refs-orphans-block">
                     <FormatHint>
                       {{ ui.modelRefsPickerOrphansHint }}
-                      <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph-' + i" class="mv-model-refs-orph">{{ o }}</code>
+                      <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph-' + i" class="smw-model-refs-orph">{{ o }}</code>
                     </FormatHint>
                   </div>
                 </div>
@@ -2399,7 +2399,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           <template v-else>
             <template v-if="viewDraft.kind === 'ui-design'">
               <div class="mv-ui-design-book">
-                <div class="mv-model-refs-tablist" role="tablist" :aria-label="ui.modelRefsPickerTablistAria">
+                <div class="smw-model-refs-tablist" role="tablist" :aria-label="ui.modelRefsPickerTablistAria">
                   <button
                     type="button"
                     class="mv-class-tab"
@@ -2421,8 +2421,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     {{ ui.modelRefsPickerCanvasTab }}
                   </button>
                 </div>
-                <div v-show="uiDesignMvTab === 'refs'" class="mv-model-refs-picker">
-                  <div class="mv-model-refs-panel" role="region" :aria-label="ui.modelRefsPickerTablistAria">
+                <div v-show="uiDesignMvTab === 'refs'" class="smw-model-refs-picker">
+                  <div class="smw-model-refs-panel" role="region" :aria-label="ui.modelRefsPickerTablistAria">
                     <FormatHint class="dock-hint--tight">{{ ui.modelRefsPickerBindNoSvgCanvas }}</FormatHint>
                     <label class="field mv-title-row">
                       <span class="mv-title-row-label">{{ ui.labelTitle }}</span>
@@ -2430,7 +2430,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     </label>
                     <label class="field">
                       <span>{{ ui.modelRefsPickerPathLabel }}</span>
-                      <div class="mv-model-refs-path-row">
+                      <div class="smw-model-refs-path-row">
                         <input
                           v-model="modelRefsRelPathInput"
                           type="text"
@@ -2450,8 +2450,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                       {{ ui.modelRefsPickerFileMissing }}
                     </FormatHint>
                     <FormatHint v-else>{{ ui.modelRefsPickerBindListHintSingle }}</FormatHint>
-                    <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
-                      <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
+                    <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="smw-model-refs-cb-list" role="group">
+                      <label v-for="c in modelRefsCandidates" :key="c.value" class="smw-model-refs-cb">
                         <input
                           type="radio"
                           name="model-refs-single"
@@ -2462,10 +2462,10 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                       </label>
                     </div>
                     <FormatHint v-else-if="!modelRefsTargetMissing">（{{ ui.dockViewModelRefsNone }}）</FormatHint>
-                    <div v-if="modelRefsOrphanRefs.length" class="mv-model-refs-orphans-block">
+                    <div v-if="modelRefsOrphanRefs.length" class="smw-model-refs-orphans-block">
                       <FormatHint>
                         {{ ui.modelRefsPickerOrphansHint }}
-                        <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph2-' + i" class="mv-model-refs-orph">{{ o }}</code>
+                        <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph2-' + i" class="smw-model-refs-orph">{{ o }}</code>
                       </FormatHint>
                     </div>
                   </div>
@@ -2489,11 +2489,11 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                 <span class="mv-title-row-label">{{ ui.labelTitle }}</span>
                 <input v-model="viewDraft.title" type="text" class="wide" />
               </label>
-              <div v-if="viewDraft.kind !== 'mindmap-ui'" class="mv-model-refs-picker">
-                <div class="mv-model-refs-panel" role="region" :aria-label="ui.modelRefsPickerTablistAria">
+              <div v-if="viewDraft.kind !== 'mindmap-ui'" class="smw-model-refs-picker">
+                <div class="smw-model-refs-panel" role="region" :aria-label="ui.modelRefsPickerTablistAria">
                   <label class="field">
                     <span>{{ ui.modelRefsPickerPathLabel }}</span>
-                    <div class="mv-model-refs-path-row">
+                    <div class="smw-model-refs-path-row">
                       <input
                         v-model="modelRefsRelPathInput"
                         type="text"
@@ -2513,8 +2513,8 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     {{ ui.modelRefsPickerFileMissing }}
                   </FormatHint>
                   <FormatHint v-else>{{ ui.modelRefsPickerBindListHintSingle }}</FormatHint>
-                  <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="mv-model-refs-cb-list" role="group">
-                    <label v-for="c in modelRefsCandidates" :key="c.value" class="mv-model-refs-cb">
+                  <div v-if="!modelRefsTargetMissing && modelRefsCandidates.length" class="smw-model-refs-cb-list" role="group">
+                    <label v-for="c in modelRefsCandidates" :key="c.value" class="smw-model-refs-cb">
                       <input
                         type="radio"
                         name="model-refs-single"
@@ -2525,10 +2525,10 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
                     </label>
                   </div>
                   <FormatHint v-else-if="!modelRefsTargetMissing">（{{ ui.dockViewModelRefsNone }}）</FormatHint>
-                  <div v-if="modelRefsOrphanRefs.length" class="mv-model-refs-orphans-block">
+                  <div v-if="modelRefsOrphanRefs.length" class="smw-model-refs-orphans-block">
                     <FormatHint>
                       {{ ui.modelRefsPickerOrphansHint }}
-                      <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph3-' + i" class="mv-model-refs-orph">{{ o }}</code>
+                      <code v-for="(o, i) in modelRefsOrphanRefs" :key="'orph3-' + i" class="smw-model-refs-orph">{{ o }}</code>
                     </FormatHint>
                   </div>
                 </div>
@@ -2583,9 +2583,9 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
           </div>
         </template>
 
-        <template v-else-if="block.kind === 'mv-map'">
+        <template v-else-if="block.kind === 'smw-map'">
           <FormatHint variant="title">{{ canvasSurfaceTitle }}</FormatHint>
-          <FormatHint>编辑 <code>mv-map</code> 围栏代码块内的映射规则 JSON；保存后写回 Markdown。</FormatHint>
+          <FormatHint>编辑 <code>smw-map</code> 围栏代码块内的映射规则 JSON；保存后写回 Markdown。</FormatHint>
           <textarea v-model="mapJsonText" class="payload-ta" spellcheck="false" rows="20" />
         </template>
       </div>
@@ -2775,7 +2775,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
   padding: 4px 10px;
   font-size: 0.8rem;
 }
-.mv-model-refs-picker {
+.smw-model-refs-picker {
   margin-bottom: 10px;
 }
 .mv-ui-design-book {
@@ -2784,7 +2784,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
   flex: 1 1 auto;
   min-height: 0;
 }
-.mv-ui-design-book .mv-model-refs-tablist {
+.mv-ui-design-book .smw-model-refs-tablist {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
@@ -2792,7 +2792,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
   margin-bottom: 8px;
   flex-shrink: 0;
 }
-.mv-ui-design-book .mv-model-refs-picker {
+.mv-ui-design-book .smw-model-refs-picker {
   flex: 0 0 auto;
   margin-bottom: 0;
 }
@@ -2800,34 +2800,34 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
   flex: 1 1 auto;
   min-height: 0;
 }
-.mv-model-refs-panel {
+.smw-model-refs-panel {
   margin-top: 2px;
 }
-.mv-model-refs-orphans-block {
+.smw-model-refs-orphans-block {
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid #e2e8f0;
 }
-.mv-model-refs-orphans-block .mv-model-refs-orph {
+.smw-model-refs-orphans-block .smw-model-refs-orph {
   display: block;
   word-break: break-all;
 }
-.mv-model-refs-orphans-block .mv-model-refs-orph + .mv-model-refs-orph {
+.smw-model-refs-orphans-block .smw-model-refs-orph + .smw-model-refs-orph {
   margin-top: 4px;
 }
-.mv-model-refs-path-row {
+.smw-model-refs-path-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.mv-model-refs-path-row .wide {
+.smw-model-refs-path-row .wide {
   flex: 1 1 auto;
 }
 .mv-mini-btn {
   flex: 0 0 auto;
   padding: 5px 10px;
 }
-.mv-model-refs-cb-list {
+.smw-model-refs-cb-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2835,7 +2835,7 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
   overflow-y: auto;
   padding: 6px 0;
 }
-.mv-model-refs-cb {
+.smw-model-refs-cb {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -2870,52 +2870,52 @@ function onClassCanvasCreateMissingClassifier(ev: { classId: string; className: 
 .canvas-root--embedded .mv-class-canvas-wrap {
   min-height: 200px;
 }
-.mv-view-shell {
+.smw-view-shell {
   display: flex;
   flex-direction: column;
 }
-.canvas-root--embedded .mv-view-shell--class-canvas {
+.canvas-root--embedded .smw-view-shell--class-canvas {
   flex: 1 1 auto;
   min-height: 0;
 }
-.canvas-root--embedded .mv-view-shell--class-canvas .mv-class-canvas-wrap {
+.canvas-root--embedded .smw-view-shell--class-canvas .mv-class-canvas-wrap {
   flex: 1 1 auto;
   min-height: 0;
   margin-bottom: 0;
   display: flex;
   flex-direction: column;
 }
-.canvas-root--embedded .mv-view-shell--mindmap-canvas {
+.canvas-root--embedded .smw-view-shell--mindmap-canvas {
   flex: 1 1 auto;
   min-height: 0;
 }
-.canvas-root--embedded .mv-view-shell--mindmap-canvas .mv-class-canvas-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
-  margin-bottom: 0;
-  display: flex;
-  flex-direction: column;
-}
-.canvas-root--embedded .mv-view-shell--mindmap-canvas .mv-class-canvas-wrap :deep(.mmc) {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.canvas-root--embedded .mv-view-shell--ui-design-canvas {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.canvas-root--embedded .mv-view-shell--ui-design-canvas .mv-class-canvas-wrap {
+.canvas-root--embedded .smw-view-shell--mindmap-canvas .mv-class-canvas-wrap {
   flex: 1 1 auto;
   min-height: 0;
   margin-bottom: 0;
   display: flex;
   flex-direction: column;
 }
-.canvas-root--embedded .mv-view-shell--ui-design-canvas .mv-class-canvas-wrap :deep(.ui-design-canvas) {
+.canvas-root--embedded .smw-view-shell--mindmap-canvas .mv-class-canvas-wrap :deep(.mmc) {
   flex: 1 1 auto;
   min-height: 0;
 }
-.canvas-root--embedded .mv-view-shell--class-canvas .mv-class-canvas-wrap :deep(.cde) {
+.canvas-root--embedded .smw-view-shell--ui-design-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.canvas-root--embedded .smw-view-shell--ui-design-canvas .mv-class-canvas-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+.canvas-root--embedded .smw-view-shell--ui-design-canvas .mv-class-canvas-wrap :deep(.ui-design-canvas) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.canvas-root--embedded .smw-view-shell--class-canvas .mv-class-canvas-wrap :deep(.cde) {
   flex: 1 1 auto;
   min-height: 0;
 }

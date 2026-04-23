@@ -20,10 +20,10 @@ import {
   type MvModelStructPayload,
   type MvViewPayload,
   type ParsedFenceBlock,
-} from '@mvwb/core';
+} from '@smw/core';
 import { useAppLocale } from './composables/useAppLocale';
 import { fenceBlockSubtypeLabel } from './i18n/fence-subtype-label';
-import { mvViewKindStrings } from './i18n/mv-view-kind-locale';
+import { mvViewKindStrings } from './i18n/smw-view-kind-locale';
 import {
   shellChromeMessages,
   trAlertExportFailed,
@@ -137,9 +137,9 @@ interface CanvasTabSpec {
   blockId: string;
   fenceKind: MvFenceKind;
   subtypeLabel: string;
-  /** `mv-view` 子类型；解析围栏失败或 id 变更时用于属性 Dock 是否展示「画布选中」 */
+  /** `smw-view` 子类型；解析围栏失败或 id 变更时用于属性 Dock 是否展示「画布选中」 */
   mvViewKind?: MvViewPayload['kind'];
-  /** `mv-model-codespace` 画布：当前选中节点说明（由 CodespaceCanvasEditor 同步） */
+  /** `smw-model-codespace` 画布：当前选中节点说明（由 CodespaceCanvasEditor 同步） */
   codespaceDockSummary?: string;
   /** 画布选中节点的属性键值（与 `codespaceDockSummary` 同次更新） */
   codespaceDockLines?: CodespaceDockPropLine[];
@@ -654,7 +654,7 @@ function refreshCanvasTabSubtypesForPath(relPath: string, markdown: string) {
       ...t,
       fenceKind: hit.kind,
       subtypeLabel: fenceBlockSubtypeLabel(hit, locale.value),
-      mvViewKind: hit.kind === 'mv-view' ? (hit.payload as MvViewPayload).kind : undefined,
+      mvViewKind: hit.kind === 'smw-view' ? (hit.payload as MvViewPayload).kind : undefined,
     };
   });
 }
@@ -808,23 +808,23 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
     { label: L.labelFenceLines, value: `L${b.startLine}–L${b.endLine}` },
     { label: L.labelBodyChars, value: `${b.rawInner.length} ${L.labelCharsUnit}` },
   ];
-  if (b.kind === 'mv-model-sql') {
+  if (b.kind === 'smw-model-sql') {
     lines.push({ label: L.labelCanvas, value: MV_MODEL_SQL_CANVAS_TITLE });
     const p = b.payload as MvModelSqlPayload;
     if (p.title) lines.push({ label: L.labelGroupTitle, value: p.title });
     lines.push({ label: L.labelTableCount, value: String(p.tables.length) });
     lines.push({ label: L.labelSubtableIds, value: p.tables.map((t) => t.id).join(', ') });
-  } else if (b.kind === 'mv-model-kv') {
+  } else if (b.kind === 'smw-model-kv') {
     lines.push({ label: L.labelCanvas, value: MV_MODEL_KV_CANVAS_TITLE });
     const p = b.payload as MvModelKvPayload;
     if (p.title) lines.push({ label: L.labelTitle, value: p.title });
     lines.push({ label: L.labelDocCount, value: String(p.documents.length) });
-  } else if (b.kind === 'mv-model-struct') {
+  } else if (b.kind === 'smw-model-struct') {
     lines.push({ label: L.labelCanvas, value: MV_MODEL_STRUCT_CANVAS_TITLE });
     const p = b.payload as MvModelStructPayload;
     if (p.title) lines.push({ label: L.labelTitle, value: p.title });
     lines.push({ label: L.labelRootGroupName, value: p.root.name });
-  } else if (b.kind === 'mv-model-codespace') {
+  } else if (b.kind === 'smw-model-codespace') {
     lines.push({ label: L.labelCanvas, value: L.canvasTitleMvModelCodespace });
     const p = b.payload as MvModelCodespacePayload;
     if (p.title) lines.push({ label: L.labelTitle, value: p.title });
@@ -839,13 +839,13 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
     }
     if (ns > 0) lines.push({ label: L.labelNsNodeCount, value: String(ns) });
     if (cls > 0) lines.push({ label: L.labelClassifierCount, value: String(cls) });
-  } else if (b.kind === 'mv-model-interface') {
+  } else if (b.kind === 'smw-model-interface') {
     lines.push({ label: L.labelCanvas, value: MV_MODEL_INTERFACE_CANVAS_TITLE });
     const p = b.payload as MvModelInterfacePayload;
     if (p.title) lines.push({ label: L.labelTitle, value: p.title });
     lines.push({ label: L.labelEndpointCount, value: String(p.endpoints.length) });
     lines.push({ label: L.labelEndpointIds, value: p.endpoints.map((e) => e.id).join(', ') });
-  } else if (b.kind === 'mv-view') {
+  } else if (b.kind === 'smw-view') {
     const p = b.payload as MvViewPayload;
     lines.push({ label: L.labelCanvas, value: mvViewKindStrings(p.kind, locale.value).canvasTitle });
     if (p.title) lines.push({ label: L.labelTitle, value: p.title });
@@ -857,7 +857,7 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
       const s = String(p.payload);
       lines.push({ label: L.labelPayloadSummary, value: s.length > 140 ? `${s.slice(0, 137)}…` : s });
     }
-  } else if (b.kind === 'mv-map') {
+  } else if (b.kind === 'smw-map') {
     const p = b.payload as MvMapPayload;
     lines.push({ label: L.labelCanvas, value: MV_MAP_CANVAS_TITLE });
     lines.push({
@@ -874,13 +874,13 @@ const selectedBlockDocLines = computed((): DockPropLine[] | null => {
 function canvasPrimaryActionLabel(b: ParsedFenceBlock): string {
   const L = shellChromeMessages[locale.value];
   const pfx = L.canvasOpenPrefix;
-  if (b.kind === 'mv-model-sql') return `${pfx}${MV_MODEL_SQL_CANVAS_TITLE}`;
-  if (b.kind === 'mv-model-kv') return `${pfx}${MV_MODEL_KV_CANVAS_TITLE}`;
-  if (b.kind === 'mv-model-struct') return `${pfx}${MV_MODEL_STRUCT_CANVAS_TITLE}`;
-  if (b.kind === 'mv-model-codespace') return `${pfx}${L.canvasTitleMvModelCodespace}`;
-  if (b.kind === 'mv-model-interface') return `${pfx}${MV_MODEL_INTERFACE_CANVAS_TITLE}`;
-  if (b.kind === 'mv-map') return `${pfx}${MV_MAP_CANVAS_TITLE}`;
-  if (b.kind === 'mv-view') {
+  if (b.kind === 'smw-model-sql') return `${pfx}${MV_MODEL_SQL_CANVAS_TITLE}`;
+  if (b.kind === 'smw-model-kv') return `${pfx}${MV_MODEL_KV_CANVAS_TITLE}`;
+  if (b.kind === 'smw-model-struct') return `${pfx}${MV_MODEL_STRUCT_CANVAS_TITLE}`;
+  if (b.kind === 'smw-model-codespace') return `${pfx}${L.canvasTitleMvModelCodespace}`;
+  if (b.kind === 'smw-model-interface') return `${pfx}${MV_MODEL_INTERFACE_CANVAS_TITLE}`;
+  if (b.kind === 'smw-map') return `${pfx}${MV_MAP_CANVAS_TITLE}`;
+  if (b.kind === 'smw-view') {
     const k = (b.payload as MvViewPayload).kind;
     return `${pfx}${mvViewKindStrings(k, locale.value).canvasTitle}`;
   }
@@ -906,13 +906,13 @@ const selectedBlockCanvasHint = computed(() => {
   const b = selectedBlock.value;
   if (!b) return '';
   const L = shellChromeMessages[locale.value];
-  if (b.kind === 'mv-model-sql') return L.canvasHintSql;
-  if (b.kind === 'mv-model-kv') return L.canvasHintKv;
-  if (b.kind === 'mv-model-struct') return L.canvasHintStruct;
-  if (b.kind === 'mv-model-codespace') return L.canvasHintCodespace;
-  if (b.kind === 'mv-model-interface') return L.canvasHintInterface;
-  if (b.kind === 'mv-map') return L.canvasHintMap;
-  if (b.kind === 'mv-view') {
+  if (b.kind === 'smw-model-sql') return L.canvasHintSql;
+  if (b.kind === 'smw-model-kv') return L.canvasHintKv;
+  if (b.kind === 'smw-model-struct') return L.canvasHintStruct;
+  if (b.kind === 'smw-model-codespace') return L.canvasHintCodespace;
+  if (b.kind === 'smw-model-interface') return L.canvasHintInterface;
+  if (b.kind === 'smw-map') return L.canvasHintMap;
+  if (b.kind === 'smw-view') {
     return mvViewKindStrings((b.payload as MvViewPayload).kind, locale.value).description;
   }
   return '';
@@ -1303,12 +1303,12 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
   if (!b) return null;
   const loc = locale.value;
   const L = shellChromeMessages[loc];
-  if (b.kind === 'mv-model-sql') {
+  if (b.kind === 'smw-model-sql') {
     const p = b.payload as MvModelSqlPayload;
     const lines = p.tables.map((tbl) => trDockSqlTableLine(loc, tbl));
     return { heading: L.dockSqlHeading, lines: lines.length ? lines.slice(0, 24) : [L.dockSqlNoTables] };
   }
-  if (b.kind === 'mv-model-kv') {
+  if (b.kind === 'smw-model-kv') {
     const p = b.payload as MvModelKvPayload;
     const lines = p.documents.map((d, i) => {
       const keys = Object.keys(d).slice(0, 8);
@@ -1320,13 +1320,13 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
       lines: lines.length ? lines.slice(0, 22) : [L.dockKvNoDocs],
     };
   }
-  if (b.kind === 'mv-model-struct') {
+  if (b.kind === 'smw-model-struct') {
     const p = b.payload as MvModelStructPayload;
     const lines: string[] = [];
     collectStructOutlineLines(p.root, 0, lines, 26, loc);
     return { heading: L.dockStructHeading, lines: lines.length ? lines : [L.dockStructEmptyRoot] };
   }
-  if (b.kind === 'mv-model-codespace') {
+  if (b.kind === 'smw-model-codespace') {
     const p = b.payload as MvModelCodespacePayload;
     const lines = p.modules.map(
       (m) =>
@@ -1337,7 +1337,7 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
       lines: lines.length ? lines.slice(0, 24) : [L.dockCodespaceNoModules],
     };
   }
-  if (b.kind === 'mv-model-interface') {
+  if (b.kind === 'smw-model-interface') {
     const p = b.payload as MvModelInterfacePayload;
     const lines = p.endpoints.map((e) => {
       const mp = [e.method, e.path].filter(Boolean).join(' ');
@@ -1348,7 +1348,7 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
       lines: lines.length ? lines.slice(0, 24) : [L.dockIfNoEndpoints],
     };
   }
-  if (b.kind === 'mv-view') {
+  if (b.kind === 'smw-view') {
     const p = b.payload as MvViewPayload;
     const payloadText =
       typeof p.payload === 'string'
@@ -1435,7 +1435,7 @@ const dockSecondaryOutline = computed((): { heading: string; lines: string[] } |
       lines: [`modelRefs: ${p.modelRefs.join(', ') || L.dockViewModelRefsNone}`],
     };
   }
-  if (b.kind === 'mv-map') {
+  if (b.kind === 'smw-map') {
     const p = b.payload as MvMapPayload;
     return {
       heading: L.dockMapHeading,
@@ -1767,30 +1767,30 @@ const activeCanvasBlock = computed((): ParsedFenceBlock | null => {
   return blocks.find((b) => b.payload.id === tab.blockId) ?? null;
 });
 
-/** 从当前工作区 Markdown 解析 mv-view 子类型（标签上缺少 mvViewKind 或围栏 id 刚变更时的回退） */
+/** 从当前工作区 Markdown 解析 smw-view 子类型（标签上缺少 mvViewKind 或围栏 id 刚变更时的回退） */
 function resolveMvViewKindForCanvasTab(tab: CanvasTabSpec): MvViewPayload['kind'] | undefined {
   if (tab.mvViewKind) return tab.mvViewKind;
   const md = files.value.get(tab.relPath);
   if (!md) return undefined;
   const { blocks } = parseMarkdownBlocks(md);
   const hit = blocks.find((b) => b.payload.id === tab.blockId);
-  if (hit?.kind === 'mv-view') return (hit.payload as MvViewPayload).kind;
+  if (hit?.kind === 'smw-view') return (hit.payload as MvViewPayload).kind;
   return undefined;
 }
 
-/** 当前画布标签是否应在 Properties 展示「画布内选中对象」明细（codespace / 部分 mv-view） */
+/** 当前画布标签是否应在 Properties 展示「画布内选中对象」明细（codespace / 部分 smw-view） */
 function canvasTabSupportsSelectionDock(tab: CanvasTabSpec, parsed: ParsedFenceBlock | null): boolean {
   const match = parsed && parsed.payload.id === tab.blockId ? parsed : null;
   if (match) {
-    if (match.kind === 'mv-model-codespace') return true;
-    if (match.kind === 'mv-view') {
+    if (match.kind === 'smw-model-codespace') return true;
+    if (match.kind === 'smw-view') {
       const vk = (match.payload as MvViewPayload).kind;
       return vk === 'mindmap-ui' || vk === 'uml-class' || vk === 'mermaid-class';
     }
     return false;
   }
-  if (tab.fenceKind === 'mv-model-codespace') return true;
-  if (tab.fenceKind === 'mv-view') {
+  if (tab.fenceKind === 'smw-model-codespace') return true;
+  if (tab.fenceKind === 'smw-view') {
     const vk = resolveMvViewKindForCanvasTab(tab);
     if (!vk) return false;
     return vk === 'mindmap-ui' || vk === 'uml-class' || vk === 'mermaid-class';
@@ -1852,14 +1852,14 @@ function onUiDesignDockState(ctx: UiDesignDockState) {
 const showMindmapSpecialDock = computed(() => {
   if (activeEditorTab.value === 'markdown') return false;
   const b = activeCanvasBlock.value;
-  return !!(b && b.kind === 'mv-view' && (b.payload as MvViewPayload).kind === 'mindmap-ui');
+  return !!(b && b.kind === 'smw-view' && (b.payload as MvViewPayload).kind === 'mindmap-ui');
 });
 
-/** 当前嵌入画布为 mv-view · ui-design：显示 UI 设计左/右 dock */
+/** 当前嵌入画布为 smw-view · ui-design：显示 UI 设计左/右 dock */
 const showUiDesignSpecialDock = computed(() => {
   if (activeEditorTab.value === 'markdown') return false;
   const b = activeCanvasBlock.value;
-  return !!(b && b.kind === 'mv-view' && (b.payload as MvViewPayload).kind === 'ui-design');
+  return !!(b && b.kind === 'smw-view' && (b.payload as MvViewPayload).kind === 'ui-design');
 });
 
 const showUiDesignLeftDock = computed(() => showUiDesignSpecialDock.value);
@@ -1975,7 +1975,7 @@ function openVisualCanvas(block: ParsedFenceBlock) {
       blockId: block.payload.id,
       fenceKind: block.kind,
       subtypeLabel: fenceBlockSubtypeLabel(block, locale.value),
-      mvViewKind: block.kind === 'mv-view' ? (block.payload as MvViewPayload).kind : undefined,
+      mvViewKind: block.kind === 'smw-view' ? (block.payload as MvViewPayload).kind : undefined,
       codespaceDockSummary: '',
       codespaceDockLines: [],
       unsaved: false,
@@ -2911,7 +2911,7 @@ onUnmounted(() => {
                             <dd>{{ row.value }}</dd>
                           </template>
                         </dl>
-                        <details v-if="selectedBlock.kind === 'mv-view'" class="dock-json-details dock-ref-details">
+                        <details v-if="selectedBlock.kind === 'smw-view'" class="dock-json-details dock-ref-details">
                           <summary class="dock-json-summary" :title="ui.modelRefsSummaryHover">{{ ui.modelRefsSummaryTitle }}</summary>
                           <p class="dock-muted dock-ref-doc">{{ modelRefsSchemeDoc(locale === 'en' ? 'en' : 'zh') }}</p>
                         </details>

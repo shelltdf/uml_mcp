@@ -1,14 +1,14 @@
 /** Fence language tags supported by the workbench */
 export type MvFenceKind =
-  | 'mv-model-sql'
-  | 'mv-model-kv'
-  | 'mv-model-struct'
-  | 'mv-model-codespace'
-  | 'mv-model-interface'
-  | 'mv-view'
-  | 'mv-map';
+  | 'smw-model-sql'
+  | 'smw-model-kv'
+  | 'smw-model-struct'
+  | 'smw-model-codespace'
+  | 'smw-model-interface'
+  | 'smw-view'
+  | 'smw-map';
 
-/** `` ```mv-model-sql `` 内单张表的列 schema（设计元数据 + 行数据键名）。列名 ``id`` 在业务上常作主键：Workbench 默认 ``primaryKey`` + 非可空，且解析器要求 **所有标记 ``primaryKey`` 的列在行间取值组合唯一**。 */
+/** `` ```smw-model-sql `` 内单张表的列 schema（设计元数据 + 行数据键名）。列名 ``id`` 在业务上常作主键：Workbench 默认 ``primaryKey`` + 非可空，且解析器要求 **所有标记 ``primaryKey`` 的列在行间取值组合唯一**。 */
 export interface MvModelColumnDef {
   name: string;
   type?: string;
@@ -25,7 +25,7 @@ export interface MvModelColumnDef {
 }
 
 /**
- * `` ```mv-model-sql `` 围栏内的 **一张物理表**（固定列 schema + 行数据）。
+ * `` ```smw-model-sql `` 围栏内的 **一张物理表**（固定列 schema + 行数据）。
  * 块级 `MvModelSqlPayload.id` 为该 Model 组 id；本对象的 `id` 为组内表 id（唯一）。
  */
 export interface MvModelSqlTable {
@@ -37,8 +37,8 @@ export interface MvModelSqlTable {
 }
 
 /**
- * 一个 `` ```mv-model-sql `` 围栏 = **Model（SQL 表组）**：可含多张表；围栏在文件内以块级 `id` 唯一。
- * **View**（``mv-view``）通过 `modelRefs` 绑定本块：`块id#表id`；仅一块内一张表时可写 `块id`（省略表 id）。
+ * 一个 `` ```smw-model-sql `` 围栏 = **Model（SQL 表组）**：可含多张表；围栏在文件内以块级 `id` 唯一。
+ * **View**（``smw-view``）通过 `modelRefs` 绑定本块：`块id#表id`；仅一块内一张表时可写 `块id`（省略表 id）。
  */
 export interface MvModelSqlPayload {
   id: string;
@@ -47,7 +47,7 @@ export interface MvModelSqlPayload {
 }
 
 /**
- * 一个 `` ```mv-model-kv `` 围栏 = **文档型数据集合**（类比 MongoDB collection：每条为 JSON 对象，键集合可不固定）。
+ * 一个 `` ```smw-model-kv `` 围栏 = **文档型数据集合**（类比 MongoDB collection：每条为 JSON 对象，键集合可不固定）。
  */
 export interface MvModelKvPayload {
   id: string;
@@ -73,7 +73,7 @@ export interface MvStructGroup {
 }
 
 /**
- * 一个 `` ```mv-model-struct `` 围栏 = **单根层次结构**（类比 HDF5：根下递归组 + 数据集）。
+ * 一个 `` ```smw-model-struct `` 围栏 = **单根层次结构**（类比 HDF5：根下递归组 + 数据集）。
  */
 export interface MvModelStructPayload {
   id: string;
@@ -263,7 +263,7 @@ export interface MvCodespaceNamespaceNode {
   associations?: MvCodespaceAssociation[];
 }
 
-/** ``mv-model-codespace`` 内描述仓库/工作区划分的逻辑模块条目（示意，非运行时代码树）。 */
+/** ``smw-model-codespace`` 内描述仓库/工作区划分的逻辑模块条目（示意，非运行时代码树）。 */
 export interface MvModelCodespaceModule {
   id: string;
   name: string;
@@ -277,7 +277,7 @@ export interface MvModelCodespaceModule {
 }
 
 /**
- * 一个 `` ```mv-model-codespace `` 围栏 = **软件模型 / 代码空间示意**：工作区根与模块列表（JSON）；用于文档化 monorepo 或分层边界，不等同于真实文件系统。
+ * 一个 `` ```smw-model-codespace `` 围栏 = **软件模型 / 代码空间示意**：工作区根与模块列表（JSON）；用于文档化 monorepo 或分层边界，不等同于真实文件系统。
  */
 export interface MvModelCodespacePayload {
   id: string;
@@ -288,7 +288,7 @@ export interface MvModelCodespacePayload {
   modules: MvModelCodespaceModule[];
 }
 
-/** ``mv-model-interface`` 内单条接口 / 端点描述（文档化用，非运行时契约）。 */
+/** ``smw-model-interface`` 内单条接口 / 端点描述（文档化用，非运行时契约）。 */
 export interface MvModelInterfaceEndpoint {
   id: string;
   name: string;
@@ -300,7 +300,7 @@ export interface MvModelInterfaceEndpoint {
 }
 
 /**
- * 一个 `` ```mv-model-interface `` 围栏 = **接口模型 / 接口图示意**：端点列表（JSON），用于文档化 API 面或模块间契约，**不**替代 OpenAPI 等正式规范文件。
+ * 一个 `` ```smw-model-interface `` 围栏 = **接口模型 / 接口图示意**：端点列表（JSON），用于文档化 API 面或模块间契约，**不**替代 OpenAPI 等正式规范文件。
  */
 export interface MvModelInterfacePayload {
   id: string;
@@ -310,7 +310,7 @@ export interface MvModelInterfacePayload {
 }
 
 /**
- * 已注册的 `mv-view` 具体类型（逻辑上均为「视图基类」的派生）。
+ * 已注册的 `smw-view` 具体类型（逻辑上均为「视图基类」的派生）。
  * 新增产品子类型时：在此追加字面量、更新 `blocks.ts` 校验白名单，并实现对应渲染器。
  */
 export const MV_VIEW_KINDS = [
@@ -610,23 +610,23 @@ export const MV_VIEW_KIND_METADATA: Record<
   },
 };
 
-/** ``mv-model-sql``（多表 Model 组）在 Workbench 中的画布名称 */
-export const MV_MODEL_SQL_CANVAS_TITLE = 'mv-model-sql 画布（Model · 多表）';
+/** ``smw-model-sql``（多表 Model 组）在 Workbench 中的画布名称 */
+export const MV_MODEL_SQL_CANVAS_TITLE = 'smw-model-sql 画布（Model · 多表）';
 
 /** @deprecated 使用 {@link MV_MODEL_SQL_CANVAS_TITLE} */
 export const MV_MODEL_CANVAS_TITLE = MV_MODEL_SQL_CANVAS_TITLE;
 
-/** KV 文档集（mv-model-kv）画布名称 */
+/** KV 文档集（smw-model-kv）画布名称 */
 export const MV_MODEL_KV_CANVAS_TITLE = 'KV 数据表画布';
 
-/** 结构化层次（mv-model-struct）画布名称 */
+/** 结构化层次（smw-model-struct）画布名称 */
 export const MV_MODEL_STRUCT_CANVAS_TITLE = '结构化层次画布';
 
-/** 代码空间 / 软件仓库结构示意（mv-model-codespace）画布名称 */
+/** 代码空间 / 软件仓库结构示意（smw-model-codespace）画布名称 */
 /** 与代码/文档 id 对齐：ASCII，壳层可按 `locale` 另行展示本地化副标题 */
 export const MV_MODEL_CODESPACE_CANVAS_TITLE = '代码空间模型画布';
 
-/** 接口模型 / 接口图示意（mv-model-interface）画布名称 */
+/** 接口模型 / 接口图示意（smw-model-interface）画布名称 */
 export const MV_MODEL_INTERFACE_CANVAS_TITLE = '接口图模型画布';
 
 /** 映射块画布名称 */
@@ -634,14 +634,14 @@ export const MV_MAP_CANVAS_TITLE = '映射规则画布';
 
 /**
  * **modelRefs 书写约定**（供 UI 与文档展示；解析规则见 `refs/resolve.ts` 的 `parseRefUri` / `resolveRefPath`）。
- * 每个 `mv-view` 应在 `modelRefs` 中列出其依赖的 **Model 地址**：可多项。
+ * 每个 `smw-view` 应在 `modelRefs` 中列出其依赖的 **Model 地址**：可多项。
  */
 export const MV_MODEL_REFS_SCHEME_DOC_ZH =
-  'modelRefs 每项指向 **Model** 围栏（``mv-model-sql`` / ``mv-model-kv`` / ``mv-model-struct`` / ``mv-model-codespace`` / ``mv-model-interface``）：同文件写 `块id`；``mv-model-sql`` 多表时写 `块id#表id`，仅一张表时可只写 `块id`。跨文件写 `ref:相对路径.md#块id`，sql 多表时再加 `#表id`。路径相对于当前 mv-view 所在 .md 的目录，用 /。';
+  'modelRefs 每项指向 **Model** 围栏（``smw-model-sql`` / ``smw-model-kv`` / ``smw-model-struct`` / ``smw-model-codespace`` / ``smw-model-interface``）：同文件写 `块id`；``smw-model-sql`` 多表时写 `块id#表id`，仅一张表时可只写 `块id`。跨文件写 `ref:相对路径.md#块id`，sql 多表时再加 `#表id`。路径相对于当前 smw-view 所在 .md 的目录，用 /。';
 
 /** English counterpart of {@link MV_MODEL_REFS_SCHEME_DOC_ZH}. */
 export const MV_MODEL_REFS_SCHEME_DOC_EN =
-  'Each `modelRefs` entry points to a **Model** fence (``mv-model-sql`` / ``mv-model-kv`` / ``mv-model-struct`` / ``mv-model-codespace`` / ``mv-model-interface``): in the **same** Markdown file write `block-id`; for ``mv-model-sql`` with **multiple** tables use `block-id#table-id`, and with **only one** table you may write just `block-id`. **Cross-file** refs use `ref:relative/path.md#block-id`, appending `#table-id` when SQL has multiple tables. Paths are **relative to the directory of the `.md` that contains the `mv-view`**, using `/`.';
+  'Each `modelRefs` entry points to a **Model** fence (``smw-model-sql`` / ``smw-model-kv`` / ``smw-model-struct`` / ``smw-model-codespace`` / ``smw-model-interface``): in the **same** Markdown file write `block-id`; for ``smw-model-sql`` with **multiple** tables use `block-id#table-id`, and with **only one** table you may write just `block-id`. **Cross-file** refs use `ref:relative/path.md#block-id`, appending `#table-id` when SQL has multiple tables. Paths are **relative to the directory of the `.md` that contains the `smw-view`**, using `/`.';
 
 /**
  * @deprecated 与 {@link MV_MODEL_REFS_SCHEME_DOC_ZH} 同文；新代码请用 {@link modelRefsSchemeDoc} 或 `MV_MODEL_REFS_SCHEME_DOC_ZH` / `MV_MODEL_REFS_SCHEME_DOC_EN`。
@@ -695,21 +695,7 @@ export function isUmlViewKind(kind: MvViewKind): boolean {
 }
 
 /**
- * @deprecated 请改用 `MV_UML_VIEW_KINDS`。
- * 仅为兼容旧调用保留该别名，避免核心语义继续绑定具体扩展实现。
- * TODO(v2): 移除该兼容别名。
- */
-export const MV_PLANTUML_VIEW_KINDS = MV_UML_VIEW_KINDS;
-
-/**
- * @deprecated 请改用 `isUmlViewKind`。
- * 仅为兼容旧调用保留该别名，避免核心语义继续绑定具体扩展实现。
- * TODO(v2): 移除该兼容别名。
- */
-export const isPlantUmlViewKind = isUmlViewKind;
-
-/**
- * **mv-view**：JSON 中的「视图基类」——公共字段为 `id`、`kind`、`modelRefs`（及可选 `title`）；
+ * **smw-view**：JSON 中的「视图基类」——公共字段为 `id`、`kind`、`modelRefs`（及可选 `title`）；
  * 具体语义由 `kind` 决定（表只读、Mermaid 各图、脑图 UI、UML 各图、UI 设计等）。
  */
 export interface MvViewPayload {
@@ -726,7 +712,7 @@ export interface MvViewPayload {
   title?: string;
   /**
    * 子类型载荷：如各 `mermaid-*` / `uml-diagram` 的图源、`mindmap-ui` 的序列化快照等（由对应 `kind` 的渲染器解释）。
-   * 对 **`mermaid-*`**：可与紧随 `` ```mv-view `` 后的标准 `` ```mermaid`` 围栏**镜像同文**（见 `ParsedMermaidMirrorFence`），便于 GitHub 等普通 Markdown 渲染图；工作台保存时会同步两段正文。
+   * 对 **`mermaid-*`**：可与紧随 `` ```smw-view `` 后的标准 `` ```mermaid`` 围栏**镜像同文**（见 `ParsedMermaidMirrorFence`），便于 GitHub 等普通 Markdown 渲染图；工作台保存时会同步两段正文。
    */
   payload?: string | Record<string, unknown>;
 }
@@ -753,7 +739,7 @@ export type MvBlockPayload =
   | MvMapPayload;
 
 /**
- * 紧随 `` ```mv-view ``（且 `kind` 为 `mermaid-*`）的标准 `` ```mermaid `` 围栏，与 JSON 内 `payload` 同源，供普通 Markdown 预览 Mermaid。
+ * 紧随 `` ```smw-view ``（且 `kind` 为 `mermaid-*`）的标准 `` ```mermaid `` 围栏，与 JSON 内 `payload` 同源，供普通 Markdown 预览 Mermaid。
  * 该段为可选扩展：存在时，解析器可在 JSON `payload` 为空时用镜像正文填充。
  */
 export interface ParsedMermaidMirrorFence {
@@ -780,13 +766,13 @@ export interface ParsedFenceBlock {
   /** Offset where inner body ends (before closing newline+```) */
   innerEndOffset: number;
   /**
-   * 该逻辑块在源码中的结束偏移：无镜像时为 mv-view 围栏结束；有 `mermaidMirror` 时为镜像 Mermaid 围栏结束（便于光标落在整块内）。
+   * 该逻辑块在源码中的结束偏移：无镜像时为 smw-view 围栏结束；有 `mermaidMirror` 时为镜像 Mermaid 围栏结束（便于光标落在整块内）。
    */
   endOffset: number;
   /** Raw inner text between fences (trimmed for JSON parse) */
   rawInner: string;
   payload: MvBlockPayload;
-  /** `mv-view` 且 `kind` 为 `mermaid-*` 时可选（紧随的标准 `` ```mermaid`` 段） */
+  /** `smw-view` 且 `kind` 为 `mermaid-*` 时可选（紧随的标准 `` ```mermaid`` 段） */
   mermaidMirror?: ParsedMermaidMirrorFence;
 }
 
@@ -795,12 +781,12 @@ export interface ParseMdResult {
   errors: Array<{ message: string; line?: number }>;
 }
 
-/** ref:./path/to.md#blockId 或 ref:./path/to.md#blockId#tableId（mv-model-sql 子表） */
+/** ref:./path/to.md#blockId 或 ref:./path/to.md#blockId#tableId（smw-model-sql 子表） */
 export interface ResolvedRef {
   ref: string;
   /** Normalized relative path from workspace root */
   fileRel: string;
   blockId: string;
-  /** ``mv-model-sql`` 内子表 `id`；单段 ref 时省略 */
+  /** ``smw-model-sql`` 内子表 `id`；单段 ref 时省略 */
   tableId?: string;
 }

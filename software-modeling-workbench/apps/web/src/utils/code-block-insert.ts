@@ -1,5 +1,5 @@
-import type { MvModelSqlPayload, MvViewKind, MvViewPayload } from '@mvwb/core';
-import { MV_UML_KIND_DIAGRAM_TYPE, isMermaidViewKind, parseMarkdownBlocks, resolveRefPath } from '@mvwb/core';
+import type { MvModelSqlPayload, MvViewKind, MvViewPayload } from '@smw/core';
+import { MV_UML_KIND_DIAGRAM_TYPE, isMermaidViewKind, parseMarkdownBlocks, resolveRefPath } from '@smw/core';
 import type { AppLocale } from '../i18n/app-locale';
 import {
   defaultInterfaceModelGroupTitle,
@@ -8,23 +8,23 @@ import {
   defaultSqlPrimaryTableTitle,
   defaultStructModelGroupTitle,
 } from '../i18n/model-block-insert-defaults';
-import { mvViewKindDefaultBlockTitle, mvViewKindStrings } from '../i18n/mv-view-kind-locale';
+import { mvViewKindDefaultBlockTitle, mvViewKindStrings } from '../i18n/smw-view-kind-locale';
 
-/** 可通过「插入代码块」对话框插入的围栏类型（各 mv-model* 或各 mv-view kind） */
+/** 可通过「插入代码块」对话框插入的围栏类型（各 smw-model* 或各 smw-view kind） */
 export type InsertCodeBlockKind =
   | MvViewKind
-  | 'mv-model-sql'
-  | 'mv-model-kv'
-  | 'mv-model-struct'
-  | 'mv-model-codespace'
-  | 'mv-model-interface';
+  | 'smw-model-sql'
+  | 'smw-model-kv'
+  | 'smw-model-struct'
+  | 'smw-model-codespace'
+  | 'smw-model-interface';
 
 export interface InsertFenceContext {
   /** 当前 view 将写入的 .md 工作区相对路径（用于生成 ref: 示例路径） */
   currentFileRel: string;
-  /** 当前文档全文（用于探测同文件已有 mv-model-sql） */
+  /** 当前文档全文（用于探测同文件已有 smw-model-sql） */
   currentMarkdown: string;
-  /** 影响插入的 mv-view 默认 title / payload 占位等；缺省为 zh */
+  /** 影响插入的 smw-view 默认 title / payload 占位等；缺省为 zh */
   locale?: AppLocale;
 }
 
@@ -36,7 +36,7 @@ function buildUmlDefaultPayload(kind: MvViewKind): Record<string, unknown> | nul
   const diagramType = MV_UML_KIND_DIAGRAM_TYPE[kind];
   if (!diagramType) return null;
   const base: Record<string, unknown> = {
-    schema: 'mvwb-uml/v1',
+    schema: 'smw-uml/v1',
     diagramType,
   };
   if (kind === 'uml-class') {
@@ -46,11 +46,11 @@ function buildUmlDefaultPayload(kind: MvViewKind): Record<string, unknown> | nul
   return base;
 }
 
-/** 为新建 mv-view 推断默认 modelRefs：优先同文件首个 mv-model-sql 的首张表（块id#表id）；否则 ref: 模板 */
+/** 为新建 smw-view 推断默认 modelRefs：优先同文件首个 smw-model-sql 的首张表（块id#表id）；否则 ref: 模板 */
 export function inferDefaultModelRefs(ctx: InsertFenceContext): string[] {
   const { blocks } = parseMarkdownBlocks(ctx.currentMarkdown);
   for (const b of blocks) {
-    if (b.kind === 'mv-model-sql') {
+    if (b.kind === 'smw-model-sql') {
       const p = b.payload as MvModelSqlPayload;
       const t0 = p.tables[0];
       if (t0) return [`${p.id}#${t0.id}`];
@@ -64,7 +64,7 @@ export function inferDefaultModelRefs(ctx: InsertFenceContext): string[] {
 /** 在光标处插入的围栏 Markdown（前后各留空行，便于解析） */
 export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: InsertFenceContext): string {
   const loc = ctx.locale ?? 'zh';
-  if (kind === 'mv-model-sql') {
+  if (kind === 'smw-model-sql') {
     const id = newBlockId('sql');
     const body = {
       id,
@@ -78,31 +78,31 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
         },
       ],
     };
-    return `\n\n\`\`\`mv-model-sql\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
+    return `\n\n\`\`\`smw-model-sql\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
   }
-  if (kind === 'mv-model-kv') {
+  if (kind === 'smw-model-kv') {
     const id = newBlockId('kv');
     const body = {
       id,
       title: defaultKvModelGroupTitle(loc),
       documents: [{ _id: '1', note: '示例文档，键可自由增删' }],
     };
-    return `\n\n\`\`\`mv-model-kv\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
+    return `\n\n\`\`\`smw-model-kv\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
   }
-  if (kind === 'mv-model-struct') {
+  if (kind === 'smw-model-struct') {
     const id = newBlockId('st');
     const body = {
       id,
       title: defaultStructModelGroupTitle(loc),
       root: {
         name: '/',
-        attributes: { format: 'mv-model-struct v1' },
+        attributes: { format: 'smw-model-struct v1' },
         groups: [{ name: 'run0', datasets: [{ name: 'values', dtype: 'float64', data: [1, 2, 3] }] }],
       },
     };
-    return `\n\n\`\`\`mv-model-struct\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
+    return `\n\n\`\`\`smw-model-struct\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
   }
-  if (kind === 'mv-model-codespace') {
+  if (kind === 'smw-model-codespace') {
     const id = newBlockId('cs');
     const body = {
       id,
@@ -153,9 +153,9 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
         },
       ],
     };
-    return `\n\n\`\`\`mv-model-codespace\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
+    return `\n\n\`\`\`smw-model-codespace\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
   }
-  if (kind === 'mv-model-interface') {
+  if (kind === 'smw-model-interface') {
     const id = newBlockId('if');
     const body = {
       id,
@@ -177,7 +177,7 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
         },
       ],
     };
-    return `\n\n\`\`\`mv-model-interface\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
+    return `\n\n\`\`\`smw-model-interface\n${JSON.stringify(body, null, 2)}\n\`\`\`\n\n`;
   }
   const id = newBlockId('v');
   const meta = mvViewKindStrings(kind, loc);
@@ -215,7 +215,7 @@ export function buildFenceMarkdownForInsert(kind: InsertCodeBlockKind, ctx: Inse
     }
   }
   const inner = JSON.stringify(obj, null, 2);
-  const mvFence = `\n\n\`\`\`mv-view\n${inner}\n\`\`\`\n\n`;
+  const mvFence = `\n\n\`\`\`smw-view\n${inner}\n\`\`\`\n\n`;
   if (isMermaidViewKind(kind)) {
     return `${mvFence}\`\`\`mermaid\n${mermaidMirrorBody}\n\`\`\`\n\n`;
   }

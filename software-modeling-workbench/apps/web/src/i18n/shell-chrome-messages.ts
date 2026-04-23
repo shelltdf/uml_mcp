@@ -148,7 +148,7 @@ export type ShellChromeMessages = {
   blockCanvasClosePopupTitle: string;
   blockCanvasNotFound: string;
   blockCanvasBodyAria: string;
-  /** ``mv-model-codespace`` 块画布顶栏 `<strong>` 标题：固定 ASCII，与 `@mvwb/core` 常量一致且不依赖 core 包预构建缓存 */
+  /** ``smw-model-codespace`` 块画布顶栏 `<strong>` 标题：固定 ASCII，与 `@smw/core` 常量一致且不依赖 core 包预构建缓存 */
   canvasTitleMvModelCodespace: string;
   labelGroupTitle: string;
   labelTableCount: string;
@@ -175,7 +175,7 @@ export type ShellChromeMessages = {
   canvasHintCodespace: string;
   canvasHintInterface: string;
   canvasHintMap: string;
-  /** mv-view 中 uml-* payload 输入框下方提示：默认结构来自 core 映射 */
+  /** smw-view 中 uml-* payload 输入框下方提示：默认结构来自 core 映射 */
   viewUmlPayloadMappingHint: string;
   dockSqlHeading: string;
   dockSqlNoTables: string;
@@ -216,7 +216,7 @@ export type ShellChromeMessages = {
   /** 二级大纲：struct 层次行前缀 */
   dockStructWordGroup: string;
   dockStructWordDataset: string;
-  /** mv-view 非 mermaid 分支 modelRefs 行在「无引用」时的占位 */
+  /** smw-view 非 mermaid 分支 modelRefs 行在「无引用」时的占位 */
   dockViewModelRefsNone: string;
   /** 块画布：modelRefs 相对路径输入框标签 */
   modelRefsPickerPathLabel: string;
@@ -234,7 +234,7 @@ export type ShellChromeMessages = {
   modelRefsPickerBindListHintSingle: string;
   /** 块画布：modelRefs 分区 Tab — 绑定列表文件与勾选 */
   modelRefsPickerTabBind: string;
-  /** ui-design mv-view：「绑定模型」Tab 顶部说明（SVG 在并列「画布」Tab） */
+  /** ui-design smw-view：「绑定模型」Tab 顶部说明（SVG 在并列「画布」Tab） */
   modelRefsPickerBindNoSvgCanvas: string;
   /** ui-design：与「绑定模型」并列的 SVG 画布 Tab 标签 */
   modelRefsPickerCanvasTab: string;
@@ -306,7 +306,7 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockFenceOutlineHint:
       '中间列仅 Markdown；光标在围栏内时右侧属性会随动；亦可在此选中下列块，行末「代码块」打开代码块画布子标签。',
     dockNoFenceKinds:
-      '（当前文档无 mv-model-sql / mv-model-kv / mv-model-struct / mv-model-codespace / mv-model-interface / mv-view / mv-map 围栏）',
+      '（当前文档无 smw-model-sql / smw-model-kv / smw-model-struct / smw-model-codespace / smw-model-interface / smw-view / smw-map 围栏）',
     dockFenceOpenCanvas: '代码块',
     dockFenceEditBlock: '编辑',
     dockSecondaryPlaceholder: '在上方「代码块大纲」中选中块后，此处将显示该块相关结构（如 class 列表、表字段等）。',
@@ -378,7 +378,7 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     ctxInsertNoDocTitle: '请先打开或新建文档 — 无全局快捷键',
     ctxInsertPreviewTitle: '预览模式下不可用：请先切换到富文本或原始文本 — 无全局快捷键',
     ctxPreviewReadonlyHint: '当前是只读预览；交互编辑请切换到「富文本 / 原始文本」或使用右侧代码块画布。',
-    ctxInsertTitle: '选择代码块类型并插入 mv-view / mv-model* 围栏 — 无全局快捷键',
+    ctxInsertTitle: '选择代码块类型并插入 smw-view / smw-model* 围栏 — 无全局快捷键',
     logNeedDoc: '请先打开或新建一个 Markdown 文档',
     logNeedRichOrSource: '插入代码块请先将 Markdown 区切换到「富文本」或「原始文本」',
     labelKind: '类型',
@@ -412,14 +412,14 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     canvasOpenPrefix: '打开',
     canvasOpenInTabHint: '在中间列以标签打开 — 无全局快捷键',
     canvasHintSql:
-      'Model：文档内 ``mv-model-sql`` 围栏，一块内多张 SQL 风格子表；在画布中对子表增删改查并编辑列/行。',
-    canvasHintKv: 'mv-model-kv：文档型集合（类比 MongoDB）；在 KV 数据表画布中按条编辑 JSON 对象。',
-    canvasHintStruct: 'mv-model-struct：根下递归组与数据集（类比 HDF5）；在结构化层次画布中编辑整段 JSON。',
+      'Model：文档内 ``smw-model-sql`` 围栏，一块内多张 SQL 风格子表；在画布中对子表增删改查并编辑列/行。',
+    canvasHintKv: 'smw-model-kv：文档型集合（类比 MongoDB）；在 KV 数据表画布中按条编辑 JSON 对象。',
+    canvasHintStruct: 'smw-model-struct：根下递归组与数据集（类比 HDF5）；在结构化层次画布中编辑整段 JSON。',
     canvasHintCodespace:
-      'mv-model-codespace：工作区根与 modules[]（可选递归 namespaces、Classifier、bases、associations、变量/函数/宏）；在块画布的代码空间模型画布视图中编辑 JSON。',
-    canvasHintInterface: 'mv-model-interface：endpoints[]（接口/端点示意）；在接口图模型画布中编辑 JSON。',
-    canvasHintMap: 'Map 以 mv-map 围栏代码块存储：在映射规则代码块画布中编辑 JSON。',
-    viewUmlPayloadMappingHint: '此类型默认 payload 由 core 的 UML 映射自动生成（`mvwb-uml/v1` + 对应 `diagramType`）。',
+      'smw-model-codespace：工作区根与 modules[]（可选递归 namespaces、Classifier、bases、associations、变量/函数/宏）；在块画布的代码空间模型画布视图中编辑 JSON。',
+    canvasHintInterface: 'smw-model-interface：endpoints[]（接口/端点示意）；在接口图模型画布中编辑 JSON。',
+    canvasHintMap: 'Map 以 smw-map 围栏代码块存储：在映射规则代码块画布中编辑 JSON。',
+    viewUmlPayloadMappingHint: '此类型默认 payload 由 core 的 UML 映射自动生成（`smw-uml/v1` + 对应 `diagramType`）。',
     dockSqlHeading: '当前块 · SQL Model 组',
     dockSqlNoTables: '（无子表）',
     dockKvHeading: '当前块 · KV 文档集',
@@ -530,7 +530,7 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     dockFenceOutlineHint:
       'Center column is Markdown only; the right properties panel follows the caret inside fences. Select a block below and use **Block** at the end of the row to open a block canvas tab.',
     dockNoFenceKinds:
-      '(No mv-model-sql / mv-model-kv / mv-model-struct / mv-model-codespace / mv-model-interface / mv-view / mv-map fences)',
+      '(No smw-model-sql / smw-model-kv / smw-model-struct / smw-model-codespace / smw-model-interface / smw-view / smw-map fences)',
     dockFenceOpenCanvas: 'Block',
     dockFenceEditBlock: 'Edit',
     dockSecondaryPlaceholder:
@@ -604,7 +604,7 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     ctxInsertNoDocTitle: 'Open or create a document first — no global shortcut',
     ctxInsertPreviewTitle: 'Not in preview: switch to Rich or Source — no global shortcut',
     ctxPreviewReadonlyHint: 'Preview is read-only; switch to Rich/Source or use the block canvas for interactive editing.',
-    ctxInsertTitle: 'Pick a fence type (mv-view / mv-model*) — no global shortcut',
+    ctxInsertTitle: 'Pick a fence type (smw-view / smw-model*) — no global shortcut',
     logNeedDoc: 'Open or create a Markdown document first',
     logNeedRichOrSource: 'Switch Markdown to Rich or Source to insert a fence block',
     labelKind: 'Kind',
@@ -638,15 +638,15 @@ export const shellChromeMessages: Record<AppLocale, ShellChromeMessages> = {
     canvasOpenPrefix: 'Open',
     canvasOpenInTabHint: 'Open as a tab in the center — no global shortcut',
     canvasHintSql:
-      '**mv-model-sql**: multiple SQL-style tables in one fence; edit tables, columns, and rows in the canvas.',
-    canvasHintKv: '**mv-model-kv**: document collection (Mongo-like); edit JSON objects per row in the KV canvas.',
-    canvasHintStruct: '**mv-model-struct**: recursive groups/datasets (HDF5-like); edit JSON in the struct canvas.',
+      '**smw-model-sql**: multiple SQL-style tables in one fence; edit tables, columns, and rows in the canvas.',
+    canvasHintKv: '**smw-model-kv**: document collection (Mongo-like); edit JSON objects per row in the KV canvas.',
+    canvasHintStruct: '**smw-model-struct**: recursive groups/datasets (HDF5-like); edit JSON in the struct canvas.',
     canvasHintCodespace:
-      '**mv-model-codespace**: workspace root and **modules[]** (optional namespaces, classifiers, vars/functions/macros); edit in the codespace canvas.',
-    canvasHintInterface: '**mv-model-interface**: **endpoints[]** for API sketch; edit in the interface canvas.',
-    canvasHintMap: '**mv-map**: mapping rules; edit JSON in the map canvas.',
+      '**smw-model-codespace**: workspace root and **modules[]** (optional namespaces, classifiers, vars/functions/macros); edit in the codespace canvas.',
+    canvasHintInterface: '**smw-model-interface**: **endpoints[]** for API sketch; edit in the interface canvas.',
+    canvasHintMap: '**smw-map**: mapping rules; edit JSON in the map canvas.',
     viewUmlPayloadMappingHint:
-      'Default payload for this kind is generated from core UML mapping (`mvwb-uml/v1` + mapped `diagramType`).',
+      'Default payload for this kind is generated from core UML mapping (`smw-uml/v1` + mapped `diagramType`).',
     dockSqlHeading: 'Block · SQL model group',
     dockSqlNoTables: '(No tables)',
     dockKvHeading: 'Block · KV documents',

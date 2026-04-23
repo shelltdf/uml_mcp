@@ -8,7 +8,7 @@
 
 说明：
 
-- `models-core.md` 仅包含核心契约示例（`mv-model-*` / `mv-view` 的核心 kind / `mv-map`）。
+- `models-core.md` 仅包含核心契约示例（`smw-model-*` / `smw-view` 的核心 kind / `smw-map`）。
 - `models-mermaid.md` 仅包含 `mermaid-*` 相关示例。
 - `models-startuml.md` 仅包含 `@startuml` 语法片段示例（扩展用途）。
 

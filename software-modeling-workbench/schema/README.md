@@ -14,7 +14,7 @@
 
 ## 当前版本新增点（1-2026-04-22）
 
-- `mv-model-codespace` 的 class 成员字段统一为复数：
+- `smw-model-codespace` 的 class 成员字段统一为复数：
   - `members` / `methods` / `enums` / `properties`
 - `uml-class` 画布同步语义更新：
   - `association`：成员/属性级（同步到 `members[]/properties[]` 的 `associatedClassifierId`）

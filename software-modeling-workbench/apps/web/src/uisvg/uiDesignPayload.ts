@@ -1,7 +1,7 @@
 import { createEmptyDocument } from './lib/uisvgDocument';
 
 /**
- * 将围栏内 `mv-view` 的 payload 规范为 UISVG 可编辑的 SVG 字符串。
+ * 将围栏内 `smw-view` 的 payload 规范为 UISVG 可编辑的 SVG 字符串。
  * - 已是 `<svg` 开头的视为成品 SVG；
  * - `{"svg":"..."}` 取 svg 字段；
  * - 旧占位 JSON（如 `screens`）或无 `svg` 时退回空文档。

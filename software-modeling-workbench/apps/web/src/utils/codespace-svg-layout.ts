@@ -3,7 +3,7 @@ import type {
   MvCodespaceNamespaceNode,
   MvModelCodespaceModule,
   MvModelCodespacePayload,
-} from '@mvwb/core';
+} from '@smw/core';
 
 /** 画布可命中节点（与 CodespaceCanvasEditor 内 CsSelection 不含 meta 部分对齐） */
 export type CodespaceSvgPick =

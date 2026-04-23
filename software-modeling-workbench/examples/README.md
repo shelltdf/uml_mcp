@@ -6,8 +6,8 @@
 
 | 目录 | 用途 |
 |------|------|
-| [sample-workspace/](sample-workspace/) | 较完整的单文件演示：`mv-model-sql` 多子表、`mv-view` 多种 `kind`、`mv-map` |
-| [codespace-demo/](codespace-demo/) | 最小 **`mv-model-codespace`**（含递归 `namespaces` 与 Classifier）示意 |
+| [sample-workspace/](sample-workspace/) | 较完整的单文件演示：`smw-model-sql` 多子表、`smw-view` 多种 `kind`、`smw-map` |
+| [codespace-demo/](codespace-demo/) | 最小 **`smw-model-codespace`**（含递归 `namespaces` 与 Classifier）示意 |
 
 ## 如何使用
 

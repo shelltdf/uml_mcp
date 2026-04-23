@@ -8,7 +8,7 @@ import type {
   MvModelSqlPayload,
   MvModelStructPayload,
   MvViewPayload,
-} from '@mvwb/core';
+} from '@smw/core';
 import type { AppLocale } from './app-locale';
 import { isZhDefaultModelBlockTitle } from './model-block-insert-defaults';
 
@@ -34,7 +34,7 @@ function countCodespaceClassifiersInNamespaces(nodes: MvCodespaceNamespaceNode[]
 /** 索引行 / 子标签：围栏语言之外的子类型摘要（随界面语言切换） */
 export function fenceBlockSubtypeLabel(b: ParsedFenceBlock, locale: AppLocale): string {
   const en = locale === 'en';
-  if (b.kind === 'mv-model-sql') {
+  if (b.kind === 'smw-model-sql') {
     const p = b.payload as MvModelSqlPayload;
     const t = p.title?.trim() ?? '';
     const ids = p.tables.map((x) => x.id).join(', ');
@@ -43,7 +43,7 @@ export function fenceBlockSubtypeLabel(b: ParsedFenceBlock, locale: AppLocale): 
     if (en && isZhDefaultModelBlockTitle(b.kind, t)) return fallback;
     return t;
   }
-  if (b.kind === 'mv-model-kv') {
+  if (b.kind === 'smw-model-kv') {
     const p = b.payload as MvModelKvPayload;
     const t = p.title?.trim() ?? '';
     const fallback = en ? `KV · ${p.documents.length} doc(s)` : `KV · ${p.documents.length} 条`;
@@ -51,7 +51,7 @@ export function fenceBlockSubtypeLabel(b: ParsedFenceBlock, locale: AppLocale): 
     if (en && isZhDefaultModelBlockTitle(b.kind, t)) return fallback;
     return t;
   }
-  if (b.kind === 'mv-model-struct') {
+  if (b.kind === 'smw-model-struct') {
     const p = b.payload as MvModelStructPayload;
     const t = p.title?.trim() ?? '';
     const fallback = `Struct · ${p.root.name}`;
@@ -59,7 +59,7 @@ export function fenceBlockSubtypeLabel(b: ParsedFenceBlock, locale: AppLocale): 
     if (en && isZhDefaultModelBlockTitle(b.kind, t)) return fallback;
     return t;
   }
-  if (b.kind === 'mv-model-codespace') {
+  if (b.kind === 'smw-model-codespace') {
     const p = b.payload as MvModelCodespacePayload;
     const t = p.title?.trim();
     const n = p.modules?.length ?? 0;
@@ -79,7 +79,7 @@ export function fenceBlockSubtypeLabel(b: ParsedFenceBlock, locale: AppLocale): 
     }
     return t || (en ? `Codespace · ${n} module(s)` : `Codespace · ${n} 模块`);
   }
-  if (b.kind === 'mv-model-interface') {
+  if (b.kind === 'smw-model-interface') {
     const p = b.payload as MvModelInterfacePayload;
     const t = p.title?.trim() ?? '';
     const n = p.endpoints?.length ?? 0;
@@ -88,10 +88,10 @@ export function fenceBlockSubtypeLabel(b: ParsedFenceBlock, locale: AppLocale): 
     if (en && isZhDefaultModelBlockTitle(b.kind, t)) return fallback;
     return t;
   }
-  if (b.kind === 'mv-view') {
+  if (b.kind === 'smw-view') {
     return (b.payload as MvViewPayload).kind;
   }
-  if (b.kind === 'mv-map') {
+  if (b.kind === 'smw-map') {
     const p = b.payload as MvMapPayload;
     const n = p.rules?.length ?? 0;
     return n > 0 ? (en ? `Map · ${n} rule(s)` : `映射 · ${n} 条`) : en ? 'Map' : '映射';

@@ -10,7 +10,7 @@ describe('parseRefUri', () => {
     });
   });
 
-  it('parses ref with mv-model-sql table id', () => {
+  it('parses ref with smw-model-sql table id', () => {
     expect(parseRefUri('ref:./docs/a.md#sql1#person')).toEqual({
       ref: 'ref:./docs/a.md#sql1#person',
       fileRel: 'docs/a.md',

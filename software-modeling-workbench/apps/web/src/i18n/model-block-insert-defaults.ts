@@ -30,9 +30,9 @@ export function defaultInterfaceModelGroupTitle(loc: AppLocale): string {
 /** 英文 Dock 摘要：若标题仍是历史中文默认，则改显示技术摘要行 */
 export function isZhDefaultModelBlockTitle(kind: string, title: string): boolean {
   const t = title.trim();
-  if (kind === 'mv-model-sql') return t === ZH_SQL_MODEL_GROUP_TITLE;
-  if (kind === 'mv-model-kv') return t === ZH_KV_MODEL_GROUP_TITLE;
-  if (kind === 'mv-model-struct') return t === ZH_STRUCT_MODEL_GROUP_TITLE;
-  if (kind === 'mv-model-interface') return t === ZH_INTERFACE_MODEL_GROUP_TITLE;
+  if (kind === 'smw-model-sql') return t === ZH_SQL_MODEL_GROUP_TITLE;
+  if (kind === 'smw-model-kv') return t === ZH_KV_MODEL_GROUP_TITLE;
+  if (kind === 'smw-model-struct') return t === ZH_STRUCT_MODEL_GROUP_TITLE;
+  if (kind === 'smw-model-interface') return t === ZH_INTERFACE_MODEL_GROUP_TITLE;
   return false;
 }

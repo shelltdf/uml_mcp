@@ -1,5 +1,5 @@
 /**
- * 将 Mermaid 类图节点与同文件 ``mv-model-codespace`` 中的 Classifier 对齐（供块画布双击打开浮窗）。
+ * 将 Mermaid 类图节点与同文件 ``smw-model-codespace`` 中的 Classifier 对齐（供块画布双击打开浮窗）。
  */
 import {
   parseMarkdownBlocks,
@@ -11,8 +11,8 @@ import {
   type MvCodespaceProperty,
   type MvModelCodespacePayload,
   type ParsedFenceBlock,
-} from '@mvwb/core';
-import { slug } from '@mvwb/mermaid';
+} from '@smw/core';
+import { slug } from '@smw/mermaid';
 import { getNamespaceAtPath } from './codespace-canvas';
 
 function walkClassifiers(
@@ -187,7 +187,7 @@ function propertyToLine(p: MvCodespaceProperty): string {
   return gs ? `${left} -> ${right} (${gs})` : `${left} -> ${right}`;
 }
 
-/** 仅在 ``markdown``（与 mv-view 同文件）内解析 modelRefs，定位第一个 codespace 块内匹配的类 */
+/** 仅在 ``markdown``（与 smw-view 同文件）内解析 modelRefs，定位第一个 codespace 块内匹配的类 */
 export function findCodespaceClassifierForMermaidClass(
   markdown: string,
   modelRefs: string[],
@@ -198,7 +198,7 @@ export function findCodespaceClassifierForMermaidClass(
   const byId = new Map(blocks.map((b) => [b.payload.id, b] as const));
 
   const tryBlock = (b: ParsedFenceBlock | undefined): CodespaceClassifierHit | null => {
-    if (!b || b.kind !== 'mv-model-codespace') return null;
+    if (!b || b.kind !== 'smw-model-codespace') return null;
     const payload = JSON.parse(JSON.stringify(b.payload)) as MvModelCodespacePayload;
     let found: { mi: number; path: number[]; ci: number } | null = null;
     walkClassifiers(payload, (mi, path, ci, id, name) => {
@@ -309,7 +309,7 @@ export function listCodespaceClassesForMermaidClass(
     const hash = s.indexOf('#');
     const bid = hash === -1 ? s : s.slice(0, hash);
     const b = byId.get(bid);
-    if (!b || b.kind !== 'mv-model-codespace') continue;
+    if (!b || b.kind !== 'smw-model-codespace') continue;
     if (seenCodespace.has(b.payload.id)) continue;
     seenCodespace.add(b.payload.id);
     const payload = b.payload as MvModelCodespacePayload;
@@ -367,7 +367,7 @@ export function getFirstCodespaceRefForMermaidClass(
     const hash = s.indexOf('#');
     const bid = hash === -1 ? s : s.slice(0, hash);
     const b = byId.get(bid);
-    if (!b || b.kind !== 'mv-model-codespace') continue;
+    if (!b || b.kind !== 'smw-model-codespace') continue;
     return {
       codespaceBlockId: b.payload.id,
       payload: JSON.parse(JSON.stringify(b.payload)) as MvModelCodespacePayload,

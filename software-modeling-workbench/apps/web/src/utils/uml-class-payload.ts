@@ -158,7 +158,7 @@ export function parseViewPayloadClassDiagram(payload: string): {
   if (!s) return empty;
   try {
     const o = JSON.parse(s) as UmlClassPayloadV1;
-    if (o?.schema !== 'mvwb-uml/v1' || o.diagramType !== 'class') return empty;
+    if (o?.schema !== 'smw-uml/v1' || o.diagramType !== 'class') return empty;
     return {
       state: {
         classes: Array.isArray(o.classes) ? o.classes : [],
@@ -184,7 +184,7 @@ export function buildClassDiagramViewPayload(
   edgeVisibility: ClassDiagramEdgeVisibility,
 ): string {
   const next: UmlClassPayloadV1 = {
-    schema: 'mvwb-uml/v1',
+    schema: 'smw-uml/v1',
     diagramType: 'class',
     classes: state.classes,
     relations: state.links,
@@ -197,7 +197,7 @@ export function buildClassDiagramViewPayload(
   return JSON.stringify(next, null, 2);
 }
 
-/** 从类图 JSON 中移除 inherit 边（继承以 mv-model-codespace 的 `bases` 为准落盘）。 */
+/** 从类图 JSON 中移除 inherit 边（继承以 smw-model-codespace 的 `bases` 为准落盘）。 */
 export function stripInheritFromClassDiagramPayload(payload: string): string {
   const p = parseViewPayloadClassDiagram(payload);
   const links = p.state.links.filter((l) => l.kind !== 'inherit');

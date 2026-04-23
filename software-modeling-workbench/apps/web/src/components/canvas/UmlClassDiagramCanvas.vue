@@ -30,7 +30,7 @@ const props = defineProps<{
   modelValue: string;
   /** 用于 SVG marker id 去重 */
   canvasId: string;
-  /** 当前 mv-view 绑定 modelRefs 解析出的 codespace 类树（同文件） */
+  /** 当前 smw-view 绑定 modelRefs 解析出的 codespace 类树（同文件） */
   codespaceClasses?: CodespaceClassTreeItem[];
   /** model 来源是否有效（由父层按 modelRefs 校验） */
   modelSourceValid?: boolean;
@@ -38,9 +38,9 @@ const props = defineProps<{
   modelSourceError?: string;
   /** 为 true：只读观察 bound model，仅允许改布局位置等；不写 codespace、不拉继承/关联到 model */
   observeCodespaceOnly?: boolean;
-  /** 与同文件 mv-view 的 codespace 解析一致，用于「添加一层相关类型」右键菜单 */
+  /** 与同文件 smw-view 的 codespace 解析一致，用于「添加一层相关类型」右键菜单 */
   codespaceResolveMarkdown?: string;
-  /** mv-view.modelRefs，与 codespaceResolveMarkdown 一起解析 Classifier */
+  /** smw-view.modelRefs，与 codespaceResolveMarkdown 一起解析 Classifier */
   modelRefs?: string[];
 }>();
 

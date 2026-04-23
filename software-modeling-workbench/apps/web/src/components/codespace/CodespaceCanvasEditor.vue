@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, provide, ref, watch } from 'vue';
-import type { MvModelCodespacePayload } from '@mvwb/core';
+import type { MvModelCodespacePayload } from '@smw/core';
 import { useAppLocale } from '../../composables/useAppLocale';
 import { CS_CANVAS_MSG_KEY, codespaceCanvasMessages } from '../../i18n/codespace-canvas-messages';
 import {

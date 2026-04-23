@@ -1,12 +1,12 @@
-# 核心示例：`mv-model-*` / 核心 `mv-view` / `mv-map`
+# 核心示例：`smw-model-*` / 核心 `smw-view` / `smw-map`
 
 本文件只放核心契约，不包含 Mermaid 或 `@startuml` 扩展语法。
 
 统一规则见：[`PAYLOAD_RULES.md`](PAYLOAD_RULES.md)。
 
-## `mv-model-*` 核心对象
+## `smw-model-*` 核心对象
 
-```mv-model-sql
+```smw-model-sql
 {
   "id": "sql_demo",
   "title": "演示 SQL Model 组",
@@ -40,7 +40,7 @@
 }
 ```
 
-```mv-model-kv
+```smw-model-kv
 {
   "id": "kv_demo",
   "title": "KV 文档集（示例）",
@@ -50,13 +50,13 @@
 }
 ```
 
-```mv-model-struct
+```smw-model-struct
 {
   "id": "struct_demo",
   "title": "层次结构（示例）",
   "root": {
     "name": "/",
-    "attributes": { "format": "mv-model-struct v1" },
+    "attributes": { "format": "smw-model-struct v1" },
     "groups": [
       {
         "name": "run0",
@@ -67,7 +67,7 @@
 }
 ```
 
-```mv-model-codespace
+```smw-model-codespace
 {
   "id": "cs_sample",
   "title": "代码空间（极简）",
@@ -98,7 +98,7 @@
 }
 ```
 
-```mv-model-interface
+```smw-model-interface
 {
   "id": "iface_demo",
   "title": "接口模型（示例）",
@@ -108,9 +108,9 @@
 }
 ```
 
-## 核心 `mv-view`（非 Mermaid、非 startuml）
+## 核心 `smw-view`（非 Mermaid、非 startuml）
 
-```mv-view
+```smw-view
 {
   "id": "person_mindmap",
   "kind": "mindmap-ui",
@@ -123,7 +123,7 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "plan_mindmap",
   "kind": "mindmap-ui",
@@ -142,14 +142,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "order_uml",
   "kind": "uml-diagram",
   "title": "订单领域（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "generic",
     "elements": [{ "id": "order", "kind": "entity", "name": "order" }],
     "relations": []
@@ -157,14 +157,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "order_class_puml",
   "kind": "uml-class",
   "title": "订单类图（专用画布）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "class",
     "classes": [{ "id": "Order", "name": "Order" }],
     "relations": []
@@ -172,14 +172,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "seq_checkout",
   "kind": "uml-sequence",
   "title": "下单序列（示例）",
   "modelRefs": ["sql_demo#person"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "sequence",
     "participants": [{ "id": "User", "name": "User" }, { "id": "API", "name": "API" }],
     "messages": [{ "from": "User", "to": "API", "name": "POST /orders" }]
@@ -187,14 +187,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "act_review",
   "kind": "uml-activity",
   "title": "评审活动图（示例）",
   "modelRefs": ["sql_demo#person"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "activity",
     "nodes": [
       { "id": "start", "kind": "initial" },
@@ -207,14 +207,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "obj_order",
   "kind": "uml-object",
   "title": "订单对象图（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "object",
     "elements": [{ "id": "o1", "kind": "object", "name": "order#1" }, { "id": "o2", "kind": "object", "name": "customer#1" }],
     "relations": [{ "id": "r1", "from": "o1", "to": "o2", "type": "link" }]
@@ -222,14 +222,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "pkg_arch",
   "kind": "uml-package",
   "title": "包结构（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "package",
     "elements": [{ "id": "core", "kind": "package", "name": "core" }, { "id": "api", "kind": "package", "name": "api" }],
     "relations": [{ "id": "r1", "from": "api", "to": "core", "type": "dependency" }]
@@ -237,14 +237,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "cmp_struct",
   "kind": "uml-composite-structure",
   "title": "组合结构（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "composite-structure",
     "elements": [{ "id": "car", "kind": "classifier", "name": "Car" }, { "id": "engine", "kind": "part", "name": "Engine" }],
     "relations": [{ "id": "r1", "from": "car", "to": "engine", "type": "composition" }]
@@ -252,14 +252,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "comp_layer",
   "kind": "uml-component",
   "title": "组件图（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "component",
     "components": [{ "id": "web", "name": "Web" }, { "id": "api", "name": "API" }, { "id": "db", "name": "DB" }],
     "relations": [{ "id": "r1", "from": "web", "to": "api", "type": "depends" }, { "id": "r2", "from": "api", "to": "db", "type": "depends" }]
@@ -267,14 +267,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "dep_prod",
   "kind": "uml-deployment",
   "title": "部署图（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "deployment",
     "nodes": [{ "id": "browser", "name": "Browser" }, { "id": "server", "name": "Server" }],
     "databases": [{ "id": "db", "name": "DB" }],
@@ -283,14 +283,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "profile_std",
   "kind": "uml-profile",
   "title": "Profile（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "profile",
     "elements": [{ "id": "Service", "kind": "metaclass", "name": "Service" }, { "id": "Controller", "kind": "metaclass", "name": "Controller" }],
     "relations": [{ "id": "r1", "from": "Controller", "to": "Service", "type": "extends" }]
@@ -298,14 +298,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "uc_order",
   "kind": "uml-usecase",
   "title": "用例图（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "usecase",
     "actors": [{ "id": "user", "name": "User" }],
     "useCases": [{ "id": "createOrder", "name": "Create Order" }],
@@ -314,14 +314,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "sm_order",
   "kind": "uml-state-machine",
   "title": "状态机（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "state-machine",
     "states": [{ "id": "draft", "name": "Draft" }, { "id": "paid", "name": "Paid" }],
     "transitions": [{ "from": "draft", "to": "paid", "event": "pay" }]
@@ -329,14 +329,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "comm_order",
   "kind": "uml-communication",
   "title": "通信图（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "communication",
     "participants": [{ "id": "A", "name": "Client" }, { "id": "B", "name": "API" }],
     "messages": [{ "from": "A", "to": "B", "name": "1: createOrder" }]
@@ -344,14 +344,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "timing_order",
   "kind": "uml-timing",
   "title": "Timing（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "timing",
     "lifelines": [{ "id": "web", "name": "Web" }, { "id": "api", "name": "API" }],
     "events": [{ "at": 0, "target": "web", "state": "Idle" }, { "at": 100, "target": "web", "state": "Busy" }]
@@ -359,14 +359,14 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "io_order",
   "kind": "uml-interaction-overview",
   "title": "交互概览（示例）",
   "modelRefs": ["sql_demo#order"],
   "payload": {
-    "schema": "mvwb-uml/v1",
+    "schema": "smw-uml/v1",
     "diagramType": "interaction-overview",
     "nodes": [{ "id": "start", "kind": "initial" }, { "id": "prepare", "kind": "action", "name": "Prepare" }, { "id": "end", "kind": "final" }],
     "relations": [{ "from": "start", "to": "prepare" }, { "from": "prepare", "to": "end" }]
@@ -374,7 +374,7 @@
 }
 ```
 
-```mv-view
+```smw-view
 {
   "id": "ui_screen_board",
   "kind": "ui-design",
@@ -386,9 +386,9 @@
 }
 ```
 
-## `mv-map`
+## `smw-map`
 
-```mv-map
+```smw-map
 {
   "id": "to_ts",
   "rules": [

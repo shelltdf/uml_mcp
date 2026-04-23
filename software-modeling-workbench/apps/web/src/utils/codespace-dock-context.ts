@@ -2,7 +2,7 @@ import type {
   MvCodespaceClassifier,
   MvCodespaceClassifierBase,
   MvModelCodespacePayload,
-} from '@mvwb/core';
+} from '@smw/core';
 import type { AppLocale } from '../i18n/app-locale';
 import { codespaceCanvasMessages, type CodespaceCanvasMessages } from '../i18n/codespace-canvas-messages';
 import { getNamespaceAtPath } from './codespace-canvas';

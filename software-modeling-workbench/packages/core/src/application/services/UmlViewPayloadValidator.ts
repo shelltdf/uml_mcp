@@ -18,16 +18,16 @@ export class UmlViewPayloadValidator {
         parsed = JSON.parse(s);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, message: `mv-view: ${kind} payload must be valid JSON (${msg})` };
+        return { ok: false, message: `smw-view: ${kind} payload must be valid JSON (${msg})` };
       }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return { ok: false, message: `mv-view: ${kind} payload must be a JSON object` };
+        return { ok: false, message: `smw-view: ${kind} payload must be a JSON object` };
       }
       return this.validateObject(kind, parsed as Record<string, unknown>);
     }
 
     if (typeof payload !== 'object' || Array.isArray(payload)) {
-      return { ok: false, message: `mv-view: ${kind} payload must be a JSON object or JSON string` };
+      return { ok: false, message: `smw-view: ${kind} payload must be a JSON object or JSON string` };
     }
     return this.validateObject(kind, payload as Record<string, unknown>);
   }
@@ -36,11 +36,11 @@ export class UmlViewPayloadValidator {
     const expectedDiagramType = this.policy.expectedDiagramType(kind);
     if (!expectedDiagramType) return { ok: true };
 
-    if (payload.schema !== 'mvwb-uml/v1') {
-      return { ok: false, message: `mv-view: ${kind} payload.schema must be "mvwb-uml/v1"` };
+    if (payload.schema !== 'smw-uml/v1') {
+      return { ok: false, message: `smw-view: ${kind} payload.schema must be "smw-uml/v1"` };
     }
     if (payload.diagramType !== expectedDiagramType) {
-      return { ok: false, message: `mv-view: ${kind} payload.diagramType must be "${expectedDiagramType}"` };
+      return { ok: false, message: `smw-view: ${kind} payload.diagramType must be "${expectedDiagramType}"` };
     }
 
     if (kind === 'uml-class') {
@@ -56,11 +56,11 @@ export class UmlViewPayloadValidator {
   private validateClassEntities(payload: Record<string, unknown>): ValidationResult {
     if (!('classes' in payload) || payload.classes === undefined) return { ok: true };
     if (!Array.isArray(payload.classes)) {
-      return { ok: false, message: 'mv-view: uml-class payload.classes must be an array when present' };
+      return { ok: false, message: 'smw-view: uml-class payload.classes must be an array when present' };
     }
     for (let i = 0; i < payload.classes.length; i++) {
       const c = payload.classes[i];
-      const p = `mv-view: uml-class payload.classes[${i}]`;
+      const p = `smw-view: uml-class payload.classes[${i}]`;
       if (!c || typeof c !== 'object' || Array.isArray(c)) return { ok: false, message: `${p} must be an object` };
       const co = c as Record<string, unknown>;
       if (typeof co.id !== 'string' || !co.id.trim()) return { ok: false, message: `${p}.id must be a non-empty string` };
@@ -72,11 +72,11 @@ export class UmlViewPayloadValidator {
   private validateClassRelations(payload: Record<string, unknown>): ValidationResult {
     if (!('relations' in payload) || payload.relations === undefined) return { ok: true };
     if (!Array.isArray(payload.relations)) {
-      return { ok: false, message: 'mv-view: uml-class payload.relations must be an array when present' };
+      return { ok: false, message: 'smw-view: uml-class payload.relations must be an array when present' };
     }
     for (let i = 0; i < payload.relations.length; i++) {
       const r = payload.relations[i];
-      const p = `mv-view: uml-class payload.relations[${i}]`;
+      const p = `smw-view: uml-class payload.relations[${i}]`;
       if (!r || typeof r !== 'object' || Array.isArray(r)) return { ok: false, message: `${p} must be an object` };
       const ro = r as Record<string, unknown>;
       if (typeof ro.id !== 'string' || !ro.id.trim()) return { ok: false, message: `${p}.id must be a non-empty string` };

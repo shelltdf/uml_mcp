@@ -10,6 +10,6 @@
 
 补充说明：
 
-- `mv-view.kind` 属于 JSON 型（如 `uml-*`、`mindmap-ui`、`ui-design`）时，优先对象 payload。
-- `mv-view.kind` 属于文本型扩展（如 `mermaid-*`）时，payload 维持字符串语义。
+- `smw-view.kind` 属于 JSON 型（如 `uml-*`、`mindmap-ui`、`ui-design`）时，优先对象 payload。
+- `smw-view.kind` 属于文本型扩展（如 `mermaid-*`）时，payload 维持字符串语义。
 - `@startuml` 片段仅作为插件层文本示意，不参与 `mv-*` 核心契约。

@@ -1,8 +1,8 @@
 /**
- * `mv-view` 各 kind 的 **界面文案**（画布标题、说明、占位 payload）。
- * 契约与中文基线仍以 `@mvwb/core` 的 `MV_VIEW_KIND_METADATA` 为准；英文为 Web 壳层展示用。
+ * `smw-view` 各 kind 的 **界面文案**（画布标题、说明、占位 payload）。
+ * 契约与中文基线仍以 `@smw/core` 的 `MV_VIEW_KIND_METADATA` 为准；英文为 Web 壳层展示用。
  */
-import { MV_VIEW_KIND_METADATA, type MvViewKind } from '@mvwb/core';
+import { MV_VIEW_KIND_METADATA, type MvViewKind } from '@smw/core';
 import type { AppLocale } from './app-locale';
 
 type ViewKindUi = { canvasTitle: string; description: string; payloadPlaceholder: string };
@@ -212,7 +212,7 @@ export function mvViewKindStrings(kind: MvViewKind, locale: AppLocale): ViewKind
   return locale === 'en' ? MV_VIEW_KIND_MESSAGES_EN[kind] : MV_VIEW_KIND_METADATA[kind];
 }
 
-/** Default `title` inside mv-view JSON: strip trailing “画布” / “ canvas”. */
+/** Default `title` inside smw-view JSON: strip trailing “画布” / “ canvas”. */
 export function mvViewKindDefaultBlockTitle(kind: MvViewKind, locale: AppLocale): string {
   const t = mvViewKindStrings(kind, locale).canvasTitle;
   return t.replace(/画布$| canvas$/i, '').trim() || t;

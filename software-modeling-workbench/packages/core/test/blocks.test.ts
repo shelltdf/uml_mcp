@@ -2,11 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { parseMarkdownBlocks, replaceBlockInnerById, findMvModelSqlTable } from '../src/parse/blocks.js';
 import {
   MV_MERMAID_UML_INSERT_KINDS,
-  MV_PLANTUML_VIEW_KINDS,
   MV_UML_VIEW_KINDS,
   getMermaidNonUmlViewKinds,
   getMermaidViewKinds,
-  isPlantUmlViewKind,
   isUmlViewKind,
 } from '../src/types.js';
 
@@ -22,24 +20,18 @@ const minimalSqlPayload = {
 };
 
 describe('parseMarkdownBlocks', () => {
-  it('keeps UML compatibility aliases equivalent to core APIs', () => {
-    expect(MV_PLANTUML_VIEW_KINDS).toBe(MV_UML_VIEW_KINDS);
-    expect(isPlantUmlViewKind('uml-class')).toBe(isUmlViewKind('uml-class'));
-    expect(isPlantUmlViewKind('mermaid-class')).toBe(isUmlViewKind('mermaid-class'));
-  });
-
-  it('parses mv-model-sql', () => {
-    const md = `# Hi\n\n\`\`\`mv-model-sql\n${JSON.stringify(minimalSqlPayload)}\n\`\`\`\n`;
+  it('parses smw-model-sql', () => {
+    const md = `# Hi\n\n\`\`\`smw-model-sql\n${JSON.stringify(minimalSqlPayload)}\n\`\`\`\n`;
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks).toHaveLength(1);
-    expect(r.blocks[0].kind).toBe('mv-model-sql');
+    expect(r.blocks[0].kind).toBe('smw-model-sql');
     expect(r.blocks[0].payload.id).toBe('sql1');
     expect((r.blocks[0].payload as { tables: unknown[] }).tables).toHaveLength(1);
   });
 
   it('findMvModelSqlTable resolves block#table', () => {
-    const md = `\`\`\`mv-model-sql\n${JSON.stringify({
+    const md = `\`\`\`smw-model-sql\n${JSON.stringify({
       id: 'doc',
       tables: [
         { id: 'a', columns: [{ name: 'x' }], rows: [{ x: 1 }] },
@@ -52,10 +44,10 @@ describe('parseMarkdownBlocks', () => {
     expect(findMvModelSqlTable(r.blocks, 'doc', 'a')?.id).toBe('a');
   });
 
-  it('parses mv-view mermaid-flowchart kind', () => {
+  it('parses smw-view mermaid-flowchart kind', () => {
     const mer = 'flowchart TD\n  A --> B';
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'mf1',
         kind: 'mermaid-flowchart',
@@ -72,10 +64,10 @@ describe('parseMarkdownBlocks', () => {
     expect(r.blocks[0].mermaidMirror).toBeDefined();
   });
 
-  it('parses mv-view with refs', () => {
+  it('parses smw-view with refs', () => {
     const mer = 'classDiagram\n  class A';
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'v1',
         kind: 'mermaid-class',
@@ -91,9 +83,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.blocks[0].mermaidMirror).toBeDefined();
   });
 
-  it('parses mv-view mindmap-ui and uml-diagram kinds', () => {
+  it('parses smw-view mindmap-ui and uml-diagram kinds', () => {
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'm1',
         kind: 'mindmap-ui',
@@ -102,13 +94,13 @@ describe('parseMarkdownBlocks', () => {
         payload: '{"nodes":[]}',
       }) +
       '\n\`\`\`\n' +
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'u1',
         kind: 'uml-diagram',
         modelRefs: [],
         payload: JSON.stringify({
-          schema: 'mvwb-uml/v1',
+          schema: 'smw-uml/v1',
           diagramType: 'generic',
           elements: [{ id: 'A', kind: 'actor', name: 'A' }, { id: 'B', kind: 'component', name: 'B' }],
           relations: [{ from: 'A', to: 'B', type: 'uses' }],
@@ -122,9 +114,9 @@ describe('parseMarkdownBlocks', () => {
     expect((r.blocks[1].payload as { kind: string }).kind).toBe('uml-diagram');
   });
 
-  it('parses mv-view mindmap-ui with object payload', () => {
+  it('parses smw-view mindmap-ui with object payload', () => {
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'mm_obj_1',
         kind: 'mindmap-ui',
@@ -148,18 +140,18 @@ describe('parseMarkdownBlocks', () => {
     expect((p.payload as { nodes?: unknown[] }).nodes?.length).toBe(2);
   });
 
-  it('parses mv-view ui-design and uml-class kinds', () => {
+  it('parses smw-view ui-design and uml-class kinds', () => {
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({ id: 'ui1', kind: 'ui-design', modelRefs: [], payload: { screens: [] } }) +
       '\n\`\`\`\n' +
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'uc1',
         kind: 'uml-class',
         modelRefs: [],
         payload: {
-          schema: 'mvwb-uml/v1',
+          schema: 'smw-uml/v1',
           diagramType: 'class',
           classes: [{ id: 'A', name: 'A' }],
           relations: [],
@@ -173,9 +165,9 @@ describe('parseMarkdownBlocks', () => {
     expect((r.blocks[1].payload as { kind: string }).kind).toBe('uml-class');
   });
 
-  it('rejects mv-view uml-class payload that is not mvwb-uml/v1 class json', () => {
+  it('rejects smw-view uml-class payload that is not smw-uml/v1 class json', () => {
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'uc_bad',
         kind: 'uml-class',
@@ -188,15 +180,15 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('uml-class payload must be valid JSON'))).toBe(true);
   });
 
-  it('parses mv-view uml-sequence with mvwb-uml/v1 payload', () => {
+  it('parses smw-view uml-sequence with smw-uml/v1 payload', () => {
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'us1',
         kind: 'uml-sequence',
         modelRefs: [],
         payload: JSON.stringify({
-          schema: 'mvwb-uml/v1',
+          schema: 'smw-uml/v1',
           diagramType: 'sequence',
           participants: [{ id: 'u', name: 'User' }, { id: 'a', name: 'API' }],
           messages: [{ from: 'u', to: 'a', name: 'request' }],
@@ -209,15 +201,15 @@ describe('parseMarkdownBlocks', () => {
     expect((r.blocks[0].payload as { kind: string }).kind).toBe('uml-sequence');
   });
 
-  it('rejects mv-view uml-component when diagramType mismatches kind', () => {
+  it('rejects smw-view uml-component when diagramType mismatches kind', () => {
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'ucp_bad',
         kind: 'uml-component',
         modelRefs: [],
         payload: JSON.stringify({
-          schema: 'mvwb-uml/v1',
+          schema: 'smw-uml/v1',
           diagramType: 'deployment',
         }),
       }) +
@@ -227,20 +219,20 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('uml-component payload.diagramType'))).toBe(true);
   });
 
-  it('rejects mv-view with unknown kind', () => {
+  it('rejects smw-view with unknown kind', () => {
     const md =
-      '\`\`\`mv-view\n' + JSON.stringify({ id: 'x', kind: 'unknown-kind', modelRefs: [] }) + '\n\`\`\`\n';
+      '\`\`\`smw-view\n' + JSON.stringify({ id: 'x', kind: 'unknown-kind', modelRefs: [] }) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.blocks).toHaveLength(0);
     expect(r.errors.some((e) => e.message.includes('unknown kind'))).toBe(true);
   });
 
-  it('parses multiple mv-model-sql blocks in one file', () => {
+  it('parses multiple smw-model-sql blocks in one file', () => {
     const md =
-      '\`\`\`mv-model-sql\n' +
+      '\`\`\`smw-model-sql\n' +
       '{"id":"a","tables":[{"id":"x","columns":[{"name":"x"}],"rows":[{"x":1}]}]}\n' +
       '\`\`\`\n\n' +
-      '\`\`\`mv-model-sql\n' +
+      '\`\`\`smw-model-sql\n' +
       '{"id":"b","title":"Second","tables":[{"id":"t","columns":[{"name":"y"}],"rows":[{"y":2}]}]}\n' +
       '\`\`\`\n';
     const r = parseMarkdownBlocks(md);
@@ -250,9 +242,9 @@ describe('parseMarkdownBlocks', () => {
     expect((r.blocks[1].payload as { title?: string }).title).toBe('Second');
   });
 
-  it('rejects mv-model-sql row with unknown column key', () => {
+  it('rejects smw-model-sql row with unknown column key', () => {
     const md =
-      '\`\`\`mv-model-sql\n' +
+      '\`\`\`smw-model-sql\n' +
       JSON.stringify({
         id: 't',
         tables: [{ id: 'tb', columns: [{ name: 'a' }], rows: [{ a: 1, bad: 2 }] }],
@@ -263,9 +255,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('unknown property'))).toBe(true);
   });
 
-  it('rejects mv-model-sql row missing required column', () => {
+  it('rejects smw-model-sql row missing required column', () => {
     const md =
-      '\`\`\`mv-model-sql\n' +
+      '\`\`\`smw-model-sql\n' +
       JSON.stringify({
         id: 't',
         tables: [
@@ -285,7 +277,7 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('missing required'))).toBe(true);
   });
 
-  it('parses mv-model-sql with extended column metadata', () => {
+  it('parses smw-model-sql with extended column metadata', () => {
     const payload = {
       id: 'grp',
       tables: [
@@ -305,17 +297,17 @@ describe('parseMarkdownBlocks', () => {
         },
       ],
     };
-    const md = '\`\`\`mv-model-sql\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`smw-model-sql\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks).toHaveLength(1);
-    expect(r.blocks[0].kind).toBe('mv-model-sql');
+    expect(r.blocks[0].kind).toBe('smw-model-sql');
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('rejects mv-model-sql column with invalid primaryKey type', () => {
+  it('rejects smw-model-sql column with invalid primaryKey type', () => {
     const md =
-      '\`\`\`mv-model-sql\n' +
+      '\`\`\`smw-model-sql\n' +
       JSON.stringify({
         id: 't',
         tables: [{ id: 'tb', columns: [{ name: 'a', primaryKey: 'yes' }], rows: [{ a: 1 }] }],
@@ -326,9 +318,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('primaryKey'))).toBe(true);
   });
 
-  it('rejects mv-model-sql duplicate primary key tuple in rows', () => {
+  it('rejects smw-model-sql duplicate primary key tuple in rows', () => {
     const md =
-      '\`\`\`mv-model-sql\n' +
+      '\`\`\`smw-model-sql\n' +
       JSON.stringify({
         id: 'x',
         tables: [
@@ -351,9 +343,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('duplicate primary key'))).toBe(true);
   });
 
-  it('rejects mv-model-sql duplicate table id', () => {
+  it('rejects smw-model-sql duplicate table id', () => {
     const md =
-      '\`\`\`mv-model-sql\n' +
+      '\`\`\`smw-model-sql\n' +
       JSON.stringify({
         id: 'x',
         tables: [
@@ -367,24 +359,24 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('duplicate table id'))).toBe(true);
   });
 
-  it('parses mv-model-kv', () => {
+  it('parses smw-model-kv', () => {
     const payload = { id: 'c1', title: 'col', documents: [{ a: 1 }, { b: 'x' }] };
-    const md = '\`\`\`mv-model-kv\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`smw-model-kv\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
-    expect(r.blocks[0].kind).toBe('mv-model-kv');
+    expect(r.blocks[0].kind).toBe('smw-model-kv');
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('rejects mv-model-kv document that is array', () => {
+  it('rejects smw-model-kv document that is array', () => {
     const md =
-      '\`\`\`mv-model-kv\n' + JSON.stringify({ id: 'x', documents: [[1, 2]] }) + '\n\`\`\`\n';
+      '\`\`\`smw-model-kv\n' + JSON.stringify({ id: 'x', documents: [[1, 2]] }) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.blocks).toHaveLength(0);
     expect(r.errors.some((e) => e.message.includes('documents[0]'))).toBe(true);
   });
 
-  it('parses mv-model-struct', () => {
+  it('parses smw-model-struct', () => {
     const payload = {
       id: 'h1',
       root: {
@@ -392,30 +384,30 @@ describe('parseMarkdownBlocks', () => {
         groups: [{ name: 'g1', datasets: [{ name: 'd1', dtype: 'float', data: [1] }] }],
       },
     };
-    const md = '\`\`\`mv-model-struct\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`smw-model-struct\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
-    expect(r.blocks[0].kind).toBe('mv-model-struct');
+    expect(r.blocks[0].kind).toBe('smw-model-struct');
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('parses mv-model-codespace', () => {
+  it('parses smw-model-codespace', () => {
     const payload = {
       id: 'cs1',
       title: 'mono',
       workspaceRoot: '.',
       modules: [{ id: 'a', name: 'pkg_a', path: 'packages/a', role: 'lib' }],
     };
-    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`smw-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
-    expect(r.blocks[0].kind).toBe('mv-model-codespace');
+    expect(r.blocks[0].kind).toBe('smw-model-codespace');
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('rejects mv-model-codespace duplicate module id', () => {
+  it('rejects smw-model-codespace duplicate module id', () => {
     const md =
-      '\`\`\`mv-model-codespace\n' +
+      '\`\`\`smw-model-codespace\n' +
       JSON.stringify({
         id: 'x',
         modules: [
@@ -429,7 +421,7 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('duplicate id'))).toBe(true);
   });
 
-  it('parses mv-model-codespace with namespaces classifiers and associations', () => {
+  it('parses smw-model-codespace with namespaces classifiers and associations', () => {
     const payload = {
       id: 'cs-uml',
       title: 'with-ns',
@@ -472,14 +464,14 @@ describe('parseMarkdownBlocks', () => {
         },
       ],
     };
-    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`smw-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
-    expect(r.blocks[0].kind).toBe('mv-model-codespace');
+    expect(r.blocks[0].kind).toBe('smw-model-codespace');
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('parses mv-model-codespace members with methodKind/accessor/operatorSymbol', () => {
+  it('parses smw-model-codespace members with methodKind/accessor/operatorSymbol', () => {
     const payload = {
       id: 'cs-member-kinds',
       modules: [
@@ -511,14 +503,14 @@ describe('parseMarkdownBlocks', () => {
         },
       ],
     };
-    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`smw-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks).toHaveLength(1);
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('parses mv-model-codespace class properties[]', () => {
+  it('parses smw-model-codespace class properties[]', () => {
     const payload = {
       id: 'cs-properties',
       modules: [
@@ -552,16 +544,16 @@ describe('parseMarkdownBlocks', () => {
         },
       ],
     };
-    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`smw-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks).toHaveLength(1);
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('rejects mv-model-codespace property with invalid getterVisibility', () => {
+  it('rejects smw-model-codespace property with invalid getterVisibility', () => {
     const md =
-      '\`\`\`mv-model-codespace\n' +
+      '\`\`\`smw-model-codespace\n' +
       JSON.stringify({
         id: 'x',
         modules: [
@@ -590,9 +582,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('getterVisibility must be one of'))).toBe(true);
   });
 
-  it('mv-view removal does not affect mv-model-codespace parsing', () => {
+  it('smw-view removal does not affect smw-model-codespace parsing', () => {
     const modelBlock =
-      '```mv-model-codespace\n' +
+      '```smw-model-codespace\n' +
       JSON.stringify({
         id: 'cs_only_truth',
         modules: [{ id: 'm1', name: 'ModuleA', namespaces: [{ id: 'n1', name: 'NsA', classes: [{ id: 'c1', name: 'User' }] }] }],
@@ -600,7 +592,7 @@ describe('parseMarkdownBlocks', () => {
       '\n```\n';
     const mer = 'classDiagram\n  class User';
     const viewBlock =
-      '```mv-view\n' +
+      '```smw-view\n' +
       JSON.stringify({
         id: 'v1',
         kind: 'mermaid-class',
@@ -613,18 +605,18 @@ describe('parseMarkdownBlocks', () => {
     const mdWithView = `${modelBlock}\n${viewBlock}`;
     const withView = parseMarkdownBlocks(mdWithView);
     expect(withView.errors).toEqual([]);
-    expect(withView.blocks.some((b) => b.kind === 'mv-model-codespace' && b.payload.id === 'cs_only_truth')).toBe(true);
+    expect(withView.blocks.some((b) => b.kind === 'smw-model-codespace' && b.payload.id === 'cs_only_truth')).toBe(true);
 
     const mdWithoutView = modelBlock;
     const withoutView = parseMarkdownBlocks(mdWithoutView);
     expect(withoutView.errors).toEqual([]);
-    const model = withoutView.blocks.find((b) => b.kind === 'mv-model-codespace');
+    const model = withoutView.blocks.find((b) => b.kind === 'smw-model-codespace');
     expect(model?.payload.id).toBe('cs_only_truth');
   });
 
-  it('rejects mv-model-codespace module/namespace names with non-english characters', () => {
+  it('rejects smw-model-codespace module/namespace names with non-english characters', () => {
     const md =
-      '\`\`\`mv-model-codespace\n' +
+      '\`\`\`smw-model-codespace\n' +
       JSON.stringify({
         id: 'x',
         modules: [
@@ -641,9 +633,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('must use English letters'))).toBe(true);
   });
 
-  it('accepts mv-model-codespace root namespace empty string', () => {
+  it('accepts smw-model-codespace root namespace empty string', () => {
     const md =
-      '```mv-model-codespace\n' +
+      '```smw-model-codespace\n' +
       JSON.stringify({
         id: 'cs_root_dot',
         modules: [
@@ -658,12 +650,12 @@ describe('parseMarkdownBlocks', () => {
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toHaveLength(0);
     expect(r.blocks).toHaveLength(1);
-    expect(r.blocks[0]?.kind).toBe('mv-model-codespace');
+    expect(r.blocks[0]?.kind).toBe('smw-model-codespace');
   });
 
-  it('rejects mv-model-codespace methods accessor not allowed', () => {
+  it('rejects smw-model-codespace methods accessor not allowed', () => {
     const md =
-      '\`\`\`mv-model-codespace\n' +
+      '\`\`\`smw-model-codespace\n' +
       JSON.stringify({
         id: 'x',
         modules: [
@@ -686,9 +678,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('accessor') && e.message.includes('not allowed'))).toBe(true);
   });
 
-  it('rejects mv-model-codespace duplicate id between module and namespace', () => {
+  it('rejects smw-model-codespace duplicate id between module and namespace', () => {
     const md =
-      '\`\`\`mv-model-codespace\n' +
+      '\`\`\`smw-model-codespace\n' +
       JSON.stringify({
         id: 'x',
         modules: [
@@ -705,9 +697,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('duplicate id'))).toBe(true);
   });
 
-  it('rejects mv-model-codespace bases targetId not a classifier', () => {
+  it('rejects smw-model-codespace bases targetId not a classifier', () => {
     const md =
-      '\`\`\`mv-model-codespace\n' +
+      '\`\`\`smw-model-codespace\n' +
       JSON.stringify({
         id: 'x',
         modules: [
@@ -734,9 +726,9 @@ describe('parseMarkdownBlocks', () => {
     );
   });
 
-  it('rejects mv-model-codespace association endpoint not a classifier', () => {
+  it('rejects smw-model-codespace association endpoint not a classifier', () => {
     const md =
-      '\`\`\`mv-model-codespace\n' +
+      '\`\`\`smw-model-codespace\n' +
       JSON.stringify({
         id: 'x',
         modules: [
@@ -769,7 +761,7 @@ describe('parseMarkdownBlocks', () => {
     );
   });
 
-  it('parses mv-model-codespace member and property associatedClassifierId', () => {
+  it('parses smw-model-codespace member and property associatedClassifierId', () => {
     const payload = {
       id: 'cs-assoccls',
       modules: [
@@ -794,15 +786,15 @@ describe('parseMarkdownBlocks', () => {
         },
       ],
     };
-    const md = '\`\`\`mv-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`smw-model-codespace\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('rejects mv-model-codespace associatedClassifierId when not a classifier id', () => {
+  it('rejects smw-model-codespace associatedClassifierId when not a classifier id', () => {
     const md =
-      '\`\`\`mv-model-codespace\n' +
+      '\`\`\`smw-model-codespace\n' +
       JSON.stringify({
         id: 'x',
         modules: [
@@ -833,22 +825,22 @@ describe('parseMarkdownBlocks', () => {
     );
   });
 
-  it('parses mv-model-interface', () => {
+  it('parses smw-model-interface', () => {
     const payload = {
       id: 'api1',
       title: '用户 API',
       endpoints: [{ id: 'list', name: '列表', method: 'GET', path: '/users' }],
     };
-    const md = '\`\`\`mv-model-interface\n' + JSON.stringify(payload) + '\n\`\`\`\n';
+    const md = '\`\`\`smw-model-interface\n' + JSON.stringify(payload) + '\n\`\`\`\n';
     const r = parseMarkdownBlocks(md);
     expect(r.errors).toEqual([]);
-    expect(r.blocks[0].kind).toBe('mv-model-interface');
+    expect(r.blocks[0].kind).toBe('smw-model-interface');
     expect(r.blocks[0].payload).toMatchObject(payload);
   });
 
-  it('rejects mv-model-interface duplicate endpoint id', () => {
+  it('rejects smw-model-interface duplicate endpoint id', () => {
     const md =
-      '\`\`\`mv-model-interface\n' +
+      '\`\`\`smw-model-interface\n' +
       JSON.stringify({
         id: 'x',
         endpoints: [
@@ -862,9 +854,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.errors.some((e) => e.message.includes('duplicate endpoint id'))).toBe(true);
   });
 
-  it('parses mv-view mermaid-* without trailing mermaid mirror', () => {
+  it('parses smw-view mermaid-* without trailing mermaid mirror', () => {
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'bad',
         kind: 'mermaid-flowchart',
@@ -879,10 +871,10 @@ describe('parseMarkdownBlocks', () => {
     expect(r.blocks[0].mermaidMirror).toBeUndefined();
   });
 
-  it('parses mv-view mermaid-flowchart with trailing mermaid mirror and fills empty payload', () => {
+  it('parses smw-view mermaid-flowchart with trailing mermaid mirror and fills empty payload', () => {
     const mer = 'flowchart TD\n  A --> B';
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({ id: 'mf2', kind: 'mermaid-flowchart', modelRefs: [], payload: '' }) +
       '\n\`\`\`\n\n\`\`\`mermaid\n' +
       mer +
@@ -898,9 +890,9 @@ describe('parseMarkdownBlocks', () => {
     expect(r.blocks[0].endOffset).toBeGreaterThan(r.blocks[0].innerEndOffset);
   });
 
-  it('prefers mv-view JSON payload over trailing mermaid when both non-empty', () => {
+  it('prefers smw-view JSON payload over trailing mermaid when both non-empty', () => {
     const md =
-      '\`\`\`mv-view\n' +
+      '\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'mf3',
         kind: 'mermaid-flowchart',
@@ -914,10 +906,10 @@ describe('parseMarkdownBlocks', () => {
     expect(r.blocks[0].mermaidMirror).toBeDefined();
   });
 
-  it('replaceBlockInnerById syncs trailing mermaid mirror for mermaid-* mv-view', () => {
+  it('replaceBlockInnerById syncs trailing mermaid mirror for mermaid-* smw-view', () => {
     const mer0 = 'flowchart TD\n  X';
     const md =
-      'pre\n\`\`\`mv-view\n' +
+      'pre\n\`\`\`smw-view\n' +
       JSON.stringify({
         id: 'sync1',
         kind: 'mermaid-flowchart',
@@ -942,12 +934,12 @@ describe('parseMarkdownBlocks', () => {
     expect((r.blocks[0].payload as { payload?: string }).payload).toBe(mer1);
   });
 
-  it('replaceBlockInnerById for mv-model-sql', () => {
+  it('replaceBlockInnerById for smw-model-sql', () => {
     const inner0 = {
       id: 'u',
       tables: [{ id: 'main', columns: [{ name: 'n' }], rows: [] }],
     };
-    const md = 'x\n\`\`\`mv-model-sql\n' + JSON.stringify(inner0) + '\n\`\`\`\ny';
+    const md = 'x\n\`\`\`smw-model-sql\n' + JSON.stringify(inner0) + '\n\`\`\`\ny';
     const next = JSON.stringify(
       {
         id: 'u',
