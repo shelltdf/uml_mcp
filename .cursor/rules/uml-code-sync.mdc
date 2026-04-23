@@ -6,7 +6,7 @@ alwaysApply: false
 
 # UML ↔ 代码 同步开发（仓库约定）
 
-当用户编辑或提及 `uml.sync.md`、`*.uml.md`、`*.class.md`、`*.code.md` 时，助手应遵守下列契约（权威细节见 `ai-software-engineering/02-physical/uml-vue-sdi/spec.md` 与 `examples/sync-demo/`）。未写 YAML 时，产品默认 **命名空间根** 标量为 **`namespace`**，**代码实现** 一项为 **`impl_cpp_project`** / **`cpp`**；**`sync_profile`** 在 GUI 仅为 **`none`** 或 **`strict`**（默认 **strict**）。路径字段仅写入契约，不访问文件系统；**`namespace_root`** 为唯一路径（非列表）；**`code_impls`** 添加后不在 GUI 内改目录与类型（可删后重加）。
+当用户编辑或提及 `uml.sync.md`、`*.uml.md`、`*.class.md`、`*.code.md` 时，助手应遵守下列契约（权威细节见 `ai-software-engineering/02-physical/uml-vue-sdi/spec.md` 与 `uml-vue-sdi/examples/sync-demo/`）。未写 YAML 时，产品默认 **命名空间根** 标量为 **`namespace`**，**代码实现** 一项为 **`impl_cpp_project`** / **`cpp`**；**`sync_profile`** 在 GUI 仅为 **`none`** 或 **`strict`**（默认 **strict**）。路径字段仅写入契约，不访问文件系统；**`namespace_root`** 为唯一路径（非列表）；**`code_impls`** 添加后不在 GUI 内改目录与类型（可删后重加）。
 
 ## 文件角色
 
@@ -27,7 +27,7 @@ alwaysApply: false
 ## 与 AI 协作
 
 - **不要**在未读 `uml.sync.md` 的情况下假设目录结构；若缺失则询问或采用示例结构。  
-- 变更格式契约时，**同步**更新：`02-physical/uml-vue-sdi/spec.md`、`examples/sync-demo/`、本规则中有字段表的小节。
+- 变更格式契约时，**同步**更新：`02-physical/uml-vue-sdi/spec.md`、`uml-vue-sdi/examples/sync-demo/`、本规则中有字段表的小节。
 
 ## 非目标
 

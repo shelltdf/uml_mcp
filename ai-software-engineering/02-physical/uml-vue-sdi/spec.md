@@ -38,12 +38,12 @@ sync_profile: strict
 
 ## `*.uml.md`
 
-- UTF-8；可有 `##` 节与说明性引用；**每张图**对应**一个** fenced UML 块（默认 **一张图一个文件**；多图须在 `uml_root` 下拆成多个 `*.uml.md`，见 `examples/sync-demo/diagrams/`）。
+- UTF-8；可有 `##` 节与说明性引用；**每张图**对应**一个** fenced UML 块（默认 **一张图一个文件**；多图须在 `uml_root` 下拆成多个 `*.uml.md`，见 `uml-vue-sdi/examples/sync-demo/diagrams/`）。
 - UML 块语言标识：`mermaid`（默认）；若使用纯文本占位，语言可为 `text` 且不参与渲染。
 
 ## `*.class.md`
 
-- **一文件一类**：描述**一个类**的全部契约成员（字段、方法等）；**推荐**脚手架默认类名 **`helloworld`** / **`Helloworld`**（示例见 `examples/sync-demo/namespace/helloworld.class.md`）。
+- **一文件一类**：描述**一个类**的全部契约成员（字段、方法等）；**推荐**脚手架默认类名 **`helloworld`** / **`Helloworld`**（示例见 `uml-vue-sdi/examples/sync-demo/namespace/helloworld.class.md`）。
 - 可选 **`<!-- class-md-meta: {"inherits":"…","associations":["…"]} -->`**：仅用于画布上**只读展示**父类名与关联类名（继承/关联语义仍以对应 `*.uml.md` 为准）。
 - 推荐结构：
 
@@ -62,7 +62,7 @@ sync_profile: strict
 ## `*.code.md`
 
 - **放置位置**：须位于某一 **`namespace_root`** 之下（与 `*.class.md` 同命名空间树），**不**放在各 `code_impls` 的代码根目录内（后者仅放真实源码如 `.cpp` / `.h`）。
-- **抽象契约**：用 **`## 函数` / `## 全局变量 / 常量` / `## 宏`** 三节 + 表格（列与 `examples/sync-demo/namespace/globals.code.md` 一致）；**不**要求在此书写**具体语言**源码——与实现语言的映射在 `code_impls` 侧完成。
+- **抽象契约**：用 **`## 函数` / `## 全局变量 / 常量` / `## 宏`** 三节 + 表格（列与 `uml-vue-sdi/examples/sync-demo/namespace/globals.code.md` 一致）；**不**要求在此书写**具体语言**源码——与实现语言的映射在 `code_impls` 侧完成。
 - **布局注释**：`<!-- code-md-layout:{"v":1,"functionPositions":[],"variablePositions":[],"macroPositions":[]} -->`，各数组与对应表格**行顺序**对齐，供画布卡片坐标使用（`src/lib/codeMdModel.ts`）。
 - **画布**（`CodeMdCanvas.vue`）：**2D 视口**；**左侧竖向工具栏**（仅图标）新建函数 / 变量 / 宏；卡片按类别着色，可拖拽、删除，**底部表单**编辑选中项字段并写回 Markdown。
 

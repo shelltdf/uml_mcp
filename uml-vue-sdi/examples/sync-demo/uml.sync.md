@@ -9,6 +9,9 @@ sync_profile: strict
 
 # 同步规则（供 AI 阅读）
 
+> ⚠️ 该示例属于 `uml-vue-sdi` 一代开发原型（已废弃）。  
+> 二代原型请使用 **Software Modeling Workbench（软件建模工作台）**：`software-modeling-workbench/`。
+
 > **读者说明**：本节正文面向 **AI / 自动化助手**；人类可参阅，但变更顺序与约束以本节为准。
 
 正文按 `sync_profile` **分类**列出：仅适用与上方 YAML 中 `sync_profile` 字段**同名**的二级标题小节。当前仓库仅配置 **strict** 一种策略。

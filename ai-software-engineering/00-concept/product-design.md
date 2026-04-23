@@ -17,7 +17,7 @@
 
 ## 用户与场景
 
-- 架构师/开发者在仓库中维护 `uml_root`、`namespace_root` 与各 `code_impls` 所指向目录的对齐关系（示例见 `examples/sync-demo/`）。
+- 架构师/开发者在仓库中维护 `uml_root`、`namespace_root` 与各 `code_impls` 所指向目录的对齐关系（示例见 `uml-vue-sdi/examples/sync-demo/`）。
 - 使用 Cursor 规则（`.cursor/rules/uml-code-sync.mdc`）约束 AI 辅助下的同步开发模式。
 
 ## UI 壳层（SDI）

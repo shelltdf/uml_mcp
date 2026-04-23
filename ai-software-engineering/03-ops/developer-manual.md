@@ -3,8 +3,8 @@
 ## 仓库布局
 
 - `ai-software-engineering/`：四阶段文档（勿放入实现产物）。
-- `uml-vue-sdi/`：Vue 实现。
-- `examples/sync-demo/`：示例契约与目录树（`uml.sync.md`、`diagrams/`、`namespace/`、`impl_cpp_project/` 等）；字段与行为以 `02-physical/uml-vue-sdi/spec.md` 为准。
+- `uml-vue-sdi/`：Vue 一代原型（已废弃，历史参考）。
+- `uml-vue-sdi/examples/sync-demo/`：示例契约与目录树（`uml.sync.md`、`diagrams/`、`namespace/`、`impl_cpp_project/` 等）；字段与行为以 `02-physical/uml-vue-sdi/spec.md` 为准。
 
 ## 命令
 

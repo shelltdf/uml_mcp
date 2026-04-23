@@ -1,6 +1,6 @@
 # uml_mcp
 
-UML Markdown 与代码同步工作流：四阶段文档在 `ai-software-engineering/`，Vue SDI 实现在 `uml-vue-sdi/`，示例与 `uml.sync.md` 在 `examples/sync-demo/`。
+UML Markdown 与代码同步工作流：四阶段文档在 `ai-software-engineering/`，Vue SDI 一代原型在 `uml-vue-sdi/`（已废弃），示例与 `uml.sync.md` 在 `uml-vue-sdi/examples/sync-demo/`。
 
 **Software Modeling Workbench（软件建模工作台）**（MD 多围栏 model/view/map，SPA + Electron + VS Code）：见根目录 [`software-modeling-workbench/README.md`](software-modeling-workbench/README.md)。
 
