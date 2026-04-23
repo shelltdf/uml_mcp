@@ -364,7 +364,6 @@ function layoutNsTreeLR(
     });
     (c.enums ?? [])
       .map((x, i) => ({ x, i }))
-      .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
       .forEach(({ x, i }) => {
         rowItems.push({
           pick: {
@@ -382,40 +381,32 @@ function layoutNsTreeLR(
           floating: true,
         });
       });
-    const nestedIndexed = (c.classes ?? [])
-      .map((x, i) => ({ x, i }))
-      .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }));
+    const nestedIndexed = (c.classes ?? []).map((x, i) => ({ x, i }));
     for (const it of nestedIndexed) {
       collectClasses(c.classes, rootCi, it.i, [...classPath, it.i], indent + 1);
     }
   };
-  const rootClassesIndexed = (ns.classes ?? [])
-    .map((x, i) => ({ x, i }))
-    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }));
+  const rootClassesIndexed = (ns.classes ?? []).map((x, i) => ({ x, i }));
   for (const it of rootClassesIndexed) {
     collectClasses(ns.classes, it.i, it.i, [], 0);
   }
   (ns.variables ?? [])
     .map((x, i) => ({ x, i }))
-    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
     .forEach(({ x, i }) => {
       rowItems.push({ pick: { t: 'var', mi, path, vi: i }, label: lbl.varRow(x.name) });
     });
   (ns.enums ?? [])
     .map((x, i) => ({ x, i }))
-    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
     .forEach(({ x, i }) => {
       rowItems.push({ pick: { t: 'enum', mi, path, eni: i }, label: lbl.enumRow(x.name) });
     });
   (ns.functions ?? [])
     .map((x, i) => ({ x, i }))
-    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
     .forEach(({ x, i }) => {
       rowItems.push({ pick: { t: 'fn', mi, path, fi: i }, label: lbl.fnRow(x.name) });
     });
   (ns.macros ?? [])
     .map((x, i) => ({ x, i }))
-    .sort((a, b) => (a.x.name ?? '').localeCompare(b.x.name ?? '', undefined, { sensitivity: 'base' }))
     .forEach(({ x, i }) => {
       rowItems.push({ pick: { t: 'macro', mi, path, maci: i }, label: lbl.macroRow(x.name) });
     });
@@ -480,9 +471,7 @@ function layoutNsTreeLR(
     }
   }
 
-  const childOrder = children
-    .map((child, origI) => ({ child, origI, span: measureLrSubtree(child, lbl).w }))
-    .sort((a, b) => (a.child.name ?? '').localeCompare(b.child.name ?? '', undefined, { sensitivity: 'base' }));
+  const childOrder = children.map((child, origI) => ({ child, origI, span: measureLrSubtree(child, lbl).w }));
 
   const nEdges = rowItems.length + childOrder.length;
   const busXs = busXsInCorridor(sx0, x1, Math.max(1, nEdges));
@@ -596,9 +585,7 @@ function layoutModuleStrip(
   let yCur = innerY;
   let innerMaxW = 0;
   const rootHeaders: Rect[] = [];
-  const rootOrder = roots
-    .map((ns, origI) => ({ ns, origI, span: measureLrSubtree(ns, lbl).w }))
-    .sort((a, b) => (a.ns.name ?? '').localeCompare(b.ns.name ?? '', undefined, { sensitivity: 'base' }));
+  const rootOrder = roots.map((ns, origI) => ({ ns, origI, span: measureLrSubtree(ns, lbl).w }));
   rootOrder.forEach(({ ns, origI }) => {
     const { w: cw, h: ch, nsHeader } = layoutNsTreeLR(ns, mi, [origI], innerX, yCur, segment, bounds, edges, lbl);
     rootHeaders.push(nsHeader);
@@ -766,9 +753,7 @@ function enforceNestedClassClusterLayout(nodes: CodespaceLayoutNode[]): void {
     const pKey = classPickKey(parent.pick as Extract<CodespaceSvgPick, { t: 'class' }>);
     const classKids = childMap.get(pKey) ?? [];
     const enumKids = enumMap.get(pKey) ?? [];
-    const classSorted = [...classKids].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
-    const enumSorted = [...enumKids].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
-    const kids = [...classSorted, ...enumSorted];
+    const kids = [...classKids, ...enumKids];
     if (!kids.length) return;
     const totalH = kids.reduce((acc, k, i) => acc + k.h + (i > 0 ? rowGap : 0), 0);
     let y = parent.y + (parent.h - totalH) / 2;
@@ -884,33 +869,6 @@ function pathsEqual(a: number[], b: number[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-/**
- * 某命名空间下「内容列」的竖向外包（不含该 NS 自身标题行；含成员行、子 NS 整棵子树、类内嵌套节点等）。
- * 用于将父 NS 标题在竖向上对齐到子内容整体中心。
- */
-function boundsOfNamespaceContent(
-  nodes: CodespaceLayoutNode[],
-  mi: number,
-  nsPath: number[],
-): { minY: number; maxY: number } | null {
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  let any = false;
-  for (const n of nodes) {
-    if (n.pick.t === 'module') continue;
-    if (n.pick.mi !== mi) continue;
-    const p = n.pick.path;
-    if (p.length < nsPath.length) continue;
-    if (!nsPath.every((v, i) => p[i] === v)) continue;
-    if (n.pick.t === 'ns' && pathsEqual(p, nsPath)) continue;
-    any = true;
-    minY = Math.min(minY, n.y);
-    maxY = Math.max(maxY, n.y + n.h);
-  }
-  if (!any || !Number.isFinite(minY) || !Number.isFinite(maxY)) return null;
-  return { minY, maxY };
-}
-
 function shiftSubtree(nodes: CodespaceLayoutNode[], mi: number, nsPath: number[], dy: number): void {
   if (Math.abs(dy) < 0.01) return;
   for (const n of nodes) {
@@ -961,6 +919,33 @@ function enforceSiblingNamespaceSeparation(nodes: CodespaceLayoutNode[]): void {
       }
     }
   }
+}
+
+/**
+ * 某命名空间下「内容列」的竖向外包（不含该 NS 自身标题行；含成员行、子 NS 整棵子树、类内嵌套节点等）。
+ * 用于将父 NS 标题在竖向上对齐到子内容整体中心。
+ */
+function boundsOfNamespaceContent(
+  nodes: CodespaceLayoutNode[],
+  mi: number,
+  nsPath: number[],
+): { minY: number; maxY: number } | null {
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let any = false;
+  for (const n of nodes) {
+    if (n.pick.t === 'module') continue;
+    if (n.pick.mi !== mi) continue;
+    const p = n.pick.path;
+    if (p.length < nsPath.length) continue;
+    if (!nsPath.every((v, i) => p[i] === v)) continue;
+    if (n.pick.t === 'ns' && pathsEqual(p, nsPath)) continue;
+    any = true;
+    minY = Math.min(minY, n.y);
+    maxY = Math.max(maxY, n.y + n.h);
+  }
+  if (!any || !Number.isFinite(minY) || !Number.isFinite(maxY)) return null;
+  return { minY, maxY };
 }
 
 /**
@@ -1163,9 +1148,7 @@ export function layoutCodespaceSvg(
 
   let cursorY = PAD;
   let maxW = 0;
-  const modulesOrdered = modules
-    .map((m, mi) => ({ m, mi }))
-    .sort((a, b) => (a.m.name ?? '').localeCompare(b.m.name ?? '', undefined, { sensitivity: 'base' }));
+  const modulesOrdered = modules.map((m, mi) => ({ m, mi }));
   modulesOrdered.forEach(({ m, mi }) => {
     const { w, h } = layoutModuleStrip(m, mi, PAD, cursorY, nodesOut, bounds, edgesOut, labels);
     maxW = Math.max(maxW, w);
@@ -1187,7 +1170,7 @@ export function layoutCodespaceSvg(
   centerParentsOnChildren(nodesOut);
   resolveNodeOverlaps(nodesOut);
   /**
-   * `centerParentsOnChildren` 只移动 NS 标题行的 y，会破坏先前按子树 bbox 对齐的同级间距；
+   * 父 NS 头部对齐会改变标题行 y；
    * 最后再跑一次兄弟分离，把同一父下的 NS 子树竖向压紧为「上一棵底 + ROW_GAP」。
    */
   enforceSiblingNamespaceSeparation(nodesOut);
