@@ -10,4 +10,4 @@
 
 ## 构建前提
 
-- 先执行仓库根 `model-view-workbench` 下 `npm run build` 与 `npm run copy:vscode-media`，再 `npm run compile --workspace=mvwb-workbench`。
+- 先执行仓库根 `software-modeling-workbench` 下 `npm run build` 与 `npm run copy:vscode-media`，再 `npm run compile --workspace=software-modeling-workbench`。

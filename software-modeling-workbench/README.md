@@ -1,4 +1,4 @@
-# Model-View Workbench（MD-centric）
+# Software Modeling Workbench（软件建模工作台，MD-centric）
 
 以 **Markdown 为唯一落盘格式**，用围栏块表达 **model / view / map**，支持浏览器 SPA、Electron、VS Code Webview 三壳共用 `packages/core` 与 `apps/web` 构建产物。其中 **Model 围栏**含 **`mv-model-sql`**（一个围栏内多张 SQL 风格子表）、**`mv-model-kv`**（文档型集合，MongoDB 类比）、**`mv-model-struct`**（层次组/数据集，HDF5 类比）、**`mv-model-codespace`**（工作区、`modules[]`，及可选递归 `namespaces` 与 UML 风格 Classifier/关联等示意）、**`mv-model-interface`**（接口端点列表，接口图示意）；**`mv-view`** 在契约上视为 **视图基类**，由 JSON 字段 **`kind`** 区分具体子类型；Workbench 为 **每个 kind 约定独立画布窗口**（`mermaid-*` 图源画布、脑图、**`uml-*` 独立 JSON 记录画布**、UI 设计等；`mv-model-sql` 画布内可对当前子表做只读行集预览）。详见 `packages/core` 的 `MV_VIEW_KINDS`、`MV_VIEW_KIND_METADATA` 与 `02-physical/md-mv-core/spec.md`。
 
@@ -78,15 +78,15 @@ python run_web.py        # 启动 Web 开发服务器（等价于 npm run dev:we
 python run_exe.py        # 同上：先 npm run build 再启动 Electron 套壳
 npm run build:vscode     # build + 复制 dist 到扩展 + tsc 编译扩展
 npm run build:mcp        # build @mvwb/core + @mvwb/mcp-server
-python build.py          # 构建并打包 VS Code 插件，输出 dist/mvwb-workbench.vsix
+python build.py          # 构建并打包 VS Code 插件，输出 dist/software-modeling-workbench.vsix
 python install.py        # 构建并自动安装 VS Code/Cursor 插件
 ```
 
 ### VS Code + MCP
 
 1. 在仓库根执行 `npm install`，然后执行 `npm run build:mcp`。
-2. 在 VS Code/Cursor 命令面板执行 `MVWB: Setup MCP config`，会生成 `.vscode/mcp.json`。
-3. 配置使用 `mvwb-local`，启动命令为 `node packages/mcp-server/dist/server.js`，工作目录为 `${workspaceFolder}/model-view-workbench`。
+2. 在 VS Code/Cursor 命令面板执行 `Software Modeling Workbench: Setup MCP Config`，会生成 `.vscode/mcp.json`。
+3. 配置使用 `mvwb-local`，启动命令为 `node packages/mcp-server/dist/server.js`，工作目录为 `${workspaceFolder}/software-modeling-workbench`。
 
 ### 迁移提示（Mermaid 拆包）
 

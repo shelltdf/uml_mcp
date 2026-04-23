@@ -1,4 +1,4 @@
-# 第三方许可证（Model-View Workbench）
+# 第三方许可证（Software Modeling Workbench / 软件建模工作台）
 
 本目录子项目 **运行时** 主要依赖（以各 `package.json` 的 `dependencies` 为准；开发依赖未逐项列出）：
 

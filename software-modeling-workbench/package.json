@@ -1,8 +1,8 @@
 {
-  "name": "model-view-workbench",
+  "name": "software-modeling-workbench",
   "private": true,
   "version": "0.1.0",
-  "description": "MD-centric Model + View workbench (SPA, Electron, VS Code)",
+  "description": "软件建模工作台（Software Modeling Workbench，基于 Markdown，支持 SPA / Electron / VS Code）",
   "workspaces": [
     "packages/*",
     "apps/*",
@@ -16,7 +16,7 @@
     "build": "npm run build -w @mvwb/core && npm run build -w @mvwb/mermaid && npm run build -w @mvwb/mcp-server && npm run build -w @mvwb/web",
     "build:mcp": "npm run build -w @mvwb/core && npm run build -w @mvwb/mcp-server",
     "copy:vscode-media": "node scripts/copy-web-dist.mjs",
-    "build:vscode": "npm run build && npm run copy:vscode-media && npm run compile --workspace=mvwb-workbench",
+    "build:vscode": "npm run build && npm run copy:vscode-media && npm run compile --workspace=software-modeling-workbench",
     "test": "npm run test -w @mvwb/core && npm run test -w @mvwb/mermaid",
     "dev:web": "npm run build -w @mvwb/core && npm run build -w @mvwb/mermaid && npm run dev -w @mvwb/web",
     "dev:electron": "npm run build -w @mvwb/core && npm run build -w @mvwb/mermaid && npm run build -w @mvwb/web && npm run dev -w @mvwb/electron",

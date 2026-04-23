@@ -1,4 +1,4 @@
-# Schema 文档中心（Model-View Workbench）
+# Schema 文档中心（Software Modeling Workbench / 软件建模工作台）
 
 该目录用于按版本维护 `mv-*` 核心 schema 规范，方便用户直接查看与版本对比。
 

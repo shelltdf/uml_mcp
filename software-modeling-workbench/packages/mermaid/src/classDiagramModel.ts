@@ -1,7 +1,7 @@
 /**
  * 可编辑 classDiagram：与首个 ```mermaid 块互转，布局存于 HTML 注释。
  *
- * 源自 sibling 项目 `uml-vue-sdi`（MIT 许可），经裁剪供 MV Workbench 复用。
+ * 源自 sibling 项目 `uml-vue-sdi`（MIT 许可），经裁剪供 Software Modeling Workbench 复用。
  */
 
 export interface ClassDef {

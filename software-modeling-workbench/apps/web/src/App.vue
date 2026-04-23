@@ -381,7 +381,7 @@ async function pickFromMenu() {
 function showAbout() {
   closeMenus();
   logLine(ui.value.aboutLog, 'info');
-  window.alert(`MV Workbench 0.1\n\n${workspaceHintDisplay.value}`);
+  window.alert(`Software Modeling Workbench 0.1\n\n${workspaceHintDisplay.value}`);
 }
 
 function onGlobalPointerDown(ev: PointerEvent) {
@@ -2231,7 +2231,7 @@ onUnmounted(() => {
     />
     <header v-if="!blockOnly" ref="chromeRef" class="win-chrome">
       <div class="title-strip">
-        <span class="app-title">MV Workbench</span>
+        <span class="app-title">Software Modeling Workbench</span>
         <span class="app-title-ver">0.1</span>
       </div>
       <nav class="menu-bar" :aria-label="ui.navAria">

@@ -29,7 +29,7 @@ def main() -> int:
         return int(r.returncode)
 
     DIST_DIR.mkdir(parents=True, exist_ok=True)
-    package_out = DIST_DIR / "mvwb-workbench.vsix"
+    package_out = DIST_DIR / "software-modeling-workbench.vsix"
     vsce = _tool("vsce")
     package_args = ["package", "--allow-missing-repository", "--out", str(package_out)]
     if vsce:

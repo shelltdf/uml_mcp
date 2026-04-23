@@ -853,7 +853,7 @@ export function trLogMergedFromCanvasWindow(locale: AppLocale, relPath: string):
 }
 
 export function trLogStartup(locale: AppLocale): string {
-  return locale === 'en' ? 'MV Workbench started' : 'MV Workbench 已启动';
+  return locale === 'en' ? 'Software Modeling Workbench started' : 'Software Modeling Workbench 已启动';
 }
 
 export function trLogBlockCanvasElectronWindow(locale: AppLocale): string {

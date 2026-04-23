@@ -8,7 +8,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const openPanel = (): void => {
     const panel = vscode.window.createWebviewPanel(
       'mvwbWorkbench',
-      'Model-View Workbench',
+      'Software Modeling Workbench',
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -20,7 +20,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const htmlPath = path.join(context.extensionPath, 'media', 'app', 'index.html');
     if (!fs.existsSync(htmlPath)) {
       panel.webview.html =
-        '<p>未找到打包资源。请在 <code>model-view-workbench</code> 根目录执行 <code>npm run build</code> 与 <code>npm run copy:vscode-media</code>。</p>';
+        '<p>未找到打包资源。请在 <code>software-modeling-workbench</code> 根目录执行 <code>npm run build</code> 与 <code>npm run copy:vscode-media</code>。</p>';
       return;
     }
     let html = fs.readFileSync(htmlPath, 'utf8');
@@ -53,7 +53,7 @@ export function activate(context: vscode.ExtensionContext): void {
         'mvwb-local': {
           command: 'node',
           args: ['packages/mcp-server/dist/server.js'],
-          cwd: '${workspaceFolder}/model-view-workbench',
+          cwd: '${workspaceFolder}/software-modeling-workbench',
         },
       },
     };

@@ -3,6 +3,6 @@
 | 项 | 值 |
 |----|-----|
 | 产物 | npm 包 `@mvwb/core`（`dist/`） |
-| 源码 | [`model-view-workbench/packages/core`](../../../model-view-workbench/packages/core) |
+| 源码 | [`software-modeling-workbench/packages/core`](../../../software-modeling-workbench/packages/core) |
 
 单一事实来源：[`spec.md`](spec.md)。

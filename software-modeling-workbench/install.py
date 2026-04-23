@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-VSIX_PATH = ROOT / "dist" / "mvwb-workbench.vsix"
+VSIX_PATH = ROOT / "dist" / "software-modeling-workbench.vsix"
 
 
 def _tool(*names: str) -> str | None:

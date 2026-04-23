@@ -62,7 +62,7 @@ export const menuBarMessages: Record<AppLocale, MenuBarMessages> = {
     viewPropsHide: '隐藏属性 Dock',
     viewHintHtml:
       '文档标签在<strong>中间编辑区</strong>顶部切换；同一文档下打开「代码块画布」后在文档标签下方出现<strong>文档 / 代码块</strong>子标签。关闭标签用 ×。中间列<strong>仅 Markdown</strong>；<strong>代码块大纲</strong>在<strong>左侧大纲 Dock</strong>。其左右为大纲 Dock 与属性 Dock（各自标题栏可<strong>折叠/展开</strong>为窄条；视图菜单可整侧隐藏）。Markdown 支持<strong>预览 / 富文本 / 原始文本</strong>（右键切换）；插入代码块仅在富文本或原始文本下可用。',
-    about: '关于 MV Workbench…',
+    about: '关于 Software Modeling Workbench…',
     langZh: '中文（简体）',
     langEn: 'English',
     aboutLog: '关于：已打开对话框',
@@ -95,7 +95,7 @@ export const menuBarMessages: Record<AppLocale, MenuBarMessages> = {
     viewPropsHide: 'Hide properties Dock',
     viewHintHtml:
       'Document tabs switch at the top of the <strong>center editor</strong>. With a block canvas open, <strong>Document / Block</strong> sub-tabs appear below. Close a tab with ×. The center column is <strong>Markdown only</strong>; the <strong>fence outline</strong> is in the <strong>left outline Dock</strong>. Outline and properties Docks can be <strong>collapsed/expanded</strong> from their title bars (or hidden from View). Markdown supports <strong>Preview / Rich / Source</strong> (right-click to switch); insert fence blocks only in Rich or Source.',
-    about: 'About MV Workbench…',
+    about: 'About Software Modeling Workbench…',
     langZh: '中文（简体）',
     langEn: 'English',
     aboutLog: 'About: dialog opened',

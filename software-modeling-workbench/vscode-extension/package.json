@@ -1,7 +1,7 @@
 {
-  "name": "mvwb-workbench",
-  "displayName": "Model-View MD Workbench",
-  "description": "Markdown-centric Model + View workbench (Webview)",
+  "name": "software-modeling-workbench",
+  "displayName": "Software Modeling Workbench",
+  "description": "软件建模工作台（Software Modeling Workbench，Webview）",
   "version": "0.1.0",
   "license": "UNLICENSED",
   "publisher": "mvwb",
@@ -16,11 +16,11 @@
     "commands": [
       {
         "command": "mvwb.open",
-        "title": "MVWB: Open workbench"
+        "title": "Software Modeling Workbench: Open Workbench"
       },
       {
         "command": "mvwb.setupMcp",
-        "title": "MVWB: Setup MCP config"
+        "title": "Software Modeling Workbench: Setup MCP Config"
       }
     ]
   },

@@ -1,4 +1,4 @@
-# Schema Changelog（Model-View Workbench）
+# Schema Changelog（Software Modeling Workbench / 软件建模工作台）
 
 记录 `mv-*` 核心 schema 的版本变更，尤其是 breaking changes。
 

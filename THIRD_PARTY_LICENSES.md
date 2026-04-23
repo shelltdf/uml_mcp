@@ -21,14 +21,14 @@
 |----|--------|------|
 | [electron](https://www.npmjs.com/package/electron) | MIT | 加载 `dist/` 的桌面壳（列为 `uml-vue-sdi` 的 devDependency，随本地运行环境分发） |
 
-## npm 生产依赖（`model-view-workbench`，子项目）
+## npm 生产依赖（`software-modeling-workbench`，子项目）
 
 | 包 | 许可证 | 说明 |
 |----|--------|------|
 | [vue](https://www.npmjs.com/package/vue) | MIT | `apps/web` 运行时框架 |
 | [electron](https://www.npmjs.com/package/electron) | MIT | `apps/electron` 壳（devDependency，本地运行随环境加载） |
 
-详见 [`model-view-workbench/THIRD_PARTY_LICENSES.md`](model-view-workbench/THIRD_PARTY_LICENSES.md)。
+详见 [`software-modeling-workbench/THIRD_PARTY_LICENSES.md`](software-modeling-workbench/THIRD_PARTY_LICENSES.md)。
 
 ## 可选：原始许可证全文
 
