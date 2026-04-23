@@ -6,6 +6,7 @@ export type MenuBarMessages = {
   file: string;
   view: string;
   language: string;
+  theme: string;
   help: string;
   new: string;
   open: string;
@@ -30,6 +31,9 @@ export type MenuBarMessages = {
   about: string;
   langZh: string;
   langEn: string;
+  themeSystem: string;
+  themeLight: string;
+  themeDark: string;
   aboutLog: string;
 };
 
@@ -39,6 +43,7 @@ export const menuBarMessages: Record<AppLocale, MenuBarMessages> = {
     file: '文件(F)',
     view: '视图(V)',
     language: '语言(L)',
+    theme: '主题(T)',
     help: '帮助(H)',
     new: '新建',
     open: '打开…',
@@ -65,6 +70,9 @@ export const menuBarMessages: Record<AppLocale, MenuBarMessages> = {
     about: '关于 Software Modeling Workbench…',
     langZh: '中文（简体）',
     langEn: 'English',
+    themeSystem: '跟随系统',
+    themeLight: '浅色',
+    themeDark: '深色',
     aboutLog: '关于：已打开对话框',
   },
   en: {
@@ -72,6 +80,7 @@ export const menuBarMessages: Record<AppLocale, MenuBarMessages> = {
     file: 'File (F)',
     view: 'View (V)',
     language: 'Language (L)',
+    theme: 'Theme (T)',
     help: 'Help (H)',
     new: 'New',
     open: 'Open…',
@@ -98,6 +107,9 @@ export const menuBarMessages: Record<AppLocale, MenuBarMessages> = {
     about: 'About Software Modeling Workbench…',
     langZh: '中文（简体）',
     langEn: 'English',
+    themeSystem: 'Follow System',
+    themeLight: 'Light',
+    themeDark: 'Dark',
     aboutLog: 'About: dialog opened',
   },
 };

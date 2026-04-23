@@ -133,6 +133,41 @@ defineExpose({ getVditorResetElement });
   font-size: 0.9rem;
   line-height: 1.55;
   color: #0f172a;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e2e8f0;
+}
+.md-preview-root::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.md-preview-root::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+.md-preview-root::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 8px;
+  border: 2px solid #e2e8f0;
+}
+.md-preview-root::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+:global([data-theme='light']) .md-preview-root {
+  color-scheme: light;
+  scrollbar-color: #94a3b8 #e2e8f0;
+}
+:global([data-theme='dark']) .md-preview-root {
+  color-scheme: dark;
+  scrollbar-color: #64748b #0f172a;
+}
+:global([data-theme='dark']) .md-preview-root::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+:global([data-theme='dark']) .md-preview-root::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-color: #0f172a;
+}
+:global([data-theme='dark']) .md-preview-root::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 .md-preview-root :deep(.vditor-reset) {
   color: inherit;

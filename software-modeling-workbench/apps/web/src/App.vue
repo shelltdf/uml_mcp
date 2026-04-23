@@ -106,8 +106,13 @@ type WindowFsa = Window &
     showSaveFilePicker?: (o?: FsSaveFilePickerOptions) => Promise<FileSystemFileHandle>;
     showOpenFilePicker?: (o?: FsOpenFilePickerOptions) => Promise<FileSystemFileHandle[]>;
   };
+type VsCodeHostApi = {
+  postMessage: (message: unknown) => void;
+};
 
 const { locale, ui, setLocale } = useAppLocale();
+type ThemePreference = 'system' | 'light' | 'dark';
+const THEME_STORAGE_KEY = 'smw-theme-preference';
 const shell = computed(() => detectShell());
 const files = ref<Map<string, string>>(new Map());
 const selectedPath = ref<string | null>(null);
@@ -166,7 +171,8 @@ const leftDockUisvgLibraryPanelShown = ref(true);
 /** `'markdown'` = 中间列仅 Markdown 编辑；否则为 `canvasTabs` 中某条 `id` */
 const activeEditorTab = ref<'markdown' | string>('markdown');
 const electronApi = computed(() => (typeof window !== 'undefined' ? window.electronAPI : undefined));
-const openMenu = ref<null | 'file' | 'view' | 'language' | 'help'>(null);
+const vscodeHostApiRef = ref<VsCodeHostApi | null>(null);
+const openMenu = ref<null | 'file' | 'view' | 'language' | 'theme' | 'help'>(null);
 const chromeRef = ref<HTMLElement | null>(null);
 const layoutRootRef = ref<HTMLElement | null>(null);
 const appIsFullscreen = ref(false);
@@ -177,6 +183,11 @@ const singleFileInputRef = ref<HTMLInputElement | null>(null);
 const savedBaseline = ref<Map<string, string>>(new Map());
 /** 浏览器 File System Access：路径键 → 文件句柄（可重复保存） */
 const browserSaveHandles = new Map<string, FileSystemFileHandle>();
+/** VSCode: 新建但尚未确认目标路径的文档键 */
+const pendingFirstSavePaths = ref<Set<string>>(new Set());
+const pendingVsCodeWrite = new Map<string, { resolve: () => void; reject: (reason?: unknown) => void }>();
+const pendingVsCodeOpen = new Map<string, { resolve: (result: { path: string; text: string }) => void; reject: (reason?: unknown) => void }>();
+const pendingVsCodeSavePath = new Map<string, { resolve: (result: { path: string }) => void; reject: (reason?: unknown) => void }>();
 const logLines = ref<string[]>([]);
 const logOpen = ref(false);
 const aboutOpen = ref(false);
@@ -198,6 +209,8 @@ const outlineCollapsedParents = ref(new Set<number>());
 const insertCodeBlockOpen = ref(false);
 const insertCodeBlockAppendToEnd = ref(false);
 let electronWriteTimer: ReturnType<typeof setTimeout> | undefined;
+let themeMql: MediaQueryList | null = null;
+let removeThemeMqlListener: (() => void) | null = null;
 
 
 function logLine(message: string, level: 'info' | 'warn' | 'error' = 'info') {
@@ -228,7 +241,7 @@ const statusLeftText = computed(() => {
   return last.length > 72 ? `${last.slice(0, 69)}…` : last;
 });
 
-function toggleMenu(id: 'file' | 'view' | 'language' | 'help') {
+function toggleMenu(id: 'file' | 'view' | 'language' | 'theme' | 'help') {
   openMenu.value = openMenu.value === id ? null : id;
 }
 
@@ -237,8 +250,124 @@ function setLocaleFromMenu(next: 'zh' | 'en') {
   closeMenus();
 }
 
+const themePreference = ref<ThemePreference>('system');
+
+function resolveEffectiveTheme(pref: ThemePreference): 'light' | 'dark' {
+  if (pref === 'light') return 'light';
+  if (pref === 'dark') return 'dark';
+  if (typeof window === 'undefined' || !window.matchMedia) return 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyThemePreference(pref: ThemePreference): void {
+  if (typeof document === 'undefined') return;
+  const effective = resolveEffectiveTheme(pref);
+  document.documentElement.setAttribute('data-theme', effective);
+  document.documentElement.style.colorScheme = effective;
+}
+
+function readStoredThemePreference(): ThemePreference {
+  if (typeof window === 'undefined') return 'system';
+  const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (raw === 'system' || raw === 'light' || raw === 'dark') return raw;
+  return 'system';
+}
+
+function setThemeFromMenu(next: ThemePreference): void {
+  themePreference.value = next;
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(THEME_STORAGE_KEY, next);
+  }
+  applyThemePreference(next);
+  closeMenus();
+}
+
 function closeMenus() {
   openMenu.value = null;
+}
+
+function markPathPendingFirstSave(path: string): void {
+  const s = new Set(pendingFirstSavePaths.value);
+  s.add(path);
+  pendingFirstSavePaths.value = s;
+}
+
+function markPathSaved(path: string): void {
+  if (!pendingFirstSavePaths.value.has(path)) return;
+  const s = new Set(pendingFirstSavePaths.value);
+  s.delete(path);
+  pendingFirstSavePaths.value = s;
+}
+
+function notifySaveFailureVisible(message: string): void {
+  const title = locale.value === 'en' ? 'Save failed' : '保存失败';
+  window.alert(`${title}\n${message}`);
+}
+
+function writeWorkspaceFileInVsCode(path: string, text: string): Promise<void> {
+  const api = vscodeHostApiRef.value;
+  if (!api) return Promise.reject(new Error('VSCode host API 不可用。'));
+  const reqId = `w_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return new Promise<void>((resolve, reject) => {
+    pendingVsCodeWrite.set(reqId, { resolve, reject });
+    try {
+      api.postMessage({ type: 'smw:vscode:writeFile', reqId, path, text });
+    } catch (e) {
+      pendingVsCodeWrite.delete(reqId);
+      reject(e);
+      return;
+    }
+    window.setTimeout(() => {
+      const p = pendingVsCodeWrite.get(reqId);
+      if (!p) return;
+      pendingVsCodeWrite.delete(reqId);
+      p.reject(new Error('VSCode 保存超时，请重试。'));
+    }, 12000);
+  });
+}
+
+function pickOpenFileInVsCode(): Promise<{ path: string; text: string }> {
+  const api = vscodeHostApiRef.value;
+  if (!api) return Promise.reject(new Error('VSCode host API 不可用。'));
+  const reqId = `o_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return new Promise<{ path: string; text: string }>((resolve, reject) => {
+    pendingVsCodeOpen.set(reqId, { resolve, reject });
+    try {
+      api.postMessage({ type: 'smw:vscode:pickOpenFile', reqId });
+    } catch (e) {
+      pendingVsCodeOpen.delete(reqId);
+      reject(e);
+      return;
+    }
+    window.setTimeout(() => {
+      const p = pendingVsCodeOpen.get(reqId);
+      if (!p) return;
+      pendingVsCodeOpen.delete(reqId);
+      p.reject(new Error('VSCode 打开文件超时，请重试。'));
+    }, 12000);
+  });
+}
+
+function pickSavePathInVsCode(currentPath: string): Promise<{ path: string }> {
+  const api = vscodeHostApiRef.value;
+  if (!api) return Promise.reject(new Error('VSCode host API 不可用。'));
+  const reqId = `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return new Promise<{ path: string }>((resolve, reject) => {
+    pendingVsCodeSavePath.set(reqId, { resolve, reject });
+    try {
+      api.postMessage({ type: 'smw:vscode:pickSavePath', reqId, path: currentPath });
+    } catch (e) {
+      pendingVsCodeSavePath.delete(reqId);
+      reject(e);
+      return;
+    }
+    window.setTimeout(() => {
+      const p = pendingVsCodeSavePath.get(reqId);
+      if (!p) return;
+      pendingVsCodeSavePath.delete(reqId);
+      p.reject(new Error('VSCode 选择保存路径超时，请重试。'));
+    }, 12000);
+  });
 }
 
 function syncBaselineForPath(path: string, content: string) {
@@ -277,6 +406,9 @@ function renameOpenDocumentKey(oldPath: string, newPath: string, text: string) {
   bm.delete(oldPath);
   bm.set(newPath, text);
   savedBaseline.value = bm;
+  const p = new Set(pendingFirstSavePaths.value);
+  if (p.delete(oldPath)) p.add(newPath);
+  pendingFirstSavePaths.value = p;
   canvasTabs.value = canvasTabs.value.map((t) => (t.relPath === oldPath ? { ...t, relPath: newPath } : t));
   if (selectedPath.value === oldPath) selectedPath.value = newPath;
 }
@@ -1492,6 +1624,7 @@ function closeTab(path: string) {
     if (!window.confirm(trCloseTabDirty(locale.value, tabLabel(path)))) return;
   }
   browserSaveHandles.delete(path);
+  markPathSaved(path);
   const bm0 = new Map(savedBaseline.value);
   bm0.delete(path);
   savedBaseline.value = bm0;
@@ -1541,6 +1674,7 @@ function onPickFolder(e: Event) {
     ),
   ).then(() => {
     browserSaveHandles.clear();
+    pendingFirstSavePaths.value = new Set();
     files.value = next;
     replaceAllBaselinesFromFiles(next);
     const keys = [...next.keys()].sort();
@@ -1562,6 +1696,7 @@ function newMarkdownFile() {
   files.value = new Map(files.value).set(name, initial);
   selectedPath.value = name;
   syncBaselineForPath(name, initial);
+  markPathPendingFirstSave(name);
   logLine(trLogNewMarkdown(locale.value, name), 'info');
 }
 
@@ -1596,6 +1731,26 @@ async function saveCurrentDocument(): Promise<void> {
     return;
   }
 
+  if (shell.value === 'vscode' && vscodeHostApiRef.value) {
+    if (pendingFirstSavePaths.value.has(p)) {
+      await saveCurrentDocumentAs(true);
+      return;
+    }
+    try {
+      await writeWorkspaceFileInVsCode(p, text);
+      syncBaselineForPath(p, text);
+      markPathSaved(p);
+      logLine(trLogSavedPath(locale.value, p), 'info');
+    } catch (e) {
+      const msg = String(e);
+      logLine(trLogSaveFailed(locale.value, msg), 'error');
+      notifySaveFailureVisible(msg);
+      // VSCode 宿主写入失败时回退到 Save As，避免用户感知为“保存失效”。
+      await saveCurrentDocumentAs(true);
+    }
+    return;
+  }
+
   const handle = browserSaveHandles.get(p);
   if (handle && fsaSupported()) {
     try {
@@ -1605,7 +1760,9 @@ async function saveCurrentDocument(): Promise<void> {
       syncBaselineForPath(p, text);
       logLine(trLogSavedPath(locale.value, tabLabel(p)), 'info');
     } catch (e) {
-      logLine(trLogSaveFailed(locale.value, String(e)), 'error');
+      const msg = String(e);
+      logLine(trLogSaveFailed(locale.value, msg), 'error');
+      notifySaveFailureVisible(msg);
     }
     return;
   }
@@ -1620,6 +1777,28 @@ async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<voi
     return;
   }
   const text = currentContent.value;
+  if (shell.value === 'vscode' && vscodeHostApiRef.value) {
+    let targetPath = p;
+    try {
+      const picked = await pickSavePathInVsCode(p);
+      targetPath = picked.path;
+      await writeWorkspaceFileInVsCode(targetPath, text);
+      if (targetPath !== p) {
+        renameOpenDocumentKey(p, targetPath, text);
+      } else {
+        files.value = new Map(files.value).set(p, text);
+        syncBaselineForPath(p, text);
+      }
+      markPathSaved(targetPath);
+      logLine(trLogSaveAsDone(locale.value, selectedPath.value!, fromSaveWithoutTarget), 'info');
+    } catch (e) {
+      const msg = String(e);
+      logLine(trLogSaveFailed(locale.value, msg), 'error');
+      notifySaveFailureVisible(msg);
+    }
+    return;
+  }
+
   const L = shellChromeMessages[locale.value];
 
   if (fsaSupported()) {
@@ -1639,12 +1818,15 @@ async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<voi
         files.value = new Map(files.value).set(p, text);
         syncBaselineForPath(p, text);
       }
+      markPathSaved(selectedPath.value ?? p);
       const tabKey = selectedPath.value;
       if (tabKey) browserSaveHandles.set(tabKey, handle);
       logLine(trLogSaveAsDone(locale.value, selectedPath.value!, fromSaveWithoutTarget), 'info');
     } catch (e) {
       if (String(e).includes('abort')) return;
-      logLine(trLogSaveAsFallback(locale.value, String(e)), 'warn');
+      const msg = String(e);
+      logLine(trLogSaveAsFallback(locale.value, msg), 'warn');
+      notifySaveFailureVisible(msg);
       fallbackDownloadMarkdown(tabLabel(p), text);
       syncBaselineForPath(p, text);
     }
@@ -1657,6 +1839,23 @@ async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<voi
 }
 
 async function openMarkdownFileUnified(): Promise<void> {
+  if (shell.value === 'vscode' && vscodeHostApiRef.value) {
+    try {
+      const opened = await pickOpenFileInVsCode();
+      files.value = new Map(files.value).set(opened.path, opened.text);
+      syncBaselineForPath(opened.path, opened.text);
+      markPathSaved(opened.path);
+      selectedPath.value = opened.path;
+      logLine(trLogOpenedFile(locale.value, opened.path), 'info');
+    } catch (e) {
+      if (String(e).includes('aborted')) return;
+      const msg = String(e);
+      logLine(trLogOpenFilePickerFailed(locale.value, msg), 'warn');
+      notifySaveFailureVisible(msg);
+    }
+    return;
+  }
+
   if (fsaSupported()) {
     try {
       const wfsa = window as unknown as WindowFsa;
@@ -1670,11 +1869,21 @@ async function openMarkdownFileUnified(): Promise<void> {
       files.value = new Map(files.value).set(name, text);
       browserSaveHandles.set(name, handle);
       syncBaselineForPath(name, text);
+      markPathSaved(name);
       selectedPath.value = name;
       logLine(trLogOpenedFile(locale.value, name), 'info');
     } catch (e) {
       if (String(e).includes('abort')) return;
-      logLine(trLogOpenFilePickerFailed(locale.value, String(e)), 'warn');
+      if (shell.value === 'vscode') {
+        logLine(
+          locale.value === 'en'
+            ? `Open picker is restricted in VSCode Webview (${String(e)}), fallback to classic file input.`
+            : `VSCode Webview 限制无法直接调用文件选择器（${String(e)}），已回退传统文件选择。`,
+          'info',
+        );
+      } else {
+        logLine(trLogOpenFilePickerFailed(locale.value, String(e)), 'warn');
+      }
       singleFileInputRef.value?.click();
     }
     return;
@@ -1696,8 +1905,20 @@ function onPickSingleMdFile(e: Event) {
     const name = f.name;
     files.value = new Map(files.value).set(name, text);
     syncBaselineForPath(name, text);
+    if (shell.value === 'vscode') {
+      markPathPendingFirstSave(name);
+    }
     selectedPath.value = name;
-    logLine(trLogOpenedFileNoWriteHandle(locale.value, name), 'info');
+    if (shell.value === 'vscode') {
+      logLine(
+        locale.value === 'en'
+          ? `Opened: ${name} (saved through VSCode host to workspace path).`
+          : `已打开：${name}（可通过 VSCode 宿主直接保存到工作区同名路径）。`,
+        'info',
+      );
+    } else {
+      logLine(trLogOpenedFileNoWriteHandle(locale.value, name), 'info');
+    }
   };
   reader.readAsText(f);
   input.value = '';
@@ -2030,6 +2251,46 @@ function onCanvasClosePopup() {
 }
 
 function onOpenerCanvasUpdated(ev: MessageEvent) {
+  if (ev.data?.type === 'smw:vscode:pickOpenFile:result') {
+    const reqId = typeof ev.data?.reqId === 'string' ? ev.data.reqId : '';
+    if (!reqId) return;
+    const pending = pendingVsCodeOpen.get(reqId);
+    if (!pending) return;
+    pendingVsCodeOpen.delete(reqId);
+    if (ev.data?.ok) {
+      pending.resolve({ path: String(ev.data.path ?? ''), text: String(ev.data.text ?? '') });
+    } else if (ev.data?.aborted) {
+      pending.reject(new Error('aborted'));
+    } else {
+      pending.reject(new Error(String(ev.data?.error ?? '打开失败')));
+    }
+    return;
+  }
+  if (ev.data?.type === 'smw:vscode:pickSavePath:result') {
+    const reqId = typeof ev.data?.reqId === 'string' ? ev.data.reqId : '';
+    if (!reqId) return;
+    const pending = pendingVsCodeSavePath.get(reqId);
+    if (!pending) return;
+    pendingVsCodeSavePath.delete(reqId);
+    if (ev.data?.ok) {
+      pending.resolve({ path: String(ev.data.path ?? '') });
+    } else if (ev.data?.aborted) {
+      pending.reject(new Error('aborted'));
+    } else {
+      pending.reject(new Error(String(ev.data?.error ?? '选择路径失败')));
+    }
+    return;
+  }
+  if (ev.data?.type === 'smw:vscode:writeFile:result') {
+    const reqId = typeof ev.data?.reqId === 'string' ? ev.data.reqId : '';
+    if (!reqId) return;
+    const pending = pendingVsCodeWrite.get(reqId);
+    if (!pending) return;
+    pendingVsCodeWrite.delete(reqId);
+    if (ev.data?.ok) pending.resolve();
+    else pending.reject(new Error(String(ev.data?.error ?? '保存失败')));
+    return;
+  }
   if (ev.data?.type !== 'smw:canvasUpdated' && ev.data?.type !== 'smw:canvasSaved') return;
   const { relPath, markdown } = ev.data as { relPath?: string; markdown?: string };
   if (typeof relPath !== 'string' || typeof markdown !== 'string') return;
@@ -2072,6 +2333,29 @@ watch(
 );
 
 onMounted(async () => {
+  if (shell.value === 'vscode') {
+    const w = window as Window & { acquireVsCodeApi?: () => VsCodeHostApi };
+    if (typeof w.acquireVsCodeApi === 'function') {
+      vscodeHostApiRef.value = w.acquireVsCodeApi();
+    }
+  }
+  themePreference.value = readStoredThemePreference();
+  applyThemePreference(themePreference.value);
+  if (window.matchMedia) {
+    themeMql = window.matchMedia('(prefers-color-scheme: dark)');
+    const onThemeMqlChange = () => {
+      if (themePreference.value === 'system') {
+        applyThemePreference('system');
+      }
+    };
+    if (themeMql.addEventListener) {
+      themeMql.addEventListener('change', onThemeMqlChange);
+      removeThemeMqlListener = () => themeMql?.removeEventListener('change', onThemeMqlChange);
+    } else {
+      themeMql.addListener(onThemeMqlChange);
+      removeThemeMqlListener = () => themeMql?.removeListener(onThemeMqlChange);
+    }
+  }
   logLine(trLogStartup(locale.value), 'info');
   document.addEventListener('pointerdown', onGlobalPointerDown, true);
   document.addEventListener('keydown', onGlobalKeyDown, true);
@@ -2142,6 +2426,21 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  for (const [, pending] of pendingVsCodeOpen) {
+    pending.reject(new Error('页面已卸载'));
+  }
+  pendingVsCodeOpen.clear();
+  for (const [, pending] of pendingVsCodeSavePath) {
+    pending.reject(new Error('页面已卸载'));
+  }
+  pendingVsCodeSavePath.clear();
+  for (const [, pending] of pendingVsCodeWrite) {
+    pending.reject(new Error('页面已卸载'));
+  }
+  pendingVsCodeWrite.clear();
+  removeThemeMqlListener?.();
+  removeThemeMqlListener = null;
+  themeMql = null;
   document.removeEventListener('pointerdown', onGlobalPointerDown, true);
   document.removeEventListener('keydown', onGlobalKeyDown, true);
   document.removeEventListener('fullscreenchange', syncAppFullscreenFlag);
@@ -2317,6 +2616,47 @@ onUnmounted(() => {
                 @click="setLocaleFromMenu('en')"
               >
                 {{ ui.langEn }}
+              </button>
+            </li>
+          </ul>
+        </div>
+        <div class="menu-entry">
+          <button type="button" class="menu-top" @click.stop="toggleMenu('theme')">{{ ui.theme }}</button>
+          <ul v-show="openMenu === 'theme'" class="menu-dropdown" role="menu" @click.stop>
+            <li role="none">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitemradio"
+                :aria-checked="themePreference === 'system'"
+                :title="`${ui.themeSystem} — ${locale === 'en' ? 'no global shortcut' : '无全局快捷键'}`"
+                @click="setThemeFromMenu('system')"
+              >
+                {{ ui.themeSystem }}
+              </button>
+            </li>
+            <li role="none">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitemradio"
+                :aria-checked="themePreference === 'light'"
+                :title="`${ui.themeLight} — ${locale === 'en' ? 'no global shortcut' : '无全局快捷键'}`"
+                @click="setThemeFromMenu('light')"
+              >
+                {{ ui.themeLight }}
+              </button>
+            </li>
+            <li role="none">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitemradio"
+                :aria-checked="themePreference === 'dark'"
+                :title="`${ui.themeDark} — ${locale === 'en' ? 'no global shortcut' : '无全局快捷键'}`"
+                @click="setThemeFromMenu('dark')"
+              >
+                {{ ui.themeDark }}
               </button>
             </li>
           </ul>
@@ -4685,6 +5025,9 @@ onUnmounted(() => {
   font-size: 0.65rem;
   font-weight: 500;
   color: #334155;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
   word-break: break-all;
 }
 .dock-fence-select:hover {
@@ -4973,5 +5316,496 @@ onUnmounted(() => {
   font-weight: 600;
   padding: 0 4px;
   cursor: pointer;
+}
+
+/* 主题变量：供画布组件与主壳共享 */
+:root {
+  --panel-bg: #fafafa;
+  --editor-bg: #ffffff;
+  --border: #c5c9d4;
+  --text: #0f172a;
+  --muted: #64748b;
+}
+
+[data-theme='dark'] {
+  --panel-bg: #1f2937;
+  --editor-bg: #111827;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+}
+
+/* 主壳深色覆盖（App.vue 的 scoped 样式以浅色硬编码为主，这里统一兜底） */
+[data-theme='dark'] body {
+  color: #e5e7eb;
+  background: #0b1220;
+}
+[data-theme='dark'] .layout:fullscreen,
+[data-theme='dark'] .layout:-webkit-full-screen {
+  background: #0f172a;
+}
+[data-theme='dark'] .win-chrome {
+  border-bottom-color: #334155;
+  background: linear-gradient(to bottom, #111827 0%, #0f172a 100%);
+}
+[data-theme='dark'] .title-strip {
+  border-bottom-color: #334155;
+  background: linear-gradient(to bottom, #1f2937, #111827);
+}
+[data-theme='dark'] .app-title {
+  color: #e5e7eb;
+}
+[data-theme='dark'] .app-title-ver {
+  color: #94a3b8;
+}
+[data-theme='dark'] .menu-bar {
+  border-bottom-color: #334155;
+  background: #111827;
+}
+[data-theme='dark'] .menu-top {
+  color: #e5e7eb;
+}
+[data-theme='dark'] .menu-top:hover {
+  background: rgba(59, 130, 246, 0.25);
+}
+[data-theme='dark'] .menu-dropdown {
+  background: #111827;
+  border-color: #334155;
+  box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.45);
+}
+[data-theme='dark'] .menu-item {
+  color: #e5e7eb;
+}
+[data-theme='dark'] .menu-item:hover:not(:disabled) {
+  background: #1d4ed8;
+  color: #ffffff;
+}
+[data-theme='dark'] .menu-sep {
+  background: #334155;
+}
+[data-theme='dark'] .menu-info {
+  color: #94a3b8;
+}
+[data-theme='dark'] .toolbar-row {
+  background: linear-gradient(to bottom, #111827, #0f172a);
+}
+[data-theme='dark'] .tb-btn {
+  border-color: #334155;
+  color: #e5e7eb;
+  background: linear-gradient(to bottom, #1f2937, #111827);
+}
+[data-theme='dark'] .tb-btn:hover:not(:disabled) {
+  border-color: #475569;
+  background: linear-gradient(to bottom, #273449, #1f2937);
+}
+[data-theme='dark'] .tb-sep {
+  background: #334155;
+}
+[data-theme='dark'] .statusbar {
+  color: #e5e7eb;
+  border-top-color: #334155;
+  background: linear-gradient(to bottom, #111827, #0f172a);
+}
+[data-theme='dark'] .statusbar:hover {
+  background: linear-gradient(to bottom, #18253a, #111827);
+}
+[data-theme='dark'] .doc-tabs {
+  border-bottom-color: #334155;
+  background: linear-gradient(to bottom, #111827, #0f172a);
+}
+[data-theme='dark'] .tab-wrap {
+  color: #cbd5e1;
+  background: #1f2937;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+[data-theme='dark'] .tab-wrap:hover {
+  background: #273449;
+  color: #f8fafc;
+}
+[data-theme='dark'] .tab-wrap.active {
+  color: #f8fafc;
+  background: #0f172a;
+  border-color: #334155;
+  border-bottom-color: #0f172a;
+}
+[data-theme='dark'] .editor-subtabs {
+  background: #0f172a;
+  border-bottom-color: #334155;
+}
+[data-theme='dark'] .subtab-wrap,
+[data-theme='dark'] .subtab {
+  background: #1f2937;
+  color: #cbd5e1;
+  border-color: #334155;
+}
+[data-theme='dark'] .subtab-wrap.active,
+[data-theme='dark'] .subtab[aria-selected='true'] {
+  background: #0f172a;
+  color: #f8fafc;
+  border-color: #334155 #334155 #0f172a;
+}
+[data-theme='dark'] .modal {
+  background: #111827;
+  border-color: #334155;
+  color: #e5e7eb;
+}
+[data-theme='dark'] .log-hint {
+  color: #94a3b8;
+}
+[data-theme='dark'] .log-body,
+[data-theme='dark'] .json-area {
+  background: #0b1220;
+  border-color: #334155;
+  color: #e5e7eb;
+}
+
+/* VSCode Webview 会给 code 注入主题色；这里固定左侧大纲 fence id 的可读性 */
+[data-theme='light'] code.dock-fence-line--id {
+  color: #334155 !important;
+  background: transparent !important;
+}
+[data-theme='dark'] code.dock-fence-line--id {
+  color: #cbd5e1 !important;
+  background: transparent !important;
+}
+
+/* Dock / 表单控件：深色下补齐大量浅色遗留 */
+[data-theme='dark'] .dock,
+[data-theme='dark'] .dock-view,
+[data-theme='dark'] .dock-scroll,
+[data-theme='dark'] .dock-section,
+[data-theme='dark'] .dock-special-panel,
+[data-theme='dark'] .dock-ghost,
+[data-theme='dark'] .dock-uisvg-embed,
+[data-theme='dark'] .dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench {
+  background: #0f172a;
+  color: #e5e7eb;
+  border-color: #334155;
+}
+[data-theme='dark'] .dock-titlebar,
+[data-theme='dark'] .dock-titlebar--right,
+[data-theme='dark'] .dock-special-head,
+[data-theme='dark'] .dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench > .dock-special-head {
+  background: linear-gradient(to bottom, #1f2937, #111827);
+  border-color: #334155;
+  color: #e5e7eb;
+}
+[data-theme='dark'] .dock-title,
+[data-theme='dark'] .dock-subh,
+[data-theme='dark'] .dock-subh-inline,
+[data-theme='dark'] .dock-dl dt,
+[data-theme='dark'] .dock-muted,
+[data-theme='dark'] .dock-hint,
+[data-theme='dark'] .dock-outline-ln {
+  color: #94a3b8;
+}
+[data-theme='dark'] .dock-outline-item {
+  color: #cbd5e1;
+}
+[data-theme='dark'] .dock-outline-item--btn:hover {
+  background: #1e293b;
+}
+[data-theme='dark'] .dock-collapse-toggle,
+[data-theme='dark'] .dock-action,
+[data-theme='dark'] .dock-input,
+[data-theme='dark'] .dock-special-toggle,
+[data-theme='dark'] .dock-button,
+[data-theme='dark'] .ctx-item,
+[data-theme='dark'] .menu-item,
+[data-theme='dark'] button:not(.primary) {
+  background: #111827;
+  color: #e5e7eb;
+  border-color: #334155;
+}
+[data-theme='dark'] .dock-action:hover,
+[data-theme='dark'] .dock-collapse-toggle:hover,
+[data-theme='dark'] .dock-special-toggle:hover,
+[data-theme='dark'] .dock-button:hover,
+[data-theme='dark'] .ctx-item:hover:not(:disabled) {
+  background: #1e293b;
+}
+[data-theme='dark'] input,
+[data-theme='dark'] textarea,
+[data-theme='dark'] select,
+[data-theme='dark'] .win-input {
+  background: #0b1220;
+  color: #e5e7eb;
+  border-color: #334155;
+}
+[data-theme='dark'] .ctx-sep,
+[data-theme='dark'] .dock-sep,
+[data-theme='dark'] .splitter,
+[data-theme='dark'] .tb-sep,
+[data-theme='dark'] .menu-sep {
+  background: #334155;
+}
+
+/* 显式浅色兜底：避免部分组件残留深色外观 */
+[data-theme='light'] body {
+  color: #1a1a1a;
+  background: #f0f0f2;
+}
+[data-theme='light'] .win-chrome {
+  border-bottom-color: #9aa7c0;
+  background: linear-gradient(to bottom, #f2f4f8 0%, #e8ecf4 100%);
+}
+[data-theme='light'] .title-strip {
+  border-bottom-color: #d0d6e4;
+  background: linear-gradient(to bottom, #dfe6f2, #d4dbe8);
+}
+[data-theme='light'] .menu-bar {
+  border-bottom-color: #c5c9d4;
+  background: #eceef4;
+}
+[data-theme='light'] .menu-dropdown,
+[data-theme='light'] .modal,
+[data-theme='light'] .ctx-item,
+[data-theme='light'] .dock-input,
+[data-theme='light'] input,
+[data-theme='light'] textarea,
+[data-theme='light'] select {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: #c5c9d4;
+}
+[data-theme='light'] .dock,
+[data-theme='light'] .dock-view,
+[data-theme='light'] .dock-scroll,
+[data-theme='light'] .dock-section,
+[data-theme='light'] .dock-special-panel,
+[data-theme='light'] .dock-uisvg-embed {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #c5c9d4;
+}
+
+/* 中间编辑区与上下文菜单：显式亮/暗，避免 VSCode 宿主混入默认值 */
+[data-theme='light'] .md-pane {
+  background: #f8fafc;
+}
+[data-theme='dark'] .md-pane {
+  background: #0f172a;
+}
+[data-theme='light'] .md-mode-switch {
+  border-color: #cbd5e1;
+}
+[data-theme='dark'] .md-mode-switch {
+  border-color: #334155;
+}
+[data-theme='dark'] .md-mode-btn {
+  background: #111827;
+  color: #94a3b8;
+  border-right-color: #334155;
+}
+[data-theme='dark'] .md-mode-btn:hover:not(.md-mode-btn--active) {
+  background: #1f2937;
+  color: #e5e7eb;
+}
+[data-theme='dark'] .md-mode-btn--active {
+  background: #1e293b;
+  color: #e5e7eb;
+}
+[data-theme='dark'] .md-mode-btn--active:nth-child(1) {
+  background: #172554;
+  color: #93c5fd;
+}
+[data-theme='dark'] .md-mode-btn--active:nth-child(2) {
+  background: #052e16;
+  color: #86efac;
+}
+[data-theme='dark'] .md-mode-btn--active:nth-child(3) {
+  background: #431407;
+  color: #fdba74;
+}
+[data-theme='light'] .md-source {
+  color: #0f172a;
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+[data-theme='dark'] .md-source {
+  color: #e5e7eb;
+  background: #0b1220;
+  border-color: #334155;
+}
+[data-theme='light'] .md-ctx-menu {
+  background: #ffffff;
+  border-color: #a8b0c4;
+  box-shadow: 2px 4px 12px rgba(15, 23, 42, 0.15);
+}
+[data-theme='dark'] .md-ctx-menu {
+  background: #111827;
+  border-color: #334155;
+  box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.45);
+}
+[data-theme='light'] .md-ctx-menu .ctx-item {
+  color: #0f172a;
+}
+[data-theme='dark'] .md-ctx-menu .ctx-item {
+  color: #e5e7eb;
+}
+[data-theme='dark'] .md-ctx-menu .ctx-item:hover:not(:disabled) {
+  background: #1d4ed8;
+  color: #ffffff;
+}
+[data-theme='light'] .md-ctx-menu .ctx-sep {
+  background: #e2e8f0;
+}
+[data-theme='dark'] .md-ctx-menu .ctx-sep {
+  background: #334155;
+}
+[data-theme='light'] .md-ctx-menu .ctx-note {
+  color: #475569;
+}
+[data-theme='dark'] .md-ctx-menu .ctx-note {
+  color: #94a3b8;
+}
+[data-theme='light'] .dock-fence-row {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+[data-theme='dark'] .dock-fence-row {
+  background: #0b1220;
+  border-color: #334155;
+}
+[data-theme='dark'] .dock-fence-select {
+  color: #e5e7eb;
+}
+[data-theme='dark'] .dock-fence-line--kind {
+  color: #e5e7eb;
+}
+[data-theme='dark'] .dock-fence-line--subtype {
+  color: #94a3b8;
+}
+[data-theme='dark'] .dock-fence-select:hover {
+  background: #1e293b;
+}
+
+/* VSCode Webview 宿主样式隔离：统一原生控件 / code / 滚动条 / 选中态 */
+[data-theme='light'] .layout :is(input, textarea, select) {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #ffffff;
+  border: 1px solid #c5c9d4;
+  color: inherit;
+}
+[data-theme='dark'] .layout :is(input, textarea, select) {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #0b1220;
+  border: 1px solid #334155;
+  color: inherit;
+}
+[data-theme='light'] .layout :is(input, textarea, select, button):focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 1px;
+}
+[data-theme='dark'] .layout :is(input, textarea, select, button):focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.5);
+  outline-offset: 1px;
+}
+[data-theme='light'] .layout ::selection {
+  background: rgba(37, 99, 235, 0.2);
+}
+[data-theme='dark'] .layout ::selection {
+  background: rgba(96, 165, 250, 0.28);
+}
+[data-theme='light'] .layout * {
+  scrollbar-color: #94a3b8 #e2e8f0;
+}
+[data-theme='dark'] .layout * {
+  scrollbar-color: #64748b #0f172a;
+}
+[data-theme='light'] .layout *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+[data-theme='dark'] .layout *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+[data-theme='light'] .layout *::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+[data-theme='dark'] .layout *::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+[data-theme='light'] .layout *::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+}
+[data-theme='dark'] .layout *::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border: 2px solid #0f172a;
+  border-radius: 8px;
+}
+[data-theme='light'] .layout *::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+[data-theme='dark'] .layout *::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 细节文案与模态层补齐：避免浅/深混搭残留 */
+[data-theme='light'] .muted,
+[data-theme='light'] .empty {
+  color: #64748b;
+}
+[data-theme='dark'] .muted,
+[data-theme='dark'] .empty {
+  color: #94a3b8;
+}
+[data-theme='light'] .errors {
+  color: #b91c1c;
+}
+[data-theme='dark'] .errors {
+  color: #fca5a5;
+}
+[data-theme='dark'] .modal-back {
+  background: rgba(2, 6, 23, 0.62);
+}
+[data-theme='light'] .about-icon {
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.18));
+}
+[data-theme='dark'] .about-icon {
+  filter: drop-shadow(0 2px 8px rgba(148, 163, 184, 0.24));
+}
+[data-theme='dark'] .modal-actions .primary {
+  background: #1d4ed8;
+}
+[data-theme='dark'] .modal-actions .primary:hover {
+  background: #2563eb;
+}
+[data-theme='dark'] .dock-json,
+[data-theme='dark'] .dock-json-details,
+[data-theme='dark'] .dock-json--nested {
+  background: #0b1220;
+  border-color: #334155;
+  color: #e5e7eb;
+}
+[data-theme='dark'] .dock-json-summary {
+  color: #93c5fd;
+}
+[data-theme='dark'] .dock-json-summary:hover {
+  color: #bfdbfe;
+}
+[data-theme='dark'] .dock-action--primary {
+  background: #1d4ed8;
+}
+[data-theme='dark'] .dock-action--primary:hover {
+  background: #2563eb;
+}
+[data-theme='dark'] .dock-action--blue-amber {
+  background: linear-gradient(180deg, #1e3a8a 0%, #1d4ed8 100%);
+  color: #e2e8f0;
+}
+[data-theme='dark'] .dock-action--blue-amber:hover {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+}
+[data-theme='dark'] .tb-btn.tb-btn-dirty:not(:disabled) {
+  border-color: #f97316;
+  background: linear-gradient(to bottom, #fb923c, #c2410c);
+  color: #fff7ed;
 }
 </style>
