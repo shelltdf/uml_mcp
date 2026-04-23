@@ -198,6 +198,10 @@ let uiSelectionWriteTimer: ReturnType<typeof setTimeout> | undefined;
 const logLines = ref<string[]>([]);
 const logOpen = ref(false);
 const aboutOpen = ref(false);
+const confirmDialogOpen = ref(false);
+const confirmDialogTitle = ref('');
+const confirmDialogMessage = ref('');
+let confirmDialogResolve: ((ok: boolean) => void) | null = null;
 const lastParseErrSig = ref('');
 /** 预览=只读渲染；富文本=Vditor 所见即所得；原始文本=textarea */
 const mdPaneMode = ref<'preview' | 'rich' | 'source'>('preview');
@@ -227,6 +231,26 @@ function logLine(message: string, level: 'info' | 'warn' | 'error' = 'info') {
 
 function onStatusClick() {
   logOpen.value = true;
+}
+
+function openConfirmDialog(message: string, title?: string): Promise<boolean> {
+  if (confirmDialogResolve) {
+    confirmDialogResolve(false);
+    confirmDialogResolve = null;
+  }
+  confirmDialogTitle.value = title ?? (locale.value === 'en' ? 'Confirm' : '确认');
+  confirmDialogMessage.value = message;
+  confirmDialogOpen.value = true;
+  return new Promise<boolean>((resolve) => {
+    confirmDialogResolve = resolve;
+  });
+}
+
+function resolveConfirmDialog(ok: boolean): void {
+  const fn = confirmDialogResolve;
+  confirmDialogResolve = null;
+  confirmDialogOpen.value = false;
+  if (fn) fn(ok);
 }
 
 async function copyLogToClipboard() {
@@ -444,7 +468,17 @@ function readFileInVsCode(path: string): Promise<{ path: string; text: string }>
 async function promptAndReloadChangedFile(relPath: string): Promise<void> {
   if (!files.value.has(relPath)) return;
   const dirty = isDirty(relPath);
-  if (dirty) {
+  const forceReloadInMindmap =
+    shell.value === 'vscode'
+    && selectedPath.value === relPath
+    && (() => {
+      const tab = activeCanvasSession.value;
+      if (!tab || tab.relPath !== relPath) return false;
+      if (tab.fenceKind !== 'smw-view') return false;
+      const vk = tab.mvViewKind ?? resolveMvViewKindForCanvasTab(tab);
+      return vk === 'mindmap-ui';
+    })();
+  if (dirty && !forceReloadInMindmap) {
     const msg = locale.value === 'en'
       ? `File changed on disk: ${relPath}\nYou have unsaved local changes. Reload from disk and overwrite local edits?`
       : `文件已被外部修改：${relPath}\n当前有未保存本地修改。是否仍从磁盘重载并覆盖本地编辑？`;
@@ -458,8 +492,12 @@ async function promptAndReloadChangedFile(relPath: string): Promise<void> {
       sourceEditorText.value = fresh.text;
     }
     logLine(
-      dirty
+      dirty && !forceReloadInMindmap
         ? (locale.value === 'en' ? `Reloaded changed file: ${fresh.path}` : `已重载外部变更文件：${fresh.path}`)
+        : forceReloadInMindmap
+          ? (locale.value === 'en'
+              ? `Auto reloaded changed file in mindmap mode: ${fresh.path}`
+              : `脑图模式下已自动重载外部变更文件：${fresh.path}`)
         : (locale.value === 'en' ? `Auto reloaded changed file: ${fresh.path}` : `已自动重载外部变更文件：${fresh.path}`),
       'info',
     );
@@ -565,11 +603,26 @@ function openMarkdownFileFromMenu() {
   void openMarkdownFileUnified();
 }
 
-function closeCurrentDocumentFromMenu() {
+async function closeCurrentDocumentFromMenu() {
   closeMenus();
   const fromCanvas = activeCanvasSession.value?.relPath ?? null;
   const p = selectedPath.value ?? fromCanvas;
-  if (p && files.value.has(p)) closeTab(p);
+  const alertNoDoc = locale.value === 'en'
+    ? 'Close failed: no closable document in current view.'
+    : '关闭失败：当前视图没有可关闭的文档。';
+  const alertNotClosed = locale.value === 'en'
+    ? 'Document was not closed. Save changes first, or confirm close when prompted.'
+    : '文档未关闭。请先保存修改，或在提示时确认关闭。';
+  if (p && files.value.has(p)) {
+    const existedBefore = files.value.has(p);
+    await closeTab(p);
+    if (existedBefore && files.value.has(p)) {
+      window.alert(alertNotClosed);
+    }
+    return;
+  }
+  logLine(shellChromeMessages[locale.value].logNeedDoc, 'warn');
+  window.alert(alertNoDoc);
 }
 
 /** 预览模式下导出 HTML/图：用可见预览 DOM；否则离屏 Vditor.preview（参数与预览一致） */
@@ -833,7 +886,7 @@ function onGlobalKeyDown(e: KeyboardEvent) {
   if (e.ctrlKey && (e.key === 'w' || e.key === 'W') && !inField) {
     e.preventDefault();
     const p = selectedPath.value;
-    if (p) closeTab(p);
+    if (p) void closeTab(p);
     return;
   }
 
@@ -1831,10 +1884,14 @@ function tabLabel(path: string): string {
 }
 
 /** 关闭标签：从工作区移除；若关的是当前文档则选中右侧或左侧相邻。 */
-function closeTab(path: string) {
-  if (!files.value.has(path)) return;
+async function closeTab(path: string): Promise<boolean> {
+  if (!files.value.has(path)) return false;
   if (isDirty(path)) {
-    if (!window.confirm(trCloseTabDirty(locale.value, tabLabel(path)))) return;
+    const ok = await openConfirmDialog(
+      trCloseTabDirty(locale.value, tabLabel(path)),
+      locale.value === 'en' ? 'Close Document' : '关闭文档',
+    );
+    if (!ok) return false;
   }
   browserSaveHandles.delete(path);
   markPathSaved(path);
@@ -1857,9 +1914,10 @@ function closeTab(path: string) {
   const rem = [...nextMap.keys()].sort();
   if (rem.length === 0) {
     selectedPath.value = null;
-    return;
+    return true;
   }
   selectedPath.value = rem[i < rem.length ? i : i - 1] ?? rem[0];
+  return true;
 }
 
 function onPickFolder(e: Event) {
@@ -2431,7 +2489,18 @@ function openVisualCanvas(block: ParsedFenceBlock) {
   logLine(trLogOpenedCanvasTab(locale.value, block.payload.id), 'info');
 }
 
-function closeCanvasTab(tabId: string) {
+async function closeCanvasTab(tabId: string): Promise<void> {
+  const target = canvasTabs.value.find((t) => t.id === tabId);
+  if (target?.unsaved) {
+    const confirmText = locale.value === 'en'
+      ? `Current canvas has unsaved changes. Close anyway?\n${target.relPath}#${target.blockId}`
+      : `当前画布有未保存修改，仍要关闭吗？\n${target.relPath}#${target.blockId}`;
+    const ok = await openConfirmDialog(
+      confirmText,
+      locale.value === 'en' ? 'Close Canvas' : '关闭画布',
+    );
+    if (!ok) return;
+  }
   canvasTabs.value = canvasTabs.value.filter((t) => t.id !== tabId);
   if (activeEditorTab.value === tabId) {
     activeEditorTab.value = 'markdown';
@@ -2467,10 +2536,16 @@ function onCanvasUpdatedInPopup(payload: { markdown: string; relPath: string }) 
 }
 
 function onCanvasClosePopup() {
+  const failMsg = locale.value === 'en'
+    ? 'Close failed: this environment blocked window.close(). Please close this tab/window manually.'
+    : '关闭失败：当前环境阻止了 window.close()。请手动关闭此标签页/窗口。';
   try {
     window.close();
+    window.setTimeout(() => {
+      if (!window.closed) window.alert(failMsg);
+    }, 120);
   } catch {
-    /* noop */
+    window.alert(failMsg);
   }
 }
 
@@ -4009,6 +4084,16 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    <div v-if="confirmDialogOpen" class="modal-back" @click.self="resolveConfirmDialog(false)">
+      <div class="modal confirm-modal">
+        <h3>{{ confirmDialogTitle }}</h3>
+        <p class="log-hint confirm-message">{{ confirmDialogMessage }}</p>
+        <div class="modal-actions">
+          <button type="button" @click="resolveConfirmDialog(false)">{{ locale === 'en' ? 'Cancel' : '取消' }}</button>
+          <button type="button" class="primary" @click="resolveConfirmDialog(true)">{{ locale === 'en' ? 'OK' : '确定' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -5469,6 +5554,9 @@ onUnmounted(() => {
   height: 96px;
   object-fit: contain;
   margin-bottom: 10px;
+}
+.confirm-message {
+  white-space: pre-wrap;
 }
 .json-area {
   flex: 1;

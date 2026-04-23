@@ -60,6 +60,7 @@ const emit = defineEmits<{
 const viewportRef = ref<HTMLElement | null>(null);
 const svgRootRef = ref<SVGSVGElement | null>(null);
 const editInputRef = ref<HTMLInputElement | null>(null);
+let viewportResizeObserver: ResizeObserver | null = null;
 const state = reactive<MindmapGraphState>({ nodes: [], edges: [], panX: 0, panY: 0, scale: 1, theme: 'colorful' });
 const layoutRevision = ref(0);
 const selectedIds = ref<string[]>([]);
@@ -1083,12 +1084,20 @@ onMounted(() => {
   window.addEventListener('pointerdown', closeCtx);
   window.addEventListener('resize', syncViewportSize);
   document.addEventListener('fullscreenchange', syncCanvasFullscreenFlag);
+  if (typeof ResizeObserver !== 'undefined' && viewportRef.value) {
+    viewportResizeObserver = new ResizeObserver(() => {
+      syncViewportSizeAfterDomUpdate();
+    });
+    viewportResizeObserver.observe(viewportRef.value);
+  }
   onUnmounted(() => {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('pointerup', finalizeMarqueeSelection);
     window.removeEventListener('pointerdown', closeCtx);
     window.removeEventListener('resize', syncViewportSize);
     document.removeEventListener('fullscreenchange', syncCanvasFullscreenFlag);
+    viewportResizeObserver?.disconnect();
+    viewportResizeObserver = null;
   });
   primeImeInput();
   syncViewportSize();
