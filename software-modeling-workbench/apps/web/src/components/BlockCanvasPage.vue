@@ -145,6 +145,8 @@ const classCanvasCodespaceSideBlockId = ref<string | null>(null);
 const classCanvasCodespaceSidePayload = ref<MvModelCodespacePayload | null>(null);
 /** 自动内存同步后，忽略同一次回流导致的本地重置 */
 const lastAutoSyncedMarkdown = ref('');
+/** 当前 block 初始化后的草稿基线：避免仅因“切换 Tab / 初始化规范化”被判定为脏并回写 */
+const draftBaselineLoose = ref<string | null>(null);
 /** 子表标签「×」删除：页内确认（部分壳层对 window.confirm 不可靠） */
 const subtableDeleteOpen = ref(false);
 const subtableDeleteIndex = ref<number | null>(null);
@@ -153,6 +155,7 @@ watch(
   block,
   (b) => {
     if (lastAutoSyncedMarkdown.value && props.markdown === lastAutoSyncedMarkdown.value) {
+      draftBaselineLoose.value = draftInnerLooseForDirtyCheck()?.trim() ?? null;
       lastAutoSyncedMarkdown.value = '';
       return;
     }
@@ -207,12 +210,13 @@ watch(
       if (viewDraft.value.kind === 'ui-design') {
         viewDraft.value.payload = normalizeUiDesignPayloadFromFence(viewDraft.value.payload);
       }
-      // 用户要求：路径输入框默认保持空字符串，不做 modelRefs 自动反推。
+      // 用户要求：打开画布不应隐式修改 Markdown；路径输入框默认保持空字符串。
       modelRefsRelPathInput.value = '';
-      tryAutoBindSingleModelRefOnViewOpen();
+      // tryAutoBindSingleModelRefOnViewOpen();
     } else if (b.kind === 'smw-map') {
       mapJsonText.value = JSON.stringify(b.payload as MvMapPayload, null, 2);
     }
+    draftBaselineLoose.value = draftInnerLooseForDirtyCheck()?.trim() ?? null;
   },
   { immediate: true },
 );
@@ -392,6 +396,8 @@ function toggleModelRefCandidate(c: ModelRefCandidate) {
   const canon = canonicalModelRef(c);
   // 该区域按单选处理：只保留当前选中的一个引用，避免旧模板/历史引用残留。
   v.modelRefs = [canon];
+  // 用户操作触发的自动补齐应立即回写 md 内存，避免切换后才同步。
+  autoSyncToMarkdownInMemory();
 }
 
 function tryAutoBindSingleModelRefOnViewOpen(): void {
@@ -1615,9 +1621,9 @@ function draftInnerLooseForDirtyCheck(): string | null {
 const hasCanvasUnsavedChanges = computed(() => {
   const b = block.value;
   if (!b) return false;
-  const orig = originalInnerJsonForCurrentBlock();
+  const baseline = draftBaselineLoose.value;
   const cur = draftInnerLooseForDirtyCheck();
-  const mainDirty = (orig ?? '').trim() !== (cur ?? '').trim();
+  const mainDirty = (baseline ?? '') !== (cur ?? '').trim();
   if (!mainDirty && b.kind !== 'smw-view') return false;
 
   // smw-view 里还可能带同文件 codespace 侧车改动：也应触发“保存”变色。
@@ -1670,6 +1676,7 @@ watch(
 function autoSyncToMarkdownInMemory(): void {
   const inner = buildInnerJson();
   if (!inner) return;
+  draftBaselineLoose.value = draftInnerLooseForDirtyCheck()?.trim() ?? null;
   let base = props.markdown;
   if (
     block.value?.kind === 'smw-view' &&

@@ -176,6 +176,8 @@ const openMenu = ref<null | 'file' | 'view' | 'language' | 'theme' | 'help'>(nul
 const chromeRef = ref<HTMLElement | null>(null);
 const layoutRootRef = ref<HTMLElement | null>(null);
 const appIsFullscreen = ref(false);
+const appPseudoFullscreen = ref(false);
+const appFullscreenActive = computed(() => appIsFullscreen.value || appPseudoFullscreen.value);
 const folderInputRef = ref<HTMLInputElement | null>(null);
 /** 浏览器：单文件 .md（无 webkitdirectory） */
 const singleFileInputRef = ref<HTMLInputElement | null>(null);
@@ -188,6 +190,11 @@ const pendingFirstSavePaths = ref<Set<string>>(new Set());
 const pendingVsCodeWrite = new Map<string, { resolve: () => void; reject: (reason?: unknown) => void }>();
 const pendingVsCodeOpen = new Map<string, { resolve: (result: { path: string; text: string }) => void; reject: (reason?: unknown) => void }>();
 const pendingVsCodeSavePath = new Map<string, { resolve: (result: { path: string }) => void; reject: (reason?: unknown) => void }>();
+const pendingVsCodeRead = new Map<string, { resolve: (result: { path: string; text: string }) => void; reject: (reason?: unknown) => void }>();
+let vscodeLiveSyncTimer: number | null = null;
+let vscodeLiveSyncInFlight = false;
+let removeVsCodeLiveSyncListeners: (() => void) | null = null;
+let uiSelectionWriteTimer: ReturnType<typeof setTimeout> | undefined;
 const logLines = ref<string[]>([]);
 const logOpen = ref(false);
 const aboutOpen = ref(false);
@@ -304,6 +311,48 @@ function notifySaveFailureVisible(message: string): void {
   window.alert(`${title}\n${message}`);
 }
 
+function getUiSelectionStatePayload(): Record<string, unknown> {
+  const activeCanvas = activeCanvasSession.value;
+  return {
+    version: 1,
+    shell: shell.value,
+    timestamp: new Date().toISOString(),
+    selected_path: selectedPath.value,
+    active_editor_tab: activeEditorTab.value,
+    selected_block_id: selectedBlockId.value,
+    active_canvas: activeCanvas
+      ? {
+          tab_id: activeCanvas.id,
+          rel_path: activeCanvas.relPath,
+          block_id: activeCanvas.blockId,
+          fence_kind: activeCanvas.fenceKind,
+          mv_view_kind: activeCanvas.mvViewKind ?? null,
+          unsaved: !!activeCanvas.unsaved,
+          selected_mindmap_node_id: activeCanvas.mindmapDockState?.selectedId ?? null,
+          selected_ui_design_ids: activeCanvas.uiDesignDockState?.selectedIds ?? [],
+        }
+      : null,
+  };
+}
+
+function schedulePersistUiSelectionState(): void {
+  clearTimeout(uiSelectionWriteTimer);
+  uiSelectionWriteTimer = setTimeout(() => {
+    const payloadObj = getUiSelectionStatePayload();
+    if (shell.value === 'vscode' && vscodeHostApiRef.value) {
+      try {
+        vscodeHostApiRef.value.postMessage({
+          type: 'smw:vscode:updateUiSelection',
+          selection: payloadObj,
+        });
+      } catch {
+        /* ignore background sync errors */
+      }
+      return;
+    }
+  }, 120);
+}
+
 function writeWorkspaceFileInVsCode(path: string, text: string): Promise<void> {
   const api = vscodeHostApiRef.value;
   if (!api) return Promise.reject(new Error('VSCode host API 不可用。'));
@@ -370,6 +419,57 @@ function pickSavePathInVsCode(currentPath: string): Promise<{ path: string }> {
   });
 }
 
+function readFileInVsCode(path: string): Promise<{ path: string; text: string }> {
+  const api = vscodeHostApiRef.value;
+  if (!api) return Promise.reject(new Error('VSCode host API 不可用。'));
+  const reqId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return new Promise<{ path: string; text: string }>((resolve, reject) => {
+    pendingVsCodeRead.set(reqId, { resolve, reject });
+    try {
+      api.postMessage({ type: 'smw:vscode:readFile', reqId, path });
+    } catch (e) {
+      pendingVsCodeRead.delete(reqId);
+      reject(e);
+      return;
+    }
+    window.setTimeout(() => {
+      const p = pendingVsCodeRead.get(reqId);
+      if (!p) return;
+      pendingVsCodeRead.delete(reqId);
+      p.reject(new Error('VSCode 读取文件超时，请重试。'));
+    }, 12000);
+  });
+}
+
+async function promptAndReloadChangedFile(relPath: string): Promise<void> {
+  if (!files.value.has(relPath)) return;
+  const dirty = isDirty(relPath);
+  if (dirty) {
+    const msg = locale.value === 'en'
+      ? `File changed on disk: ${relPath}\nYou have unsaved local changes. Reload from disk and overwrite local edits?`
+      : `文件已被外部修改：${relPath}\n当前有未保存本地修改。是否仍从磁盘重载并覆盖本地编辑？`;
+    if (!window.confirm(msg)) return;
+  }
+  try {
+    const fresh = await readFileInVsCode(relPath);
+    files.value = new Map(files.value).set(fresh.path, fresh.text);
+    syncBaselineForPath(fresh.path, fresh.text);
+    if (selectedPath.value === fresh.path) {
+      sourceEditorText.value = fresh.text;
+    }
+    logLine(
+      dirty
+        ? (locale.value === 'en' ? `Reloaded changed file: ${fresh.path}` : `已重载外部变更文件：${fresh.path}`)
+        : (locale.value === 'en' ? `Auto reloaded changed file: ${fresh.path}` : `已自动重载外部变更文件：${fresh.path}`),
+      'info',
+    );
+  } catch (e) {
+    const msgErr = String(e);
+    logLine(trLogSaveFailed(locale.value, msgErr), 'error');
+    notifySaveFailureVisible(msgErr);
+  }
+}
+
 function syncBaselineForPath(path: string, content: string) {
   const m = new Map(savedBaseline.value);
   m.set(path, content);
@@ -386,6 +486,33 @@ function isDirty(path: string | null | undefined): boolean {
   if (cur === undefined) return false;
   if (!savedBaseline.value.has(path)) return true;
   return cur !== savedBaseline.value.get(path);
+}
+
+async function tryAutoSyncSelectedFile(): Promise<void> {
+  if (shell.value !== 'vscode' || !vscodeHostApiRef.value) return;
+  const p = selectedPath.value;
+  if (!p || isDirty(p) || vscodeLiveSyncInFlight) return;
+  vscodeLiveSyncInFlight = true;
+  try {
+    const fresh = await readFileInVsCode(p);
+    const cur = files.value.get(fresh.path);
+    if (typeof cur === 'string' && cur !== fresh.text) {
+      files.value = new Map(files.value).set(fresh.path, fresh.text);
+      syncBaselineForPath(fresh.path, fresh.text);
+      if (selectedPath.value === fresh.path) sourceEditorText.value = fresh.text;
+      refreshCanvasTabSubtypesForPath(fresh.path, fresh.text);
+      logLine(
+        locale.value === 'en'
+          ? `Auto synced latest file content: ${fresh.path}`
+          : `已自动同步文件最新内容：${fresh.path}`,
+        'info',
+      );
+    }
+  } catch {
+    // Ignore transient read failures; timer/focus will retry.
+  } finally {
+    vscodeLiveSyncInFlight = false;
+  }
 }
 
 const currentDocDirty = computed(() => {
@@ -440,8 +567,9 @@ function openMarkdownFileFromMenu() {
 
 function closeCurrentDocumentFromMenu() {
   closeMenus();
-  const p = selectedPath.value;
-  if (p) closeTab(p);
+  const fromCanvas = activeCanvasSession.value?.relPath ?? null;
+  const p = selectedPath.value ?? fromCanvas;
+  if (p && files.value.has(p)) closeTab(p);
 }
 
 /** 预览模式下导出 HTML/图：用可见预览 DOM；否则离屏 Vditor.preview（参数与预览一致） */
@@ -710,6 +838,10 @@ function onGlobalKeyDown(e: KeyboardEvent) {
   }
 
   if (e.key === 'Escape') {
+    if (appPseudoFullscreen.value) {
+      appPseudoFullscreen.value = false;
+      return;
+    }
     if (aboutOpen.value) {
       aboutOpen.value = false;
       return;
@@ -731,6 +863,10 @@ function syncAppFullscreenFlag() {
 async function toggleAppFullscreen() {
   const el = layoutRootRef.value;
   if (!el) return;
+  if (shell.value === 'vscode') {
+    appPseudoFullscreen.value = !appPseudoFullscreen.value;
+    return;
+  }
   try {
     if (document.fullscreenElement) {
       await document.exitFullscreen();
@@ -738,6 +874,7 @@ async function toggleAppFullscreen() {
       await el.requestFullscreen();
     }
   } catch {
+    appPseudoFullscreen.value = !appPseudoFullscreen.value;
     logLine(trLogFullscreenFailed(locale.value), 'warn');
   }
 }
@@ -1063,6 +1200,82 @@ function openJsonForSelected() {
 function openShellForSelected() {
   const b = selectedBlock.value;
   if (b) openBlockInShell(b);
+}
+
+const selectedBlockIndex = computed(() => {
+  const id = selectedBlockId.value;
+  if (!id) return -1;
+  return blocks.value.findIndex((b) => b.payload.id === id);
+});
+
+const canMoveSelectedBlockUp = computed(() => selectedBlockIndex.value > 0);
+const canMoveSelectedBlockDown = computed(
+  () => selectedBlockIndex.value >= 0 && selectedBlockIndex.value < blocks.value.length - 1,
+);
+
+function applyCurrentDocMarkdown(next: string): void {
+  const p = selectedPath.value;
+  if (!p) return;
+  files.value = new Map(files.value).set(p, next);
+  sourceEditorText.value = next;
+  refreshCanvasTabSubtypesForPath(p, next);
+  scheduleElectronWrite(p, next);
+}
+
+function moveSelectedBlock(delta: -1 | 1): void {
+  const p = selectedPath.value;
+  const id = selectedBlockId.value;
+  if (!p || !id) return;
+  const src = files.value.get(p) ?? '';
+  const parsed = parseMarkdownBlocks(src);
+  const from = parsed.blocks.findIndex((b) => b.payload.id === id);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= parsed.blocks.length) return;
+  const cur = parsed.blocks[from]!;
+  const target = parsed.blocks[to]!;
+  let next = src;
+  if (delta === -1) {
+    const prefix = src.slice(0, target.startOffset);
+    const targetChunk = src.slice(target.startOffset, target.endOffset);
+    const between = src.slice(target.endOffset, cur.startOffset);
+    const curChunk = src.slice(cur.startOffset, cur.endOffset);
+    const suffix = src.slice(cur.endOffset);
+    next = `${prefix}${curChunk}${between}${targetChunk}${suffix}`;
+  } else {
+    const prefix = src.slice(0, cur.startOffset);
+    const curChunk = src.slice(cur.startOffset, cur.endOffset);
+    const between = src.slice(cur.endOffset, target.startOffset);
+    const targetChunk = src.slice(target.startOffset, target.endOffset);
+    const suffix = src.slice(target.endOffset);
+    next = `${prefix}${targetChunk}${between}${curChunk}${suffix}`;
+  }
+  applyCurrentDocMarkdown(next);
+}
+
+function deleteSelectedBlock(): void {
+  const p = selectedPath.value;
+  const id = selectedBlockId.value;
+  if (!p || !id) return;
+  const confirmText =
+    locale.value === 'en'
+      ? `Delete block ${id} ? This cannot be undone.`
+      : `确认删除代码块 ${id}？此操作不可撤销。`;
+  if (!window.confirm(confirmText)) return;
+  const src = files.value.get(p) ?? '';
+  const parsed = parseMarkdownBlocks(src);
+  const idx = parsed.blocks.findIndex((b) => b.payload.id === id);
+  if (idx < 0) return;
+  const hit = parsed.blocks[idx]!;
+  let next = src.slice(0, hit.startOffset) + src.slice(hit.endOffset);
+  next = next.replace(/\n{3,}/g, '\n\n');
+  applyCurrentDocMarkdown(next);
+  canvasTabs.value = canvasTabs.value.filter((t) => !(t.relPath === p && t.blockId === id));
+  if (activeEditorTab.value !== 'markdown' && !canvasTabs.value.some((t) => t.id === activeEditorTab.value)) {
+    activeEditorTab.value = 'markdown';
+  }
+  const reparsed = parseMarkdownBlocks(next);
+  const fallback = reparsed.blocks[Math.min(idx, Math.max(reparsed.blocks.length - 1, 0))];
+  selectedBlockId.value = fallback?.payload.id ?? null;
 }
 
 interface MdOutlineHeading {
@@ -1973,6 +2186,13 @@ const activeCanvasSession = computed(() => {
   return canvasTabs.value.find((t) => t.id === id) ?? null;
 });
 
+const currentClosablePath = computed(() => {
+  const fromCanvas = activeCanvasSession.value?.relPath ?? null;
+  const p = selectedPath.value ?? fromCanvas;
+  if (!p || !files.value.has(p)) return null;
+  return p;
+});
+
 const embeddedCanvasMarkdown = computed(() => {
   const s = activeCanvasSession.value;
   if (!s) return '';
@@ -2031,6 +2251,10 @@ watch(activeEditorTab, (tabId) => {
   if (tabId === 'markdown') return;
   const tab = canvasTabs.value.find((t) => t.id === tabId);
   if (tab) selectedBlockId.value = tab.blockId;
+});
+
+watch([selectedPath, activeEditorTab, selectedBlockId, activeCanvasSession], () => {
+  schedulePersistUiSelectionState();
 });
 
 const codespaceDockCanvasSelectionText = computed(() => {
@@ -2251,6 +2475,24 @@ function onCanvasClosePopup() {
 }
 
 function onOpenerCanvasUpdated(ev: MessageEvent) {
+  if (ev.data?.type === 'smw:vscode:readFile:result') {
+    const reqId = typeof ev.data?.reqId === 'string' ? ev.data.reqId : '';
+    if (!reqId) return;
+    const pending = pendingVsCodeRead.get(reqId);
+    if (!pending) return;
+    pendingVsCodeRead.delete(reqId);
+    if (ev.data?.ok) {
+      pending.resolve({ path: String(ev.data.path ?? ''), text: String(ev.data.text ?? '') });
+    } else {
+      pending.reject(new Error(String(ev.data?.error ?? '读取失败')));
+    }
+    return;
+  }
+  if (ev.data?.type === 'smw:vscode:fileChanged') {
+    const relPath = typeof ev.data?.path === 'string' ? ev.data.path : '';
+    if (relPath) void promptAndReloadChangedFile(relPath);
+    return;
+  }
   if (ev.data?.type === 'smw:vscode:pickOpenFile:result') {
     const reqId = typeof ev.data?.reqId === 'string' ? ev.data.reqId : '';
     if (!reqId) return;
@@ -2338,6 +2580,18 @@ onMounted(async () => {
     if (typeof w.acquireVsCodeApi === 'function') {
       vscodeHostApiRef.value = w.acquireVsCodeApi();
     }
+    const onFocusSync = () => { void tryAutoSyncSelectedFile(); };
+    const onVisibleSync = () => {
+      if (document.visibilityState === 'visible') void tryAutoSyncSelectedFile();
+    };
+    window.addEventListener('focus', onFocusSync);
+    document.addEventListener('visibilitychange', onVisibleSync);
+    removeVsCodeLiveSyncListeners = () => {
+      window.removeEventListener('focus', onFocusSync);
+      document.removeEventListener('visibilitychange', onVisibleSync);
+    };
+    if (vscodeLiveSyncTimer !== null) window.clearInterval(vscodeLiveSyncTimer);
+    vscodeLiveSyncTimer = window.setInterval(() => { void tryAutoSyncSelectedFile(); }, 1200);
   }
   themePreference.value = readStoredThemePreference();
   applyThemePreference(themePreference.value);
@@ -2426,6 +2680,17 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  removeVsCodeLiveSyncListeners?.();
+  removeVsCodeLiveSyncListeners = null;
+  if (vscodeLiveSyncTimer !== null) {
+    window.clearInterval(vscodeLiveSyncTimer);
+    vscodeLiveSyncTimer = null;
+  }
+  for (const [, pending] of pendingVsCodeRead) {
+    pending.reject(new Error('页面已卸载'));
+  }
+  pendingVsCodeRead.clear();
+  clearTimeout(uiSelectionWriteTimer);
   for (const [, pending] of pendingVsCodeOpen) {
     pending.reject(new Error('页面已卸载'));
   }
@@ -2465,7 +2730,7 @@ onUnmounted(() => {
     @ui-design-dock-state="onUiDesignDockState"
     @dirty-change="onActiveCanvasDirtyChange"
   />
-  <div v-else ref="layoutRootRef" class="layout" :class="{ blockOnly }">
+  <div v-else ref="layoutRootRef" class="layout" :class="{ blockOnly, 'layout--pseudo-fullscreen': appPseudoFullscreen }">
     <input
       ref="folderInputRef"
       type="file"
@@ -2564,7 +2829,13 @@ onUnmounted(() => {
             </li>
             <li class="menu-sep" role="separator" />
             <li role="none">
-              <button type="button" class="menu-item" role="menuitem" :disabled="!selectedPath" @click="closeCurrentDocumentFromMenu">
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                :disabled="!currentClosablePath"
+                @click="closeCurrentDocumentFromMenu"
+              >
                 {{ ui.close }}
               </button>
             </li>
@@ -2700,7 +2971,7 @@ onUnmounted(() => {
           <button
             type="button"
             class="tb-btn"
-            :disabled="!selectedPath"
+            :disabled="!currentClosablePath"
             :title="ui.tbCloseTitle"
             @click="closeCurrentDocumentFromMenu"
           >
@@ -2715,10 +2986,10 @@ onUnmounted(() => {
         <button
           type="button"
           class="tb-btn tb-btn-fullscreen"
-          :title="appIsFullscreen ? ui.tbFullscreenExitTitle : ui.tbFullscreenTitle"
+          :title="appFullscreenActive ? ui.tbFullscreenExitTitle : ui.tbFullscreenTitle"
           @click="toggleAppFullscreen"
         >
-          {{ appIsFullscreen ? ui.tbFullscreenExit : ui.tbFullscreen }}
+          {{ appFullscreenActive ? ui.tbFullscreenExit : ui.tbFullscreen }}
         </button>
       </div>
     </header>
@@ -3229,6 +3500,32 @@ onUnmounted(() => {
                           <button
                             type="button"
                             class="dock-action"
+                            :title="locale === 'en' ? 'Move block up' : '上移代码块'"
+                            :disabled="!canMoveSelectedBlockUp"
+                            @click="moveSelectedBlock(-1)"
+                          >
+                            {{ locale === 'en' ? 'Move Up' : '上移' }}
+                          </button>
+                          <button
+                            type="button"
+                            class="dock-action"
+                            :title="locale === 'en' ? 'Move block down' : '下移代码块'"
+                            :disabled="!canMoveSelectedBlockDown"
+                            @click="moveSelectedBlock(1)"
+                          >
+                            {{ locale === 'en' ? 'Move Down' : '下移' }}
+                          </button>
+                          <button
+                            type="button"
+                            class="dock-action"
+                            :title="locale === 'en' ? 'Delete block' : '删除代码块'"
+                            @click="deleteSelectedBlock"
+                          >
+                            {{ locale === 'en' ? 'Delete Block' : '删除代码块' }}
+                          </button>
+                          <button
+                            type="button"
+                            class="dock-action"
                             :title="ui.editJsonTitle"
                             @click="openJsonForSelected"
                           >
@@ -3508,7 +3805,8 @@ onUnmounted(() => {
                     <template v-if="!mindmapThemeDockFolded">
                       <label class="dock-field">
                         <span>Theme</span>
-                        <select class="dock-input" :value="activeMindmapDockState?.theme ?? 'classic'" @change="sendMindmapDockCommand('set-theme', ($event.target as HTMLSelectElement).value)">
+                        <select class="dock-input" :value="activeMindmapDockState?.theme ?? 'colorful'" @change="sendMindmapDockCommand('set-theme', ($event.target as HTMLSelectElement).value)">
+                          <option value="colorful">Colorful</option>
                           <option value="classic">Classic</option>
                           <option value="night">Night</option>
                           <option value="forest">Forest</option>
@@ -3725,6 +4023,15 @@ onUnmounted(() => {
 .layout:-webkit-full-screen {
   min-height: 100vh;
   height: 100%;
+  box-sizing: border-box;
+  background: #e8ecf4;
+}
+.layout--pseudo-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  min-height: 100vh;
+  height: 100vh;
   box-sizing: border-box;
   background: #e8ecf4;
 }
@@ -5344,6 +5651,9 @@ onUnmounted(() => {
 [data-theme='dark'] .layout:-webkit-full-screen {
   background: #0f172a;
 }
+[data-theme='dark'] .layout--pseudo-fullscreen {
+  background: #0f172a;
+}
 [data-theme='dark'] .win-chrome {
   border-bottom-color: #334155;
   background: linear-gradient(to bottom, #111827 0%, #0f172a 100%);
@@ -5694,6 +6004,60 @@ onUnmounted(() => {
   background: #0b1220;
   border: 1px solid #334155;
   color: inherit;
+}
+/* range 需要单独轨道/滑块样式，避免被通用 input 规则覆盖后轨道不可见 */
+[data-theme='light'] .layout input[type='range'].dock-input,
+[data-theme='dark'] .layout input[type='range'].dock-input {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+}
+[data-theme='light'] .layout input[type='range'].dock-input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #dbe3ef;
+  border: 1px solid #c5cfde;
+}
+[data-theme='dark'] .layout input[type='range'].dock-input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #1f2937;
+  border: 1px solid #334155;
+}
+[data-theme='light'] .layout input[type='range'].dock-input::-webkit-slider-thumb,
+[data-theme='dark'] .layout input[type='range'].dock-input::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 1px solid #1d4ed8;
+  background: #3b82f6;
+}
+[data-theme='light'] .layout input[type='range'].dock-input::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #dbe3ef;
+  border: 1px solid #c5cfde;
+}
+[data-theme='dark'] .layout input[type='range'].dock-input::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #1f2937;
+  border: 1px solid #334155;
+}
+[data-theme='light'] .layout input[type='range'].dock-input::-moz-range-thumb,
+[data-theme='dark'] .layout input[type='range'].dock-input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #1d4ed8;
+  background: #3b82f6;
 }
 [data-theme='light'] .layout :is(input, textarea, select, button):focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.45);

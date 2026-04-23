@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { idsInMarquee, pickNodeAt, pointToWorld, zoomAt } from './core/interaction';
+import { idsInMarquee, pointToWorld, zoomAt } from './core/interaction';
 import { layoutMindmap } from './core/layout';
 import { parseMindmapPayloadText, serializeMindmapPayload } from './core/adapter';
 import type { MindmapGraphState, MindmapNodeData } from './core/types';
@@ -58,8 +58,10 @@ const emit = defineEmits<{
 }>();
 
 const viewportRef = ref<HTMLElement | null>(null);
+const svgRootRef = ref<SVGSVGElement | null>(null);
 const editInputRef = ref<HTMLInputElement | null>(null);
-const state = reactive<MindmapGraphState>({ nodes: [], edges: [], panX: 0, panY: 0, scale: 1, theme: 'classic' });
+const state = reactive<MindmapGraphState>({ nodes: [], edges: [], panX: 0, panY: 0, scale: 1, theme: 'colorful' });
+const layoutRevision = ref(0);
 const selectedIds = ref<string[]>([]);
 const dragNodeId = ref<string | null>(null);
 const dragOffset = reactive({ x: 0, y: 0 });
@@ -83,8 +85,19 @@ interface ClipboardPayload {
 }
 const clipboardNode = ref<ClipboardPayload | null>(null);
 
-const layoutNodes = computed(() => layoutMindmap(state.nodes));
+const layoutNodes = computed(() => {
+  void layoutRevision.value;
+  return layoutMindmap(state.nodes);
+});
 const byId = computed(() => new Map(layoutNodes.value.map((n) => [n.id, n] as const)));
+const childCountByParent = computed(() => {
+  const m = new Map<string, number>();
+  for (const n of state.nodes) {
+    if (!n.parentId) continue;
+    m.set(n.parentId, (m.get(n.parentId) ?? 0) + 1);
+  }
+  return m;
+});
 const editingNodeLayout = computed(() => (editNodeId.value ? byId.value.get(editNodeId.value) ?? null : null));
 const zoomPercent = computed(() => `${Math.round(state.scale * 100)}%`);
 const viewportW = ref(1);
@@ -92,6 +105,8 @@ const viewportH = ref(1);
 
 const { locale } = useAppLocale();
 const mmcUi = computed(() => mindmapCanvasMessagesFor(locale.value));
+const shortcutsOpen = ref(false);
+const COLORFUL_NODE_FILLS = ['#fef3c7', '#dbeafe', '#dcfce7', '#fce7f3', '#e9d5ff', '#ccfbf1'];
 const MMC_BAR_H = 21;
 const mmcToolbarLayout = computed(() => {
   const isZh = locale.value === 'zh';
@@ -121,6 +136,79 @@ const mmcToolbarLayout = computed(() => {
   };
 });
 
+function autoRelayout(): void {
+  // Normalize all sibling orders first so auto layout has deterministic effect.
+  const parentSet = new Set<string | null>();
+  for (const n of state.nodes) parentSet.add(n.parentId ?? null);
+  for (const parentId of parentSet) normalizeSiblingOrder(parentId);
+  for (const n of state.nodes) {
+    n.posX = undefined;
+    n.posY = undefined;
+  }
+  layoutRevision.value += 1;
+  pushPayload();
+}
+
+function fallbackCopyText(text: string): boolean {
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.setAttribute('readonly', 'true');
+  el.style.position = 'fixed';
+  el.style.left = '-10000px';
+  el.style.top = '-10000px';
+  document.body.appendChild(el);
+  el.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  document.body.removeChild(el);
+  return ok;
+}
+
+async function copyDebugSvg(): Promise<void> {
+  const svgEl = svgRootRef.value;
+  if (!svgEl) return;
+  const text = svgEl.outerHTML;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      window.alert(mmcUi.value.copyDebugSuccess);
+      return;
+    }
+  } catch {
+    // Fallback below.
+  }
+  if (fallbackCopyText(text)) {
+    window.alert(mmcUi.value.copyDebugSuccess);
+    return;
+  }
+  window.alert(mmcUi.value.copyDebugFailed);
+}
+
+function defaultNodeFill(n: { id: string; depth: number }): string {
+  if (state.theme === 'night') return '#1f2937';
+  if (state.theme === 'forest') return '#ecfdf5';
+  if (state.theme === 'colorful') {
+    if (n.depth <= 0) return '#fde68a';
+    return COLORFUL_NODE_FILLS[(n.depth - 1) % COLORFUL_NODE_FILLS.length]!;
+  }
+  return '#ffffff';
+}
+
+function nodeLabelLineHeight(n: MindmapNodeData): number {
+  const fs = Number(n.fontSize ?? 12);
+  const clamped = Number.isFinite(fs) ? Math.max(10, Math.min(28, fs)) : 12;
+  // Keep identical with layout.ts (NODE_BASE_LINE_H / NODE_BASE_FONT_SIZE = 16 / 12).
+  return Math.max(14, Math.round(clamped * (16 / 12)));
+}
+
+function nodeLabelFirstLineY(n: MindmapNodeData): number {
+  return 10 + Math.round(nodeLabelLineHeight(n) * 0.78);
+}
+
 function viewportRect(): DOMRect {
   return viewportRef.value?.getBoundingClientRect() ?? new DOMRect(0, 0, 1, 1);
 }
@@ -129,19 +217,29 @@ function syncViewportSize(): void {
   viewportW.value = Math.max(1, r.width);
   viewportH.value = Math.max(1, r.height);
 }
+function syncViewportSizeAfterDomUpdate(): void {
+  void nextTick(() => {
+    requestAnimationFrame(() => syncViewportSize());
+  });
+}
 
 const isCanvasFullscreen = ref(false);
+const canvasPseudoFullscreen = ref(false);
+const canvasFullscreenActive = computed(() => isCanvasFullscreen.value || canvasPseudoFullscreen.value);
 function syncCanvasFullscreenFlag(): void {
   const el = viewportRef.value;
   const now = Boolean(el && document.fullscreenElement === el);
-  const entered = now && !isCanvasFullscreen.value;
   isCanvasFullscreen.value = now;
-  syncViewportSize();
-  if (entered) void nextTick(() => fitView());
+  syncViewportSizeAfterDomUpdate();
 }
 async function toggleCanvasFullscreen(): Promise<void> {
   const el = viewportRef.value;
   if (!el) return;
+  if ((window as { acquireVsCodeApi?: unknown }).acquireVsCodeApi) {
+    canvasPseudoFullscreen.value = !canvasPseudoFullscreen.value;
+    syncViewportSizeAfterDomUpdate();
+    return;
+  }
   try {
     if (document.fullscreenElement === el) {
       await document.exitFullscreen();
@@ -149,7 +247,8 @@ async function toggleCanvasFullscreen(): Promise<void> {
       await el.requestFullscreen();
     }
   } catch {
-    /* Fullscreen API may be blocked or unsupported */
+    canvasPseudoFullscreen.value = !canvasPseudoFullscreen.value;
+    syncViewportSizeAfterDomUpdate();
   }
 }
 function isEditableElement(el: Element | null): boolean {
@@ -296,7 +395,7 @@ function loadPayload(text: string): void {
   state.panX = parsed.panX;
   state.panY = parsed.panY;
   state.scale = parsed.scale;
-  state.theme = parsed.theme || 'classic';
+  state.theme = parsed.theme || 'colorful';
   selectedIds.value = [];
   editNodeId.value = null;
   lastSynced.value = text;
@@ -484,7 +583,28 @@ function demoteNode(id: string): void {
 function toggleCollapseSelected(): void {
   const first = firstSelectedNode();
   if (!first) return;
-  first.collapsed = !(first.collapsed === true);
+  void toggleNodeCollapsedById(first.id);
+}
+async function toggleNodeCollapsedById(nodeId: string): Promise<void> {
+  if ((childCountByParent.value.get(nodeId) ?? 0) <= 0) return;
+  const before = byId.value.get(nodeId);
+  const target = state.nodes.find((n) => n.id === nodeId);
+  if (!target) return;
+  const beforeCenterX = before ? before.x + before.w / 2 : null;
+  const beforeCenterY = before ? before.y + before.h / 2 : null;
+  const beforeScreenX = beforeCenterX === null ? null : state.panX + beforeCenterX * state.scale;
+  const beforeScreenY = beforeCenterY === null ? null : state.panY + beforeCenterY * state.scale;
+  target.collapsed = !(target.collapsed === true);
+  await nextTick();
+  const after = byId.value.get(nodeId);
+  if (beforeScreenX !== null && beforeScreenY !== null && after) {
+    const afterCenterX = after.x + after.w / 2;
+    const afterCenterY = after.y + after.h / 2;
+    const afterScreenX = state.panX + afterCenterX * state.scale;
+    const afterScreenY = state.panY + afterCenterY * state.scale;
+    state.panX += beforeScreenX - afterScreenX;
+    state.panY += beforeScreenY - afterScreenY;
+  }
   pushPayload();
 }
 function collectSubtree(id: string): MindmapNodeData[] {
@@ -572,13 +692,6 @@ function beginNodeDrag(e: PointerEvent, id: string): void {
 function updateNodeDrag(e: PointerEvent): void {
   const pid = dragNodeId.value;
   if (!pid) return;
-  const source = state.nodes.find((n) => n.id === pid);
-  if (source?.parentId === null) {
-    state.panX = dragPanOrigin.x + (e.clientX - dragStartClient.x);
-    state.panY = dragPanOrigin.y + (e.clientY - dragStartClient.y);
-    hoverDropTargetId.value = null;
-    return;
-  }
   const w = worldAt(e.clientX, e.clientY);
   const base = dragSnapshots.value[pid];
   if (!base) return;
@@ -586,28 +699,19 @@ function updateNodeDrag(e: PointerEvent): void {
   const ny = w.y - dragOffset.y;
   const dx = nx - base.x;
   const dy = ny - base.y;
-  hoverDropTargetId.value = pickNodeAt(layoutNodes.value, w.x, w.y)?.id ?? null;
   for (const sid of selectedIds.value) {
-    const ln = byId.value.get(sid);
     const s = dragSnapshots.value[sid];
-    if (ln && s) {
-      ln.x = s.x + dx;
-      ln.y = s.y + dy;
+    const node = state.nodes.find((n) => n.id === sid);
+    if (node && s) {
+      node.posX = s.x + dx;
+      node.posY = s.y + dy;
     }
   }
+  layoutRevision.value += 1;
 }
 function endNodeDrag(e: PointerEvent): void {
   const sourceId = dragNodeId.value;
   if (!sourceId) return;
-  const dropTargetId = hoverDropTargetId.value;
-  if (dropTargetId && sourceId !== dropTargetId && !isDescendant(dropTargetId, sourceId)) {
-    const src = state.nodes.find((n) => n.id === sourceId);
-    if (src) {
-      src.parentId = dropTargetId;
-      src.order = state.nodes.filter((n) => n.parentId === dropTargetId).length;
-      normalizeSiblingOrder(dropTargetId);
-    }
-  }
   dragNodeId.value = null;
   hoverDropTargetId.value = null;
   try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
@@ -685,6 +789,11 @@ function onBackgroundPointerDown(e: PointerEvent): void {
   if (e.button !== 0) return;
   const w = worldAt(e.clientX, e.clientY);
   marquee.value = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+  try {
+    viewportRef.value?.setPointerCapture(e.pointerId);
+  } catch {
+    /* capture may fail on some platforms */
+  }
   if (!(e.ctrlKey || e.metaKey)) selectedIds.value = [];
   emitDockContext();
   primeImeInput();
@@ -697,6 +806,10 @@ function onViewportPointerMove(e: PointerEvent): void {
   }
   if (dragNodeId.value) return updateNodeDrag(e);
   if (!marquee.value) return;
+  if ((e.buttons & 1) === 0) {
+    finalizeMarqueeSelection(e);
+    return;
+  }
   const w = worldAt(e.clientX, e.clientY);
   marquee.value = { ...marquee.value, x1: w.x, y1: w.y };
 }
@@ -715,15 +828,29 @@ function onViewportPointerUp(e: PointerEvent): void {
     endMiddleButtonPan(e);
     return;
   }
-  if (!marquee.value) return;
-  selectedIds.value = idsInMarquee(layoutNodes.value, marquee.value.x0, marquee.value.y0, marquee.value.x1, marquee.value.y1);
-  marquee.value = null;
-  pushPayload();
-  emitDockContext();
+  finalizeMarqueeSelection(e);
 }
 
 function onViewportPointerCancel(e: PointerEvent): void {
   if (panning.value) endMiddleButtonPan(e);
+  if (marquee.value) finalizeMarqueeSelection(e);
+}
+
+function finalizeMarqueeSelection(e?: PointerEvent): void {
+  if (!marquee.value) return;
+  if (e) {
+    const w = worldAt(e.clientX, e.clientY);
+    marquee.value = { ...marquee.value, x1: w.x, y1: w.y };
+    try {
+      viewportRef.value?.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  }
+  selectedIds.value = idsInMarquee(layoutNodes.value, marquee.value.x0, marquee.value.y0, marquee.value.x1, marquee.value.y1);
+  marquee.value = null;
+  pushPayload();
+  emitDockContext();
 }
 
 function onWheel(e: WheelEvent): void {
@@ -834,6 +961,12 @@ function onKeyDown(e: KeyboardEvent): void {
   if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); return zoomByStep(0.1); }
   if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); return zoomByStep(-0.1); }
   if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); return resetZoom(); }
+  if (e.key === 'Escape' && canvasPseudoFullscreen.value) {
+    e.preventDefault();
+    canvasPseudoFullscreen.value = false;
+    syncViewportSizeAfterDomUpdate();
+    return;
+  }
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); return deleteSelected(); }
   if (e.key === 'Enter') { e.preventDefault(); return addSibling(first); }
   if (e.key === 'Tab') { e.preventDefault(); return addChild(first ?? state.nodes.find((n) => n.parentId === null)?.id ?? null); }
@@ -919,8 +1052,11 @@ watch(
       first.borderColor = (cmd.payload ?? '').trim() || undefined;
       return pushPayload();
     }
-    if (cmd.action === 'set-theme') { state.theme = (cmd.payload ?? '').trim() || 'classic'; return pushPayload(); }
-    if (cmd.action === 'toggle-collapsed' && first) { first.collapsed = !(first.collapsed === true); return pushPayload(); }
+    if (cmd.action === 'set-theme') { state.theme = (cmd.payload ?? '').trim() || 'colorful'; return pushPayload(); }
+    if (cmd.action === 'toggle-collapsed' && first) {
+      void toggleNodeCollapsedById(first.id);
+      return;
+    }
     if (cmd.action === 'add-child') return addChild(first?.id ?? state.nodes.find((n) => n.parentId === null)?.id ?? null);
     if (cmd.action === 'add-sibling') return addSibling(first?.id ?? null);
     if (cmd.action === 'delete-node') return deleteSelected();
@@ -943,11 +1079,13 @@ onMounted(() => {
     if (t && viewportRef.value && !viewportRef.value.contains(t)) ctx.open = false;
   };
   window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('pointerup', finalizeMarqueeSelection);
   window.addEventListener('pointerdown', closeCtx);
   window.addEventListener('resize', syncViewportSize);
   document.addEventListener('fullscreenchange', syncCanvasFullscreenFlag);
   onUnmounted(() => {
     window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('pointerup', finalizeMarqueeSelection);
     window.removeEventListener('pointerdown', closeCtx);
     window.removeEventListener('resize', syncViewportSize);
     document.removeEventListener('fullscreenchange', syncCanvasFullscreenFlag);
@@ -962,16 +1100,42 @@ onMounted(() => {
   <div
     ref="viewportRef"
     class="mmc"
+    :class="{ 'mmc--pseudo-fullscreen': canvasPseudoFullscreen }"
     @pointermove="onViewportPointerMove"
     @pointerup="onViewportPointerUp"
     @pointercancel="onViewportPointerCancel"
     @wheel.prevent="onWheel"
   >
-    <svg class="mmc-svg" xmlns="http://www.w3.org/2000/svg">
+    <div class="mmc-left-stack">
+      <div class="mmc-panel mmc-panel--shortcuts" :class="{ 'mmc-panel--collapsed': !shortcutsOpen }">
+        <button
+          type="button"
+          class="mmc-panel__toggle"
+          :aria-expanded="shortcutsOpen"
+          :title="`${mmcUi.shortcutsPanel} — 无全局快捷键`"
+          @click="shortcutsOpen = !shortcutsOpen"
+        >
+          {{ mmcUi.shortcutsPanel }}
+          <span class="mmc-panel__glyph">{{ shortcutsOpen ? '▴' : '▾' }}</span>
+        </button>
+        <pre v-show="shortcutsOpen" class="mmc-panel__body">{{ mmcUi.shortcutsBody }}</pre>
+      </div>
+      <div class="mmc-canvas-toolbar" role="toolbar" :aria-label="mmcUi.toolRelayout">
+        <button type="button" class="mmc-canvas-toolbar__btn" :title="mmcUi.toolRelayout" @click.stop="autoRelayout">
+          <svg class="mmc-canvas-toolbar__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <rect x="3" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <rect x="15" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <rect x="9" y="14" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <path d="M9 7h6M12 10v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <svg ref="svgRootRef" class="mmc-svg" xmlns="http://www.w3.org/2000/svg">
       <g :transform="`translate(${state.panX},${state.panY}) scale(${state.scale})`">
         <rect x="-100000" y="-100000" width="200000" height="200000" fill="transparent" @pointerdown="onBackgroundPointerDown" @contextmenu="openContextMenu($event, null)" />
         <path
-          v-for="(n, i) in state.nodes.filter((x) => x.parentId && byId.has(x.parentId!))"
+          v-for="(n, i) in state.nodes.filter((x) => x.parentId && byId.has(x.parentId!) && byId.has(x.id))"
           :key="`e_${i}_${n.id}`"
           :d="`M ${byId.get(n.parentId!)!.x + byId.get(n.parentId!)!.w} ${byId.get(n.parentId!)!.y + byId.get(n.parentId!)!.h / 2}
                C ${byId.get(n.parentId!)!.x + byId.get(n.parentId!)!.w + 36} ${byId.get(n.parentId!)!.y + byId.get(n.parentId!)!.h / 2},
@@ -986,7 +1150,7 @@ onMounted(() => {
             :width="n.w"
             :height="n.h"
             :rx="n.borderStyle === 'square' ? 0 : 8"
-            :fill="selectedIds.includes(n.id) ? '#dbeafe' : (n.bgColor || (state.theme === 'night' ? '#1f2937' : state.theme === 'forest' ? '#ecfdf5' : '#ffffff'))"
+            :fill="selectedIds.includes(n.id) ? '#dbeafe' : (n.bgColor || defaultNodeFill(n))"
             :stroke="n.borderStyle === 'bottom' ? 'transparent' : (hoverDropTargetId === n.id ? '#16a34a' : selectedIds.includes(n.id) ? '#2563eb' : (n.borderColor || '#94a3b8'))"
             :stroke-width="selectedIds.includes(n.id) ? Math.max(2.5, n.borderWidth || 1.4) : (n.borderWidth || 1.4)"
           />
@@ -999,9 +1163,43 @@ onMounted(() => {
             :stroke="hoverDropTargetId === n.id ? '#16a34a' : selectedIds.includes(n.id) ? '#2563eb' : (n.borderColor || '#94a3b8')"
             :stroke-width="selectedIds.includes(n.id) ? Math.max(2.5, n.borderWidth || 1.4) : (n.borderWidth || 1.4)"
           />
-          <text x="12" y="24" :fill="n.textColor || (state.theme === 'night' ? '#f8fafc' : '#0f172a')" :font-size="n.fontSize || 12" class="mmc-node-label">
-            {{ n.icon ? `${n.icon} ` : '' }}{{ n.label }}
+          <text
+            x="12"
+            :y="nodeLabelFirstLineY(n)"
+            :fill="n.textColor || (state.theme === 'night' ? '#f8fafc' : '#0f172a')"
+            :font-size="n.fontSize || 12"
+            class="mmc-node-label"
+          >
+            <tspan
+              v-for="(line, li) in (n.labelLines?.length ? n.labelLines : [n.icon ? `${n.icon} ${n.label}` : n.label])"
+              :key="`${n.id}-ln-${li}`"
+              x="12"
+              :dy="li === 0 ? 0 : nodeLabelLineHeight(n)"
+            >
+              {{ line }}
+            </tspan>
           </text>
+          <g
+            v-if="(childCountByParent.get(n.id) ?? 0) > 0"
+            class="mmc-collapse-toggle"
+            :transform="`translate(${n.w - 14}, 12)`"
+            @pointerdown.stop
+            @pointerup.stop
+            @click.stop="toggleNodeCollapsedById(n.id)"
+          >
+            <circle r="7" :fill="state.theme === 'night' ? '#0f172a' : '#ffffff'" :stroke="state.theme === 'night' ? '#64748b' : '#94a3b8'" stroke-width="1.2" />
+            <line x1="-3.2" y1="0" x2="3.2" y2="0" :stroke="state.theme === 'night' ? '#cbd5e1' : '#475569'" stroke-width="1.4" stroke-linecap="round" />
+            <line
+              v-if="n.collapsed === true"
+              x1="0"
+              y1="-3.2"
+              x2="0"
+              y2="3.2"
+              :stroke="state.theme === 'night' ? '#cbd5e1' : '#475569'"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
+          </g>
         </g>
         <rect v-if="marqueeRect" :x="marqueeRect.x" :y="marqueeRect.y" :width="marqueeRect.w" :height="marqueeRect.h" fill="rgba(37,99,235,0.12)" stroke="#2563eb" stroke-dasharray="4 3" />
       </g>
@@ -1037,10 +1235,10 @@ onMounted(() => {
       </g>
       <g class="mmc-ui mmc-ui-tr" :transform="`translate(${Math.max(6, viewportW - 6 - 32)}, 6)`">
         <g class="mmc-tool-btn mmc-tool-btn--fs" @click.stop="toggleCanvasFullscreen">
-          <title>{{ isCanvasFullscreen ? mmcUi.toolExitFullscreen : mmcUi.toolFullscreen }}</title>
+          <title>{{ canvasFullscreenActive ? mmcUi.toolExitFullscreen : mmcUi.toolFullscreen }}</title>
           <rect width="32" :height="MMC_BAR_H" rx="4" />
           <g
-            v-if="!isCanvasFullscreen"
+            v-if="!canvasFullscreenActive"
             class="mmc-fs-icon"
             transform="translate(4,-1) scale(0.92)"
             fill="none"
@@ -1073,6 +1271,13 @@ onMounted(() => {
             <polyline points="20 14 14 14 14 20" />
             <polyline points="4 10 10 10 10 4" />
           </g>
+        </g>
+      </g>
+      <g class="mmc-ui mmc-ui-br" :transform="`translate(${Math.max(6, viewportW - 6 - 64)}, ${Math.max(4, viewportH - MMC_BAR_H - 6)})`">
+        <g class="mmc-tool-btn" @click.stop="copyDebugSvg">
+          <title>{{ mmcUi.toolCopyDebug }}</title>
+          <rect width="64" :height="MMC_BAR_H" rx="4" />
+          <text class="mmc-toolbar-text" x="32" y="14" text-anchor="middle">CopyDbg</text>
         </g>
       </g>
     </svg>
@@ -1116,9 +1321,88 @@ onMounted(() => {
   background: linear-gradient(180deg, #f1f5f9 0%, #f8fafc 32%, #f8fafc 100%);
   border-radius: 6px;
 }
+.mmc-left-stack {
+  position: absolute;
+  z-index: 8;
+  left: 12px;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(280px, 42vw);
+  pointer-events: none;
+}
+.mmc-left-stack > * { pointer-events: auto; }
+.mmc-panel {
+  max-width: min(280px, 42vw);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-bg, #fafafa) 94%, transparent);
+  border: 1px solid var(--border, #ccc);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-size: 0.72rem;
+}
+.mmc-panel__toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text, #0f172a);
+  padding: 6px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+.mmc-panel__glyph { color: var(--muted, #64748b); }
+.mmc-panel__body {
+  margin: 0;
+  padding: 0 8px 8px;
+  white-space: pre-wrap;
+  line-height: 1.35;
+  color: var(--muted, #475569);
+}
+.mmc-panel--collapsed .mmc-panel__body { display: none; }
+.mmc-canvas-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-bg, #fafafa) 94%, transparent);
+  border: 1px solid var(--border, #ccc);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.mmc-canvas-toolbar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text, #0f172a);
+  background: var(--editor-bg, #fff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.mmc-canvas-toolbar__btn:hover {
+  background: color-mix(in srgb, var(--editor-bg, #fff) 88%, #2563eb);
+  color: #1d4ed8;
+}
+.mmc-canvas-toolbar__icon { display: block; }
 .mmc:fullscreen {
   width: 100%;
   height: 100%;
+  border-radius: 0;
+  background: #f8fafc;
+}
+.mmc--pseudo-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
   border-radius: 0;
   background: #f8fafc;
 }
@@ -1129,6 +1413,11 @@ onMounted(() => {
   font-family: inherit;
 }
 .mmc-node-label { user-select: none; pointer-events: none; }
+.mmc-collapse-toggle { cursor: pointer; }
+.mmc-collapse-toggle:hover circle {
+  stroke: #2563eb;
+  fill: #eff6ff;
+}
 .mmc-ui { pointer-events: auto; }
 .mmc-toolbar { user-select: none; }
 .mmc-tool-btn { cursor: pointer; }

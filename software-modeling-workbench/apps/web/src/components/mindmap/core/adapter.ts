@@ -11,6 +11,8 @@ function normalizeNodes(raw: unknown): MindmapNodeData[] {
     const label = typeof no.label === 'string' ? no.label : id;
     const parentId = typeof no.parentId === 'string' && no.parentId.trim() ? no.parentId.trim() : null;
     const order = typeof no.order === 'number' && Number.isFinite(no.order) ? no.order : i;
+    const posX = typeof no.posX === 'number' && Number.isFinite(no.posX) ? no.posX : undefined;
+    const posY = typeof no.posY === 'number' && Number.isFinite(no.posY) ? no.posY : undefined;
     const collapsed = no.collapsed === true || undefined;
     const icon = typeof no.icon === 'string' ? no.icon : undefined;
     const note = typeof no.note === 'string' ? no.note : undefined;
@@ -22,7 +24,7 @@ function normalizeNodes(raw: unknown): MindmapNodeData[] {
       : undefined;
     const borderWidth = typeof no.borderWidth === 'number' && Number.isFinite(no.borderWidth) ? no.borderWidth : undefined;
     const borderColor = typeof no.borderColor === 'string' ? no.borderColor : undefined;
-    out.push({ id, label, parentId, order, collapsed, icon, note, textColor, bgColor, fontSize, borderStyle, borderWidth, borderColor });
+    out.push({ id, label, parentId, order, posX, posY, collapsed, icon, note, textColor, bgColor, fontSize, borderStyle, borderWidth, borderColor });
   }
   if (!out.length) {
     out.push({ id: 'root', label: 'Root', parentId: null, order: 0 });
@@ -78,7 +80,7 @@ export function parseMindmapPayloadText(text: string): MindmapGraphState {
       panX: 0,
       panY: 0,
       scale: 1,
-      theme: 'classic',
+      theme: 'colorful',
     };
   }
   try {
@@ -91,7 +93,7 @@ export function parseMindmapPayloadText(text: string): MindmapGraphState {
       panX: typeof obj?.view?.panX === 'number' ? obj.view.panX : 0,
       panY: typeof obj?.view?.panY === 'number' ? obj.view.panY : 0,
       scale: typeof obj?.view?.scale === 'number' ? obj.view.scale : 1,
-      theme: typeof obj?.theme === 'string' && obj.theme.trim() ? obj.theme.trim() : 'classic',
+      theme: typeof obj?.theme === 'string' && obj.theme.trim() ? obj.theme.trim() : 'colorful',
     };
   } catch {
     return {
@@ -100,7 +102,7 @@ export function parseMindmapPayloadText(text: string): MindmapGraphState {
       panX: 0,
       panY: 0,
       scale: 1,
-      theme: 'classic',
+      theme: 'colorful',
     };
   }
 }
@@ -113,6 +115,8 @@ export function serializeMindmapPayload(state: MindmapGraphState): string {
       label: n.label,
       parentId: n.parentId ?? undefined,
       order: Number.isFinite(n.order) ? n.order : idx,
+      posX: Number.isFinite(n.posX ?? NaN) ? n.posX : undefined,
+      posY: Number.isFinite(n.posY ?? NaN) ? n.posY : undefined,
       collapsed: n.collapsed === true || undefined,
       icon: n.icon || undefined,
       note: n.note || undefined,
@@ -125,7 +129,7 @@ export function serializeMindmapPayload(state: MindmapGraphState): string {
     })),
     edges: state.edges.map((e) => ({ id: e.id, from: e.from, to: e.to })),
     view: { panX: state.panX, panY: state.panY, scale: state.scale },
-    theme: state.theme || 'classic',
+    theme: state.theme || 'colorful',
   };
   return JSON.stringify(payload, null, 2);
 }

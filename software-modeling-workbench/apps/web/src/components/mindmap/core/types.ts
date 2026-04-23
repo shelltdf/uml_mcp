@@ -3,6 +3,8 @@ export interface MindmapNodeData {
   label: string;
   parentId: string | null;
   order: number;
+  posX?: number;
+  posY?: number;
   collapsed?: boolean;
   icon?: string;
   note?: string;
@@ -27,6 +29,8 @@ export interface MindmapPayloadV0 {
     label: string;
     parentId?: string | null;
     order?: number;
+    posX?: number;
+    posY?: number;
     collapsed?: boolean;
     icon?: string;
     note?: string;
@@ -48,6 +52,7 @@ export interface MindmapLayoutNode extends MindmapNodeData {
   w: number;
   h: number;
   depth: number;
+  labelLines?: string[];
 }
 
 export interface MindmapGraphState {

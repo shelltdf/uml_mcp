@@ -151,6 +151,83 @@ function setByPath(root: unknown, pathExpr: string, value: unknown): unknown {
   return cloned;
 }
 
+function getByPath(root: unknown, pathExpr: string): unknown {
+  const toks = parseJsonPath(pathExpr);
+  if (toks.length === 0) return root;
+  let cur: unknown = root;
+  for (let i = 0; i < toks.length; i++) {
+    const key = toks[i]!;
+    if (typeof key === 'number') {
+      if (!Array.isArray(cur)) throw new Error(`json_path expects array at segment ${i}`);
+      cur = cur[key];
+    } else {
+      if (!cur || typeof cur !== 'object' || Array.isArray(cur)) throw new Error(`json_path expects object at segment ${i}`);
+      cur = (cur as Record<string, unknown>)[key];
+    }
+    if (cur === undefined) {
+      throw new Error(`json_path not found at segment ${i}`);
+    }
+  }
+  return cur;
+}
+
+function deleteByPath(root: unknown, pathExpr: string): unknown {
+  const toks = parseJsonPath(pathExpr);
+  if (toks.length === 0) throw new Error('json_path cannot be empty for delete');
+  const cloned = structuredClone(root) as Record<string, unknown>;
+  let cur: unknown = cloned;
+  for (let i = 0; i < toks.length - 1; i++) {
+    const key = toks[i]!;
+    if (typeof key === 'number') {
+      if (!Array.isArray(cur)) throw new Error(`json_path expects array at segment ${i}`);
+      cur = cur[key];
+    } else {
+      if (!cur || typeof cur !== 'object' || Array.isArray(cur)) throw new Error(`json_path expects object at segment ${i}`);
+      cur = (cur as Record<string, unknown>)[key];
+    }
+    if (cur === undefined) throw new Error(`json_path not found at segment ${i}`);
+  }
+  const last = toks[toks.length - 1]!;
+  if (typeof last === 'number') {
+    if (!Array.isArray(cur)) throw new Error('json_path final segment expects array');
+    if (last < 0 || last >= cur.length) throw new Error(`json_path array index out of range: ${last}`);
+    cur.splice(last, 1);
+  } else {
+    if (!cur || typeof cur !== 'object' || Array.isArray(cur)) throw new Error('json_path final segment expects object');
+    const obj = cur as Record<string, unknown>;
+    if (!(last in obj)) throw new Error(`json_path key not found: ${last}`);
+    delete obj[last];
+  }
+  return cloned;
+}
+
+function readArgValue(flagName: string): string | null {
+  const prefix = `--${flagName}=`;
+  const hit = process.argv.find((a) => a.startsWith(prefix));
+  return hit ? hit.slice(prefix.length) : null;
+}
+
+const uiSelectionBridgeUrl =
+  readArgValue('ui-selection-url')
+  ?? process.env.SMW_UI_SELECTION_URL
+  ?? 'http://127.0.0.1:47831/smw/ui-selection';
+const uiSelectionBridgeToken = readArgValue('ui-selection-token') ?? process.env.SMW_UI_SELECTION_TOKEN ?? null;
+
+async function readUiSelectionFromBridge(): Promise<unknown | null> {
+  if (!uiSelectionBridgeUrl) return null;
+  try {
+    const headers: Record<string, string> = {};
+    if (uiSelectionBridgeToken) headers['x-smw-ui-token'] = uiSelectionBridgeToken;
+    const resp = await fetch(uiSelectionBridgeUrl, { method: 'GET', headers });
+    if (!resp.ok) return null;
+    const body = (await resp.json()) as { ok?: boolean; selection?: unknown };
+    if (!body || body.ok !== true) return null;
+    return body.selection ?? null;
+  } catch {
+    return null;
+  }
+}
+
 type BlockOpResult = {
   op_index: number;
   rel_path: string;
@@ -211,6 +288,35 @@ server.tool(
 );
 
 server.tool(
+  'smw_get_ui_selection',
+  '读取 smw 窗口最近一次同步的 UI 选中状态（仅扩展内存桥接）。',
+  {
+    workspace_root: z.string().describe('工作区根目录绝对路径'),
+  },
+  async ({ workspace_root }) => {
+    const root = ensureWorkspaceRoot(workspace_root);
+    const bridgeSelection = await readUiSelectionFromBridge();
+    if (bridgeSelection !== null) {
+      return asTextResult({
+        ok: true,
+        found: true,
+        workspace_root: root,
+        source: 'vscode-memory-bridge',
+        selection: bridgeSelection,
+      });
+    }
+    return asTextResult({
+      ok: true,
+      found: false,
+      workspace_root: root,
+      source: 'vscode-memory-bridge',
+      selection: null,
+      error: 'bridge_unavailable',
+    });
+  },
+);
+
+server.tool(
   'smw_write_text',
   '写入工作区内文本文件（可创建父目录）。',
   {
@@ -234,8 +340,78 @@ server.tool(
 );
 
 server.tool(
+  'smw_del_text',
+  '删除工作区内文本文件。',
+  {
+    workspace_root: z.string().describe('工作区根目录绝对路径'),
+    rel_path: z.string().describe('相对工作区根的文件路径'),
+    missing_ok: z.boolean().optional().describe('文件不存在时是否视为成功，默认 true'),
+  },
+  async ({ workspace_root, rel_path, missing_ok }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    if (!fs.existsSync(abs)) {
+      if (missing_ok ?? true) return asTextResult({ rel_path, ok: true, deleted: false, missing: true });
+      throw new Error(`file not found: ${rel_path}`);
+    }
+    if (!fs.statSync(abs).isFile()) throw new Error(`not a file: ${rel_path}`);
+    fs.unlinkSync(abs);
+    return asTextResult({ rel_path, ok: true, deleted: true });
+  },
+);
+
+server.tool(
+  'smw_scaffold_doc_with_blocks',
+  '一步创建/覆盖 Markdown 文档并批量写入多个 smw-* 围栏块。',
+  {
+    workspace_root: z.string().describe('工作区根目录绝对路径'),
+    rel_path: z.string().describe('相对工作区根的 Markdown 文件路径'),
+    title: z.string().optional().describe('文档一级标题（默认使用文件名）'),
+    preface_md: z.string().optional().describe('标题后的普通 Markdown 文本（可选）'),
+    overwrite: z.boolean().optional().describe('文件已存在时是否覆盖，默认 false'),
+    blocks: z
+      .array(
+        z.object({
+          kind: z.string().describe('围栏类型，如 smw-view / smw-model-sql'),
+          payload_json: z.union([z.string(), z.record(z.string(), z.unknown())]).describe('JSON（字符串或对象）'),
+        }),
+      )
+      .min(1)
+      .max(200)
+      .describe('要写入的围栏块数组（按给定顺序）'),
+  },
+  async ({ workspace_root, rel_path, title, preface_md, overwrite, blocks }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    if (fs.existsSync(abs) && !(overwrite ?? false)) {
+      throw new Error(`file already exists: ${rel_path} (pass overwrite=true to replace)`);
+    }
+    const baseName = path.basename(rel_path, path.extname(rel_path)) || 'Document';
+    const heading = (title ?? baseName).trim() || baseName;
+    const preface = (preface_md ?? '').trim();
+    const parts: string[] = [`# ${heading}`];
+    if (preface) parts.push(preface);
+    for (const b of blocks) {
+      const pretty = normalizePayloadJson(b.payload_json);
+      const kind = normalizeFenceKind(b.kind);
+      parts.push(buildFence(kind, pretty).trimEnd());
+    }
+    const text = `${parts.join('\n\n')}\n`;
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, text, 'utf8');
+    const parsed = parseMarkdownBlocks(text);
+    return asTextResult({
+      rel_path,
+      ok: true,
+      overwrite: overwrite ?? false,
+      block_count: parsed.blocks.length,
+      error_count: parsed.errors.length,
+      blocks: parsed.blocks.map((b) => ({ kind: b.kind, id: b.payload.id })),
+    });
+  },
+);
+
+server.tool(
   'smw_read_blocks',
-  '解析工作区内 Markdown 文件中的 mv-* 围栏块。',
+  '解析工作区内 Markdown 文件中的 smw-* 围栏块。',
   {
     workspace_root: z.string().describe('工作区根目录绝对路径'),
     rel_path: z.string().describe('相对工作区根的 Markdown 文件路径'),
@@ -255,7 +431,7 @@ server.tool(
 
 server.tool(
   'smw_read_blocks_batch',
-  '批量解析多个 Markdown 文件中的 mv-* 围栏块，减少多次往返调用。',
+  '批量解析多个 Markdown 文件中的 smw-* 围栏块，减少多次往返调用。',
   {
     workspace_root: z.string().describe('工作区根目录绝对路径'),
     rel_paths: z.array(z.string()).min(1).max(100).describe('相对工作区根的 Markdown 文件路径数组'),
@@ -324,7 +500,7 @@ server.tool(
 
 server.tool(
   'smw_add_block_json',
-  '新增一个 mv-* 围栏块（追加到文末）。',
+  '新增一个 smw-* 围栏块（追加到文末）。',
   {
     workspace_root: z.string().describe('工作区根目录绝对路径'),
     rel_path: z.string().describe('相对工作区根的 Markdown 文件路径'),
@@ -551,6 +727,45 @@ server.tool(
     if (!hit) throw new Error(`block not found: ${block_id}`);
     const payloadObj = structuredClone(hit.payload) as unknown as Record<string, unknown>;
     const patched = setByPath(payloadObj, json_path, value);
+    const next = saveBlockPayloadById(source, block_id, patched);
+    fs.writeFileSync(abs, next, 'utf8');
+    return asTextResult({ rel_path, block_id, json_path, ok: true });
+  },
+);
+
+server.tool(
+  'smw_get_block_json_path',
+  '按 json_path 读取某个 block payload 的局部字段。',
+  {
+    workspace_root: z.string().describe('工作区根目录绝对路径'),
+    rel_path: z.string().describe('相对工作区根的 Markdown 文件路径'),
+    block_id: z.string().describe('目标 block id'),
+    json_path: z.string().describe('路径，如 payload.kind / tables.0.columns.1.name / /tables/0/id'),
+  },
+  async ({ workspace_root, rel_path, block_id, json_path }) => {
+    const { parsed } = readParsedMarkdownFile(workspace_root, rel_path);
+    const hit = parsed.blocks.find((b) => b.payload.id === block_id);
+    if (!hit) throw new Error(`block not found: ${block_id}`);
+    const value = getByPath(hit.payload, json_path);
+    return asTextResult({ rel_path, block_id, json_path, value });
+  },
+);
+
+server.tool(
+  'smw_del_block_json_path',
+  '按 json_path 删除某个 block payload 的局部字段或数组项。',
+  {
+    workspace_root: z.string().describe('工作区根目录绝对路径'),
+    rel_path: z.string().describe('相对工作区根的 Markdown 文件路径'),
+    block_id: z.string().describe('目标 block id'),
+    json_path: z.string().describe('路径，如 payload.kind / tables.0.columns.1.name / /tables/0/id'),
+  },
+  async ({ workspace_root, rel_path, block_id, json_path }) => {
+    const { abs, source, parsed } = readParsedMarkdownFile(workspace_root, rel_path);
+    const hit = parsed.blocks.find((b) => b.payload.id === block_id);
+    if (!hit) throw new Error(`block not found: ${block_id}`);
+    const payloadObj = structuredClone(hit.payload) as unknown as Record<string, unknown>;
+    const patched = deleteByPath(payloadObj, json_path);
     const next = saveBlockPayloadById(source, block_id, patched);
     fs.writeFileSync(abs, next, 'utf8');
     return asTextResult({ rel_path, block_id, json_path, ok: true });

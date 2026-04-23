@@ -1,12 +1,61 @@
 /// <reference types="vscode" />
 /// <reference types="node" />
 import * as fs from 'fs';
+import * as http from 'http';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext): void {
   let panel: vscode.WebviewPanel | undefined;
   let lastDialogDir: vscode.Uri | undefined;
+  let fileWatcher: vscode.FileSystemWatcher | undefined;
+  const recentWrites = new Map<string, number>();
+  let latestUiSelection: unknown = null;
+  const uiBridgePort = 47831;
+  const existingToken = context.globalState.get<string>('smwUiBridgeToken');
+  const uiBridgeToken = existingToken && existingToken.trim()
+    ? existingToken
+    : `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  if (!existingToken) {
+    void context.globalState.update('smwUiBridgeToken', uiBridgeToken);
+  }
+  const uiBridgeServer = http.createServer((req, res) => {
+    const method = req.method ?? 'GET';
+    const reqUrl = req.url ?? '/';
+    const urlObj = new URL(reqUrl, `http://127.0.0.1:${uiBridgePort}`);
+    if (method !== 'GET' || urlObj.pathname !== '/smw/ui-selection') {
+      res.statusCode = 404;
+      res.setHeader('content-type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: 'not_found' }));
+      return;
+    }
+    const token = req.headers['x-smw-ui-token'];
+    const provided = Array.isArray(token) ? token[0] : token;
+    if (provided && provided !== uiBridgeToken) {
+      res.statusCode = 401;
+      res.setHeader('content-type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: 'unauthorized' }));
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({ ok: true, selection: latestUiSelection ?? null }));
+  });
+  uiBridgeServer.listen(uiBridgePort, '127.0.0.1', () => {
+    // silent
+  });
+  uiBridgeServer.on('error', () => {
+    // silent: bridge unavailable
+  });
+  context.subscriptions.push({
+    dispose: () => {
+      try {
+        uiBridgeServer.close();
+      } catch {
+        // ignore
+      }
+    },
+  });
 
   const openPanel = (): void => {
     if (panel) {
@@ -35,10 +84,77 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!(fp === ws || fp.startsWith(`${ws}/`))) return null;
       return vscode.workspace.asRelativePath(u, false).replace(/\\/g, '/');
     };
+    fileWatcher?.dispose();
+    fileWatcher = vscode.workspace.createFileSystemWatcher('**/*.md');
+    const notifyFileChanged = (uri: vscode.Uri): void => {
+      const rel = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/');
+      const now = Date.now();
+      const ts = recentWrites.get(rel);
+      if (ts && now - ts < 1200) {
+        recentWrites.delete(rel);
+        return;
+      }
+      currentPanel.webview.postMessage({ type: 'smw:vscode:fileChanged', path: rel });
+    };
+    fileWatcher.onDidChange(notifyFileChanged, undefined, context.subscriptions);
+    fileWatcher.onDidCreate(notifyFileChanged, undefined, context.subscriptions);
+    fileWatcher.onDidDelete(notifyFileChanged, undefined, context.subscriptions);
+    currentPanel.onDidDispose(() => {
+      fileWatcher?.dispose();
+      fileWatcher = undefined;
+    });
+
     currentPanel.webview.onDidReceiveMessage(
       async (msg: unknown) => {
-        const m = msg as { type?: string; reqId?: string; path?: string; text?: string };
+        const m = msg as { type?: string; reqId?: string; path?: string; text?: string; selection?: unknown };
         if (!m?.type) return;
+        if (m.type === 'smw:vscode:updateUiSelection') {
+          latestUiSelection = m.selection ?? null;
+          return;
+        }
+        if (m.type === 'smw:vscode:readFile') {
+          const reqId = m.reqId ?? '';
+          if (!reqId) return;
+          if (!workspaceFolder) {
+            currentPanel.webview.postMessage({
+              type: 'smw:vscode:readFile:result',
+              reqId,
+              ok: false,
+              error: '未打开工作区文件夹。',
+            });
+            return;
+          }
+          const relPath = (m.path ?? '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/^\.\//, '');
+          if (!relPath || relPath.split('/').some((seg) => seg === '..')) {
+            currentPanel.webview.postMessage({
+              type: 'smw:vscode:readFile:result',
+              reqId,
+              ok: false,
+              error: '读取路径非法。',
+            });
+            return;
+          }
+          try {
+            const target = vscode.Uri.joinPath(workspaceFolder.uri, ...relPath.split('/').filter(Boolean));
+            const bytes = await vscode.workspace.fs.readFile(target);
+            const text = Buffer.from(bytes).toString('utf8');
+            currentPanel.webview.postMessage({
+              type: 'smw:vscode:readFile:result',
+              reqId,
+              ok: true,
+              path: relPath,
+              text,
+            });
+          } catch (e) {
+            currentPanel.webview.postMessage({
+              type: 'smw:vscode:readFile:result',
+              reqId,
+              ok: false,
+              error: e instanceof Error ? e.message : String(e),
+            });
+          }
+          return;
+        }
         if (m.type === 'smw:vscode:pickOpenFile') {
           const reqId = m.reqId ?? '';
           if (!reqId) return;
@@ -189,6 +305,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await vscode.workspace.fs.createDirectory(parent);
           }
           await vscode.workspace.fs.writeFile(target, Buffer.from(m.text ?? '', 'utf8'));
+          recentWrites.set(relPath, Date.now());
           currentPanel.webview.postMessage({ type: 'smw:vscode:writeFile:result', reqId, ok: true });
         } catch (e) {
           currentPanel.webview.postMessage({
@@ -248,7 +365,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
     const serverConfig = {
       command: 'node',
-      args: [bundledDistAbs],
+      args: [
+        bundledDistAbs,
+        `--ui-selection-url=http://127.0.0.1:${uiBridgePort}/smw/ui-selection`,
+        `--ui-selection-token=${uiBridgeToken}`,
+      ],
     };
     const template = isCursor
       ? {
@@ -302,7 +423,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(vscode.commands.registerCommand(menuCommandId, showMenu));
 
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  statusBarItem.text = '$(symbol-class) Modeling Workbench';
+  statusBarItem.text = '$(symbol-class) Software Modeling Workbench';
   statusBarItem.tooltip = 'Software Modeling Workbench';
   statusBarItem.command = menuCommandId;
   statusBarItem.color = '#FFD54F';

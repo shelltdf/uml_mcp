@@ -22428,6 +22428,75 @@ function setByPath(root, pathExpr, value) {
   }
   return cloned;
 }
+function getByPath(root, pathExpr) {
+  const toks = parseJsonPath(pathExpr);
+  if (toks.length === 0) return root;
+  let cur = root;
+  for (let i = 0; i < toks.length; i++) {
+    const key = toks[i];
+    if (typeof key === "number") {
+      if (!Array.isArray(cur)) throw new Error(`json_path expects array at segment ${i}`);
+      cur = cur[key];
+    } else {
+      if (!cur || typeof cur !== "object" || Array.isArray(cur)) throw new Error(`json_path expects object at segment ${i}`);
+      cur = cur[key];
+    }
+    if (cur === void 0) {
+      throw new Error(`json_path not found at segment ${i}`);
+    }
+  }
+  return cur;
+}
+function deleteByPath(root, pathExpr) {
+  const toks = parseJsonPath(pathExpr);
+  if (toks.length === 0) throw new Error("json_path cannot be empty for delete");
+  const cloned = structuredClone(root);
+  let cur = cloned;
+  for (let i = 0; i < toks.length - 1; i++) {
+    const key = toks[i];
+    if (typeof key === "number") {
+      if (!Array.isArray(cur)) throw new Error(`json_path expects array at segment ${i}`);
+      cur = cur[key];
+    } else {
+      if (!cur || typeof cur !== "object" || Array.isArray(cur)) throw new Error(`json_path expects object at segment ${i}`);
+      cur = cur[key];
+    }
+    if (cur === void 0) throw new Error(`json_path not found at segment ${i}`);
+  }
+  const last = toks[toks.length - 1];
+  if (typeof last === "number") {
+    if (!Array.isArray(cur)) throw new Error("json_path final segment expects array");
+    if (last < 0 || last >= cur.length) throw new Error(`json_path array index out of range: ${last}`);
+    cur.splice(last, 1);
+  } else {
+    if (!cur || typeof cur !== "object" || Array.isArray(cur)) throw new Error("json_path final segment expects object");
+    const obj = cur;
+    if (!(last in obj)) throw new Error(`json_path key not found: ${last}`);
+    delete obj[last];
+  }
+  return cloned;
+}
+function readArgValue(flagName) {
+  const prefix = `--${flagName}=`;
+  const hit = process.argv.find((a) => a.startsWith(prefix));
+  return hit ? hit.slice(prefix.length) : null;
+}
+var uiSelectionBridgeUrl = readArgValue("ui-selection-url") ?? process.env.SMW_UI_SELECTION_URL ?? "http://127.0.0.1:47831/smw/ui-selection";
+var uiSelectionBridgeToken = readArgValue("ui-selection-token") ?? process.env.SMW_UI_SELECTION_TOKEN ?? null;
+async function readUiSelectionFromBridge() {
+  if (!uiSelectionBridgeUrl) return null;
+  try {
+    const headers = {};
+    if (uiSelectionBridgeToken) headers["x-smw-ui-token"] = uiSelectionBridgeToken;
+    const resp = await fetch(uiSelectionBridgeUrl, { method: "GET", headers });
+    if (!resp.ok) return null;
+    const body = await resp.json();
+    if (!body || body.ok !== true) return null;
+    return body.selection ?? null;
+  } catch {
+    return null;
+  }
+}
 server.tool(
   "smw_parse_markdown_blocks",
   "\u89E3\u6790 Markdown \u4E2D\u7684 smw-* \u56F4\u680F\u5757\uFF0C\u8FD4\u56DE blocks \u4E0E errors\u3002",
@@ -22476,6 +22545,34 @@ server.tool(
   }
 );
 server.tool(
+  "smw_get_ui_selection",
+  "\u8BFB\u53D6 smw \u7A97\u53E3\u6700\u8FD1\u4E00\u6B21\u540C\u6B65\u7684 UI \u9009\u4E2D\u72B6\u6001\uFF08\u4EC5\u6269\u5C55\u5185\u5B58\u6865\u63A5\uFF09\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84")
+  },
+  async ({ workspace_root }) => {
+    const root = ensureWorkspaceRoot(workspace_root);
+    const bridgeSelection = await readUiSelectionFromBridge();
+    if (bridgeSelection !== null) {
+      return asTextResult({
+        ok: true,
+        found: true,
+        workspace_root: root,
+        source: "vscode-memory-bridge",
+        selection: bridgeSelection
+      });
+    }
+    return asTextResult({
+      ok: true,
+      found: false,
+      workspace_root: root,
+      source: "vscode-memory-bridge",
+      selection: null,
+      error: "bridge_unavailable"
+    });
+  }
+);
+server.tool(
   "smw_write_text",
   "\u5199\u5165\u5DE5\u4F5C\u533A\u5185\u6587\u672C\u6587\u4EF6\uFF08\u53EF\u521B\u5EFA\u7236\u76EE\u5F55\uFF09\u3002",
   {
@@ -22498,8 +22595,73 @@ server.tool(
   }
 );
 server.tool(
+  "smw_del_text",
+  "\u5220\u9664\u5DE5\u4F5C\u533A\u5185\u6587\u672C\u6587\u4EF6\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684\u6587\u4EF6\u8DEF\u5F84"),
+    missing_ok: external_exports.boolean().optional().describe("\u6587\u4EF6\u4E0D\u5B58\u5728\u65F6\u662F\u5426\u89C6\u4E3A\u6210\u529F\uFF0C\u9ED8\u8BA4 true")
+  },
+  async ({ workspace_root, rel_path, missing_ok }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    if (!fs.existsSync(abs)) {
+      if (missing_ok ?? true) return asTextResult({ rel_path, ok: true, deleted: false, missing: true });
+      throw new Error(`file not found: ${rel_path}`);
+    }
+    if (!fs.statSync(abs).isFile()) throw new Error(`not a file: ${rel_path}`);
+    fs.unlinkSync(abs);
+    return asTextResult({ rel_path, ok: true, deleted: true });
+  }
+);
+server.tool(
+  "smw_scaffold_doc_with_blocks",
+  "\u4E00\u6B65\u521B\u5EFA/\u8986\u76D6 Markdown \u6587\u6863\u5E76\u6279\u91CF\u5199\u5165\u591A\u4E2A smw-* \u56F4\u680F\u5757\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84"),
+    title: external_exports.string().optional().describe("\u6587\u6863\u4E00\u7EA7\u6807\u9898\uFF08\u9ED8\u8BA4\u4F7F\u7528\u6587\u4EF6\u540D\uFF09"),
+    preface_md: external_exports.string().optional().describe("\u6807\u9898\u540E\u7684\u666E\u901A Markdown \u6587\u672C\uFF08\u53EF\u9009\uFF09"),
+    overwrite: external_exports.boolean().optional().describe("\u6587\u4EF6\u5DF2\u5B58\u5728\u65F6\u662F\u5426\u8986\u76D6\uFF0C\u9ED8\u8BA4 false"),
+    blocks: external_exports.array(
+      external_exports.object({
+        kind: external_exports.string().describe("\u56F4\u680F\u7C7B\u578B\uFF0C\u5982 smw-view / smw-model-sql"),
+        payload_json: external_exports.union([external_exports.string(), external_exports.record(external_exports.string(), external_exports.unknown())]).describe("JSON\uFF08\u5B57\u7B26\u4E32\u6216\u5BF9\u8C61\uFF09")
+      })
+    ).min(1).max(200).describe("\u8981\u5199\u5165\u7684\u56F4\u680F\u5757\u6570\u7EC4\uFF08\u6309\u7ED9\u5B9A\u987A\u5E8F\uFF09")
+  },
+  async ({ workspace_root, rel_path, title, preface_md, overwrite, blocks }) => {
+    const abs = resolveInsideWorkspace(workspace_root, rel_path);
+    if (fs.existsSync(abs) && !(overwrite ?? false)) {
+      throw new Error(`file already exists: ${rel_path} (pass overwrite=true to replace)`);
+    }
+    const baseName = path.basename(rel_path, path.extname(rel_path)) || "Document";
+    const heading = (title ?? baseName).trim() || baseName;
+    const preface = (preface_md ?? "").trim();
+    const parts = [`# ${heading}`];
+    if (preface) parts.push(preface);
+    for (const b of blocks) {
+      const pretty = normalizePayloadJson(b.payload_json);
+      const kind = normalizeFenceKind(b.kind);
+      parts.push(buildFence(kind, pretty).trimEnd());
+    }
+    const text = `${parts.join("\n\n")}
+`;
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, text, "utf8");
+    const parsed = parseMarkdownBlocks(text);
+    return asTextResult({
+      rel_path,
+      ok: true,
+      overwrite: overwrite ?? false,
+      block_count: parsed.blocks.length,
+      error_count: parsed.errors.length,
+      blocks: parsed.blocks.map((b) => ({ kind: b.kind, id: b.payload.id }))
+    });
+  }
+);
+server.tool(
   "smw_read_blocks",
-  "\u89E3\u6790\u5DE5\u4F5C\u533A\u5185 Markdown \u6587\u4EF6\u4E2D\u7684 mv-* \u56F4\u680F\u5757\u3002",
+  "\u89E3\u6790\u5DE5\u4F5C\u533A\u5185 Markdown \u6587\u4EF6\u4E2D\u7684 smw-* \u56F4\u680F\u5757\u3002",
   {
     workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
     rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84")
@@ -22518,7 +22680,7 @@ server.tool(
 );
 server.tool(
   "smw_read_blocks_batch",
-  "\u6279\u91CF\u89E3\u6790\u591A\u4E2A Markdown \u6587\u4EF6\u4E2D\u7684 mv-* \u56F4\u680F\u5757\uFF0C\u51CF\u5C11\u591A\u6B21\u5F80\u8FD4\u8C03\u7528\u3002",
+  "\u6279\u91CF\u89E3\u6790\u591A\u4E2A Markdown \u6587\u4EF6\u4E2D\u7684 smw-* \u56F4\u680F\u5757\uFF0C\u51CF\u5C11\u591A\u6B21\u5F80\u8FD4\u8C03\u7528\u3002",
   {
     workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
     rel_paths: external_exports.array(external_exports.string()).min(1).max(100).describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84\u6570\u7EC4"),
@@ -22582,7 +22744,7 @@ server.tool(
 );
 server.tool(
   "smw_add_block_json",
-  "\u65B0\u589E\u4E00\u4E2A mv-* \u56F4\u680F\u5757\uFF08\u8FFD\u52A0\u5230\u6587\u672B\uFF09\u3002",
+  "\u65B0\u589E\u4E00\u4E2A smw-* \u56F4\u680F\u5757\uFF08\u8FFD\u52A0\u5230\u6587\u672B\uFF09\u3002",
   {
     workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
     rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84"),
@@ -22800,6 +22962,43 @@ server.tool(
     if (!hit) throw new Error(`block not found: ${block_id}`);
     const payloadObj = structuredClone(hit.payload);
     const patched = setByPath(payloadObj, json_path, value);
+    const next = saveBlockPayloadById(source, block_id, patched);
+    fs.writeFileSync(abs, next, "utf8");
+    return asTextResult({ rel_path, block_id, json_path, ok: true });
+  }
+);
+server.tool(
+  "smw_get_block_json_path",
+  "\u6309 json_path \u8BFB\u53D6\u67D0\u4E2A block payload \u7684\u5C40\u90E8\u5B57\u6BB5\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84"),
+    block_id: external_exports.string().describe("\u76EE\u6807 block id"),
+    json_path: external_exports.string().describe("\u8DEF\u5F84\uFF0C\u5982 payload.kind / tables.0.columns.1.name / /tables/0/id")
+  },
+  async ({ workspace_root, rel_path, block_id, json_path }) => {
+    const { parsed } = readParsedMarkdownFile(workspace_root, rel_path);
+    const hit = parsed.blocks.find((b) => b.payload.id === block_id);
+    if (!hit) throw new Error(`block not found: ${block_id}`);
+    const value = getByPath(hit.payload, json_path);
+    return asTextResult({ rel_path, block_id, json_path, value });
+  }
+);
+server.tool(
+  "smw_del_block_json_path",
+  "\u6309 json_path \u5220\u9664\u67D0\u4E2A block payload \u7684\u5C40\u90E8\u5B57\u6BB5\u6216\u6570\u7EC4\u9879\u3002",
+  {
+    workspace_root: external_exports.string().describe("\u5DE5\u4F5C\u533A\u6839\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84"),
+    rel_path: external_exports.string().describe("\u76F8\u5BF9\u5DE5\u4F5C\u533A\u6839\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84"),
+    block_id: external_exports.string().describe("\u76EE\u6807 block id"),
+    json_path: external_exports.string().describe("\u8DEF\u5F84\uFF0C\u5982 payload.kind / tables.0.columns.1.name / /tables/0/id")
+  },
+  async ({ workspace_root, rel_path, block_id, json_path }) => {
+    const { abs, source, parsed } = readParsedMarkdownFile(workspace_root, rel_path);
+    const hit = parsed.blocks.find((b) => b.payload.id === block_id);
+    if (!hit) throw new Error(`block not found: ${block_id}`);
+    const payloadObj = structuredClone(hit.payload);
+    const patched = deleteByPath(payloadObj, json_path);
     const next = saveBlockPayloadById(source, block_id, patched);
     fs.writeFileSync(abs, next, "utf8");
     return asTextResult({ rel_path, block_id, json_path, ok: true });
