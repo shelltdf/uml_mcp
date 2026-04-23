@@ -69,6 +69,7 @@ const dragOffset = reactive({ x: 0, y: 0 });
 const dragSnapshots = ref<Record<string, { x: number; y: number }>>({});
 const dragStartClient = reactive({ x: 0, y: 0 });
 const dragPanOrigin = reactive({ x: 0, y: 0 });
+const dragMoved = ref(false);
 const panning = ref(false);
 const panStart = reactive({ x: 0, y: 0, ox: 0, oy: 0 });
 const marquee = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -671,6 +672,7 @@ function beginNodeDrag(e: PointerEvent, id: string): void {
     return;
   }
   if (!selectedIds.value.includes(id)) selectedIds.value = [id];
+  emitDockContext();
   primeImeInput();
   const hit = byId.value.get(id);
   if (!hit) return;
@@ -682,6 +684,7 @@ function beginNodeDrag(e: PointerEvent, id: string): void {
   dragPanOrigin.y = state.panY;
   dragOffset.x = w.x - hit.x;
   dragOffset.y = w.y - hit.y;
+  dragMoved.value = false;
   const snaps: Record<string, { x: number; y: number }> = {};
   for (const sid of selectedIds.value) {
     const s = byId.value.get(sid);
@@ -700,6 +703,7 @@ function updateNodeDrag(e: PointerEvent): void {
   const ny = w.y - dragOffset.y;
   const dx = nx - base.x;
   const dy = ny - base.y;
+  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) dragMoved.value = true;
   for (const sid of selectedIds.value) {
     const s = dragSnapshots.value[sid];
     const node = state.nodes.find((n) => n.id === sid);
@@ -716,7 +720,8 @@ function endNodeDrag(e: PointerEvent): void {
   dragNodeId.value = null;
   hoverDropTargetId.value = null;
   try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-  pushPayload();
+  if (dragMoved.value) pushPayload();
+  dragMoved.value = false;
 }
 
 function fitView(): void {
@@ -734,7 +739,6 @@ function fitView(): void {
   const cy = (minY + maxY) / 2;
   state.panX = rect.width / 2 - state.scale * cx;
   state.panY = rect.height / 2 - state.scale * cy;
-  pushPayload();
 }
 function originView(): void {
   if (!layoutNodes.value.length) return;
@@ -747,7 +751,6 @@ function originView(): void {
   const cy = (minY + maxY) / 2;
   state.panX = rect.width / 2 - state.scale * cx;
   state.panY = rect.height / 2 - state.scale * cy;
-  pushPayload();
 }
 function resetZoom(): void {
   const rect = viewportRect();
@@ -756,7 +759,6 @@ function resetZoom(): void {
   state.scale = 1;
   state.panX = rect.width / 2 - worldCx;
   state.panY = rect.height / 2 - worldCy;
-  pushPayload();
 }
 function zoomByStep(step: number): void {
   const rect = viewportRect();
@@ -768,7 +770,6 @@ function zoomByStep(step: number): void {
   state.scale = target;
   state.panX = z.panX;
   state.panY = z.panY;
-  pushPayload();
 }
 
 function onBackgroundPointerDown(e: PointerEvent): void {
@@ -821,7 +822,6 @@ function endMiddleButtonPan(e: PointerEvent): void {
   } catch {
     /* ignore */
   }
-  pushPayload();
 }
 
 function onViewportPointerUp(e: PointerEvent): void {
@@ -850,7 +850,6 @@ function finalizeMarqueeSelection(e?: PointerEvent): void {
   }
   selectedIds.value = idsInMarquee(layoutNodes.value, marquee.value.x0, marquee.value.y0, marquee.value.x1, marquee.value.y1);
   marquee.value = null;
-  pushPayload();
   emitDockContext();
 }
 
@@ -928,7 +927,6 @@ function onKeyDown(e: KeyboardEvent): void {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
     e.preventDefault();
     selectedIds.value = state.nodes.map((n) => n.id);
-    pushPayload();
     return emitDockContext();
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
@@ -1020,9 +1018,6 @@ function onKeyDown(e: KeyboardEvent): void {
     if (next) {
       selectedIds.value = [next.id];
     }
-  }
-  if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    pushPayload();
   }
   emitDockContext();
 }
