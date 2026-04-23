@@ -9,6 +9,7 @@
     "vscode-extension"
   ],
   "devDependencies": {
+    "esbuild": "^0.28.0",
     "tsx": "^4.20.6",
     "typescript": "~5.7.2"
   },
@@ -16,7 +17,8 @@
     "build": "npm run build -w @mvwb/core && npm run build -w @mvwb/mermaid && npm run build -w @mvwb/mcp-server && npm run build -w @mvwb/web",
     "build:mcp": "npm run build -w @mvwb/core && npm run build -w @mvwb/mcp-server",
     "copy:vscode-media": "node scripts/copy-web-dist.mjs",
-    "build:vscode": "npm run build && npm run copy:vscode-media && npm run compile --workspace=software-modeling-workbench",
+    "copy:vscode-mcp": "node scripts/copy-mcp-dist.mjs",
+    "build:vscode": "npm run build && npm run copy:vscode-media && npm run copy:vscode-mcp && npm run compile --workspace=software-modeling-workbench",
     "test": "npm run test -w @mvwb/core && npm run test -w @mvwb/mermaid",
     "dev:web": "npm run build -w @mvwb/core && npm run build -w @mvwb/mermaid && npm run dev -w @mvwb/web",
     "dev:electron": "npm run build -w @mvwb/core && npm run build -w @mvwb/mermaid && npm run build -w @mvwb/web && npm run dev -w @mvwb/electron",

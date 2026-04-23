@@ -1,11 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  pickWorkspace: () => ipcRenderer.invoke('mvwb:pickWorkspace'),
-  readWorkspaceFile: (relPath) => ipcRenderer.invoke('mvwb:readFile', relPath),
-  writeWorkspaceFile: (relPath, text) => ipcRenderer.invoke('mvwb:writeFile', relPath, text),
-  openMarkdownInWorkspace: () => ipcRenderer.invoke('mvwb:openMarkdownInWorkspace'),
-  saveFileAs: (curRelPath, text) => ipcRenderer.invoke('mvwb:saveFileAs', curRelPath, text),
-  openBlockEditor: (relPath, blockId) => ipcRenderer.send('mvwb:openBlock', relPath, blockId),
-  openBlockCanvas: (relPath, blockId) => ipcRenderer.send('mvwb:openBlockCanvas', relPath, blockId),
+  pickWorkspace: () => ipcRenderer.invoke('smw:pickWorkspace'),
+  readWorkspaceFile: (relPath) => ipcRenderer.invoke('smw:readFile', relPath),
+  writeWorkspaceFile: (relPath, text) => ipcRenderer.invoke('smw:writeFile', relPath, text),
+  openMarkdownInWorkspace: () => ipcRenderer.invoke('smw:openMarkdownInWorkspace'),
+  saveFileAs: (curRelPath, text) => ipcRenderer.invoke('smw:saveFileAs', curRelPath, text),
+  openBlockEditor: (relPath, blockId) => ipcRenderer.send('smw:openBlock', relPath, blockId),
+  openBlockCanvas: (relPath, blockId) => ipcRenderer.send('smw:openBlockCanvas', relPath, blockId),
 });

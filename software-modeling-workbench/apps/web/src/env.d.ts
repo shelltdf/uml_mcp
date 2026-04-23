@@ -6,7 +6,7 @@ declare module '*.vue' {
   export default component;
 }
 
-export interface MvwbElectronAPI {
+export interface SmwElectronAPI {
   pickWorkspace(): Promise<{ root: string; files: Record<string, string> } | null>;
   readWorkspaceFile(rel: string): Promise<string>;
   writeWorkspaceFile(rel: string, text: string): Promise<boolean>;
@@ -21,13 +21,13 @@ export interface MvwbElectronAPI {
     { relPath: string } | { error: 'no_workspace' | 'outside_workspace' } | null
   >;
   openBlockEditor(rel: string, blockId: string): void;
-  /** 打开独立窗口：画布可视化编辑（`?mvwb_canvas=1`） */
+  /** 打开独立窗口：画布可视化编辑（`?smw_canvas=1`） */
   openBlockCanvas(rel: string, blockId: string): void;
 }
 
 declare global {
   interface Window {
-    electronAPI?: MvwbElectronAPI;
+    electronAPI?: SmwElectronAPI;
   }
 }
 export {};

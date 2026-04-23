@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "software-modeling-workbench": {
+      "command": "node",
+      "args": [
+        "c:\\Users\\shell\\.cursor\\extensions\\software-modeling-workbench.software-modeling-workbench-0.1.0\\media\\mcp-server\\server.cjs"
+      ]
+    }
+  }
+}

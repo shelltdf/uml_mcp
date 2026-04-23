@@ -9,6 +9,15 @@ const { pathToFileURL } = require('url');
 /** @type {string | null} */
 let workspaceRoot = null;
 
+function resolveAppIcon() {
+  const candidates = [
+    path.join(__dirname, 'assets', 'workbench-icon.ico'),
+    path.join(__dirname, 'assets', 'workbench-icon.png'),
+    path.join(__dirname, 'assets', 'workbench-icon.svg'),
+  ];
+  return candidates.find((p) => fs.existsSync(p));
+}
+
 function isPathInsideRoot(rootDir, absFile) {
   const root = path.resolve(rootDir);
   const abs = path.resolve(absFile);
@@ -44,9 +53,11 @@ function collectMarkdownFiles(rootDir) {
 }
 
 function createMainWindow() {
+  const iconPath = resolveAppIcon();
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -60,9 +71,11 @@ function createMainWindow() {
 
 function createBlockWindow(relPath, blockId, mode) {
   const isCanvas = mode === 'canvas';
+  const iconPath = resolveAppIcon();
   const win = new BrowserWindow({
     width: isCanvas ? 1280 : 720,
     height: isCanvas ? 860 : 640,
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -72,9 +85,9 @@ function createBlockWindow(relPath, blockId, mode) {
   const indexHtml = path.join(__dirname, '..', 'web', 'dist', 'index.html');
   const u = pathToFileURL(indexHtml);
   if (isCanvas) {
-    u.searchParams.set('mvwb_canvas', '1');
+    u.searchParams.set('smw_canvas', '1');
   } else {
-    u.searchParams.set('mvwb_block', '1');
+    u.searchParams.set('smw_block', '1');
   }
   u.searchParams.set('path', relPath);
   u.searchParams.set('blockId', blockId);
@@ -83,21 +96,21 @@ function createBlockWindow(relPath, blockId, mode) {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('mvwb:pickWorkspace', async () => {
+  ipcMain.handle('smw:pickWorkspace', async () => {
     const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
     if (r.canceled || !r.filePaths[0]) return null;
     workspaceRoot = r.filePaths[0];
     return { root: workspaceRoot, files: collectMarkdownFiles(workspaceRoot) };
   });
 
-  ipcMain.handle('mvwb:readFile', async (_e, relPath) => {
+  ipcMain.handle('smw:readFile', async (_e, relPath) => {
     if (!workspaceRoot) throw new Error('no_workspace');
     const abs = path.join(workspaceRoot, relPath);
     if (!isPathInsideRoot(workspaceRoot, abs)) throw new Error('path_escape');
     return fs.readFileSync(abs, 'utf8');
   });
 
-  ipcMain.handle('mvwb:writeFile', async (_e, relPath, text) => {
+  ipcMain.handle('smw:writeFile', async (_e, relPath, text) => {
     if (!workspaceRoot) throw new Error('no_workspace');
     const abs = path.join(workspaceRoot, relPath);
     if (!isPathInsideRoot(workspaceRoot, abs)) throw new Error('path_escape');
@@ -106,7 +119,7 @@ app.whenReady().then(() => {
     return true;
   });
 
-  ipcMain.handle('mvwb:openMarkdownInWorkspace', async () => {
+  ipcMain.handle('smw:openMarkdownInWorkspace', async () => {
     if (!workspaceRoot) return { error: 'no_workspace' };
     const r = await dialog.showOpenDialog({
       title: '打开 Markdown',
@@ -122,7 +135,7 @@ app.whenReady().then(() => {
     return { relPath: rel, text };
   });
 
-  ipcMain.handle('mvwb:saveFileAs', async (_e, curRelPath, text) => {
+  ipcMain.handle('smw:saveFileAs', async (_e, curRelPath, text) => {
     if (!workspaceRoot) return { error: 'no_workspace' };
     const suggested = path.join(workspaceRoot, curRelPath || 'untitled.md');
     const r = await dialog.showSaveDialog({
@@ -139,11 +152,11 @@ app.whenReady().then(() => {
     return { relPath: rel };
   });
 
-  ipcMain.on('mvwb:openBlock', (_e, relPath, blockId) => {
+  ipcMain.on('smw:openBlock', (_e, relPath, blockId) => {
     createBlockWindow(relPath, blockId, 'json');
   });
 
-  ipcMain.on('mvwb:openBlockCanvas', (_e, relPath, blockId) => {
+  ipcMain.on('smw:openBlockCanvas', (_e, relPath, blockId) => {
     createBlockWindow(relPath, blockId, 'canvas');
   });
 

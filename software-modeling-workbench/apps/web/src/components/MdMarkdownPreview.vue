@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
-import { mvwbVditorPreviewOptions } from '../utils/vditor-mvwb-preview-options';
+import { smwVditorPreviewOptions } from '../utils/vditor-smw-preview-options';
 
 const props = defineProps<{ markdown: string }>();
 
@@ -59,7 +59,7 @@ async function renderPreview() {
   clearTimeout(layoutStableTimer);
   clearTimeout(layoutFallbackTimer);
   try {
-    await Vditor.preview(el, props.markdown, mvwbVditorPreviewOptions);
+    await Vditor.preview(el, props.markdown, smwVditorPreviewOptions);
     forceExpandCodeBlocks(el);
     watchAsyncPreviewLayout(el);
     syncPreviewScrollLayout(el);

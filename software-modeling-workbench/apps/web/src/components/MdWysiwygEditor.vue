@@ -66,7 +66,7 @@ onMounted(() => {
       mode: 'wysiwyg',
       value: props.modelValue,
       lang: 'zh_CN',
-      cache: { enable: false, id: `mvwb-vditor-${Date.now()}` },
+      cache: { enable: false, id: `smw-vditor-${Date.now()}` },
       minHeight: 280,
       height: '100%',
       placeholder: '在此编辑 Markdown（所见即所得）…',

@@ -1,5 +1,5 @@
 /** 工作台「预览」与导出离屏渲染共用的 Vditor.preview 参数 */
-export const mvwbVditorPreviewOptions = {
+export const smwVditorPreviewOptions = {
   mode: 'light' as const,
   lang: 'zh_CN' as const,
   markdown: {

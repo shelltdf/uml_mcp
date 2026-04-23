@@ -42,7 +42,6 @@ import {
   trLogCanvasLaunchMismatch,
   trLogCanvasMissingData,
   trLogCanvasTabUpdated,
-  trLogElectronWorkspaceLoaded,
   trLogExportFailed,
   trLogExportOk,
   trLogFullscreenFailed,
@@ -80,6 +79,7 @@ import './uisvg/styles/win-theme.css';
 import type { CodespaceDockContextPayload, CodespaceDockPropLine } from './utils/codespace-dock-context';
 import InsertCodeBlockModal from './components/InsertCodeBlockModal.vue';
 import { buildFenceMarkdownForInsert, type InsertCodeBlockKind } from './utils/code-block-insert';
+import appTitleIconUrl from './assets/workbench-icon.svg';
 import {
   type ExportVisualOpts,
   exportMarkdownFile,
@@ -179,6 +179,7 @@ const savedBaseline = ref<Map<string, string>>(new Map());
 const browserSaveHandles = new Map<string, FileSystemFileHandle>();
 const logLines = ref<string[]>([]);
 const logOpen = ref(false);
+const aboutOpen = ref(false);
 const lastParseErrSig = ref('');
 /** 预览=只读渲染；富文本=Vditor 所见即所得；原始文本=textarea */
 const mdPaneMode = ref<'preview' | 'rich' | 'source'>('preview');
@@ -375,13 +376,13 @@ async function exportPngFromMenu() {
 
 async function pickFromMenu() {
   closeMenus();
-  await pickWorkspaceElectron();
+  openFolderDialog();
 }
 
 function showAbout() {
   closeMenus();
   logLine(ui.value.aboutLog, 'info');
-  window.alert(`Software Modeling Workbench 0.1\n\n${workspaceHintDisplay.value}`);
+  aboutOpen.value = true;
 }
 
 function onGlobalPointerDown(ev: PointerEvent) {
@@ -577,6 +578,10 @@ function onGlobalKeyDown(e: KeyboardEvent) {
   }
 
   if (e.key === 'Escape') {
+    if (aboutOpen.value) {
+      aboutOpen.value = false;
+      return;
+    }
     if (insertCodeBlockOpen.value) {
       insertCodeBlockOpen.value = false;
       insertCodeBlockAppendToEnd.value = false;
@@ -947,7 +952,7 @@ function parseMdOutline(src: string): MdOutlineHeading[] {
 const mdOutlineHeadings = computed(() => parseMdOutline(currentContent.value));
 
 const MVWB_HEADING_FLASH_MS = 1100;
-const MVWB_HEADING_FLASH_CLS = 'mvwb-heading-flash';
+const SMW_HEADING_FLASH_CLS = 'smw-heading-flash';
 
 function outlineParentIndex(list: readonly MdOutlineHeading[], i: number): number | null {
   const L = list[i]?.level ?? 99;
@@ -1019,7 +1024,7 @@ function flashDomHeading(el: HTMLElement | null) {
   if (!el) return;
   el.classList.remove(MVWB_HEADING_FLASH_CLS);
   void el.offsetWidth;
-  el.classList.add(MVWB_HEADING_FLASH_CLS);
+  el.classList.add(SMW_HEADING_FLASH_CLS);
   window.setTimeout(() => {
     el.classList.remove(MVWB_HEADING_FLASH_CLS);
   }, MVWB_HEADING_FLASH_MS);
@@ -1617,25 +1622,6 @@ async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<voi
   const text = currentContent.value;
   const L = shellChromeMessages[locale.value];
 
-  if (electronApi.value?.saveFileAs) {
-    const r = await electronApi.value.saveFileAs(p, text);
-    if (!r) return;
-    if ('error' in r) {
-      if (r.error === 'no_workspace') window.alert(L.alertNoWorkspace);
-      else if (r.error === 'outside_workspace') window.alert(L.alertOutsideWorkspaceSave);
-      return;
-    }
-    const newPath = r.relPath;
-    if (newPath !== p) {
-      renameOpenDocumentKey(p, newPath, text);
-    } else {
-      files.value = new Map(files.value).set(p, text);
-      syncBaselineForPath(p, text);
-    }
-    logLine(trLogSaveAsDone(locale.value, newPath, fromSaveWithoutTarget), 'info');
-    return;
-  }
-
   if (fsaSupported()) {
     try {
       const wfsa = window as unknown as WindowFsa;
@@ -1671,22 +1657,6 @@ async function saveCurrentDocumentAs(fromSaveWithoutTarget = false): Promise<voi
 }
 
 async function openMarkdownFileUnified(): Promise<void> {
-  if (electronApi.value?.openMarkdownInWorkspace) {
-    const r = await electronApi.value.openMarkdownInWorkspace();
-    if (!r) return;
-    if ('error' in r) {
-      const Lo = shellChromeMessages[locale.value];
-      if (r.error === 'no_workspace') window.alert(Lo.alertNoWorkspaceOpenFile);
-      else if (r.error === 'outside_workspace') window.alert(Lo.alertOutsideWorkspacePick);
-      return;
-    }
-    files.value = new Map(files.value).set(r.relPath, r.text);
-    syncBaselineForPath(r.relPath, r.text);
-    selectedPath.value = r.relPath;
-    logLine(trLogOpenedFile(locale.value, r.relPath), 'info');
-    return;
-  }
-
   if (fsaSupported()) {
     try {
       const wfsa = window as unknown as WindowFsa;
@@ -1762,27 +1732,12 @@ function applyEdit() {
 }
 
 async function pickWorkspaceElectron() {
-  const api = electronApi.value;
-  if (!api?.pickWorkspace) return;
-  const r = await api.pickWorkspace();
-  if (!r?.files) return;
-  browserSaveHandles.clear();
-  const fm = new Map(Object.entries(r.files));
-  files.value = fm;
-  replaceAllBaselinesFromFiles(fm);
-  const keys = [...files.value.keys()].sort();
-  selectedPath.value = keys[0] ?? null;
-  logLine(trLogElectronWorkspaceLoaded(locale.value, keys.length), 'info');
+  // 统一使用 Web 目录选择（<input webkitdirectory>），避免 Electron 原生弹窗。
+  openFolderDialog();
 }
 
 function openBlockInShell(block: ParsedFenceBlock) {
-  const p = selectedPath.value;
-  if (!p) return;
-  if (electronApi.value?.openBlockEditor) {
-    electronApi.value.openBlockEditor(p, block.payload.id);
-  } else {
-    openEdit(block);
-  }
+  openEdit(block);
 }
 
 const canvasTabsForCurrentFile = computed(() => {
@@ -2057,7 +2012,7 @@ function onCanvasUpdatedInPopup(payload: { markdown: string; relPath: string }) 
   try {
     if (window.opener && !window.opener.closed) {
       window.opener.postMessage(
-        { type: 'mvwb:canvasUpdated', relPath: payload.relPath, markdown: payload.markdown },
+        { type: 'smw:canvasUpdated', relPath: payload.relPath, markdown: payload.markdown },
         '*',
       );
     }
@@ -2075,8 +2030,7 @@ function onCanvasClosePopup() {
 }
 
 function onOpenerCanvasUpdated(ev: MessageEvent) {
-  // 向后兼容：旧窗口仍可能发送 mvwb:canvasSaved
-  if (ev.data?.type !== 'mvwb:canvasUpdated' && ev.data?.type !== 'mvwb:canvasSaved') return;
+  if (ev.data?.type !== 'smw:canvasUpdated' && ev.data?.type !== 'smw:canvasSaved') return;
   const { relPath, markdown } = ev.data as { relPath?: string; markdown?: string };
   if (typeof relPath !== 'string' || typeof markdown !== 'string') return;
   files.value = new Map(files.value).set(relPath, markdown);
@@ -2127,7 +2081,7 @@ onMounted(async () => {
   const u = new URLSearchParams(window.location.search);
   const rel = u.get('path') ?? '';
   const bid = u.get('blockId') ?? '';
-  if (u.get('mvwb_canvas') === '1' && rel && bid) {
+  if (u.get('smw_canvas') === '1' && rel && bid) {
     canvasRelPath.value = rel;
     canvasBlockId.value = bid;
     if (electronApi.value?.readWorkspaceFile) {
@@ -2141,7 +2095,7 @@ onMounted(async () => {
       }
       return;
     }
-    const raw = sessionStorage.getItem('mvwb_canvas_launch');
+    const raw = sessionStorage.getItem('smw_canvas_launch');
     if (raw) {
       try {
         const o = JSON.parse(raw) as {
@@ -2154,7 +2108,7 @@ onMounted(async () => {
           canvasMarkdown.value = o.markdown;
           canvasWorkspaceFiles.value = o.workspaceFiles && typeof o.workspaceFiles === 'object' ? o.workspaceFiles : {};
           canvasOnly.value = true;
-          sessionStorage.removeItem('mvwb_canvas_launch');
+          sessionStorage.removeItem('smw_canvas_launch');
           logLine(trLogBlockCanvasBrowserWindow(locale.value), 'info');
         } else {
           logLine(trLogCanvasLaunchMismatch(locale.value), 'warn');
@@ -2167,7 +2121,7 @@ onMounted(async () => {
     }
     return;
   }
-  if (u.get('mvwb_block') === '1' && rel && bid && electronApi.value?.readWorkspaceFile) {
+  if (u.get('smw_block') === '1' && rel && bid && electronApi.value?.readWorkspaceFile) {
     blockOnly.value = true;
     try {
       const text = await electronApi.value.readWorkspaceFile(rel);
@@ -2231,6 +2185,7 @@ onUnmounted(() => {
     />
     <header v-if="!blockOnly" ref="chromeRef" class="win-chrome">
       <div class="title-strip">
+        <img class="app-title-icon" :src="appTitleIconUrl" alt="Software Modeling Workbench" />
         <span class="app-title">Software Modeling Workbench</span>
         <span class="app-title-ver">0.1</span>
       </div>
@@ -2314,12 +2269,10 @@ onUnmounted(() => {
                 {{ ui.close }}
               </button>
             </li>
-            <template v-if="electronApi?.pickWorkspace">
-              <li class="menu-sep" role="separator" />
-              <li role="none">
-                <button type="button" class="menu-item" role="menuitem" @click="pickFromMenu">{{ ui.pickWorkspace }}</button>
-              </li>
-            </template>
+            <li class="menu-sep" role="separator" />
+            <li role="none">
+              <button type="button" class="menu-item" role="menuitem" @click="pickFromMenu">{{ ui.pickWorkspace }}</button>
+            </li>
           </ul>
         </div>
         <div class="menu-entry">
@@ -2413,12 +2366,10 @@ onUnmounted(() => {
           >
             {{ ui.tbClose }}
           </button>
-          <template v-if="electronApi?.pickWorkspace">
-            <span class="tb-sep" aria-hidden="true" />
-            <button type="button" class="tb-btn" :title="ui.tbDiskWorkspaceTitle" @click="pickWorkspaceElectron">
-              {{ ui.tbDiskWorkspace }}
-            </button>
-          </template>
+          <span class="tb-sep" aria-hidden="true" />
+          <button type="button" class="tb-btn" :title="ui.tbDiskWorkspaceTitle" @click="pickWorkspaceElectron">
+            {{ ui.tbDiskWorkspace }}
+          </button>
         </div>
         <span class="toolbar-fill" aria-hidden="true" />
         <button
@@ -3409,6 +3360,17 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    <div v-if="aboutOpen" class="modal-back" @click.self="aboutOpen = false">
+      <div class="modal about-modal">
+        <img class="about-icon" :src="appTitleIconUrl" alt="Software Modeling Workbench icon" />
+        <h3>Software Modeling Workbench 0.1</h3>
+        <p class="log-hint">{{ workspaceHintDisplay }}</p>
+        <p class="log-hint">{{ locale === 'en' ? `Running shell: ${shell}` : `当前运行壳：${shell}` }}</p>
+        <div class="modal-actions">
+          <button type="button" class="primary" @click="aboutOpen = false">{{ locale === 'en' ? 'OK' : '确定' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -3440,11 +3402,17 @@ onUnmounted(() => {
 }
 .title-strip {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   padding: 4px 10px 2px;
   border-bottom: 1px solid #d0d6e4;
   background: linear-gradient(to bottom, #dfe6f2, #d4dbe8);
+}
+.app-title-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  object-fit: contain;
 }
 .app-title {
   font-size: 0.82rem;
@@ -4842,6 +4810,16 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
+.about-modal {
+  align-items: center;
+  text-align: center;
+}
+.about-icon {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  margin-bottom: 10px;
+}
 .json-area {
   flex: 1;
   min-height: 200px;
@@ -4866,7 +4844,7 @@ onUnmounted(() => {
 
 <style>
 /* 预览 / 所见即所得：大纲跳转后标题闪烁（类名由脚本挂在 h1–h6 上，须非 scoped） */
-@keyframes mvwb-heading-flash-keyframes {
+@keyframes smw-heading-flash-keyframes {
   0% {
     box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55);
     background-color: rgba(191, 219, 254, 0.45);
@@ -4880,9 +4858,9 @@ onUnmounted(() => {
     background-color: transparent;
   }
 }
-.mvwb-heading-flash {
+.smw-heading-flash {
   border-radius: 4px;
-  animation: mvwb-heading-flash-keyframes 1.1s ease-out 1;
+  animation: smw-heading-flash-keyframes 1.1s ease-out 1;
 }
 
 .dock-uisvg-embed {

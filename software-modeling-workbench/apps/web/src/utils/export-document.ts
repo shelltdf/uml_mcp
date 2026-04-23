@@ -1,6 +1,6 @@
 import * as htmlToImage from 'html-to-image';
 import Vditor from 'vditor';
-import { mvwbVditorPreviewOptions } from './vditor-mvwb-preview-options';
+import { smwVditorPreviewOptions } from './vditor-smw-preview-options';
 
 const VDITOR_VER = '3.11.2';
 
@@ -43,14 +43,14 @@ export async function renderMarkdownOffscreen(markdown: string): Promise<{
   cleanup: () => void;
 }> {
   const host = document.createElement('div');
-  host.setAttribute('data-mvwb-export-host', '1');
+  host.setAttribute('data-smw-export-host', '1');
   host.style.cssText =
     'position:fixed;left:-12000px;top:0;width:min(920px,100vw);max-width:920px;background:#fff;overflow:visible;pointer-events:none;';
   document.body.appendChild(host);
   const inner = document.createElement('div');
-  inner.className = 'md-preview-root mvwb-export-inner';
+  inner.className = 'md-preview-root smw-export-inner';
   host.appendChild(inner);
-  await Vditor.preview(inner, markdown, mvwbVditorPreviewOptions);
+  await Vditor.preview(inner, markdown, smwVditorPreviewOptions);
   const captureRoot = (inner.querySelector('.vditor-reset') as HTMLElement) ?? inner;
   return {
     captureRoot,

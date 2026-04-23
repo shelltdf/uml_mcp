@@ -56,7 +56,7 @@
 | `apps/web` | Vue3 + Vite 工作区 UI |
 | `apps/electron` | Electron 壳（磁盘工作区、独立块窗口） |
 | `vscode-extension` | VS Code/Cursor 扩展（加载 `media/app` 静态资源，含 MCP 配置向导命令） |
-| `packages/mcp-server` | MCP Server（stdio），提供 `mvwb.parse_markdown_blocks` 等工具 |
+| `packages/mcp-server` | MCP Server（stdio），提供 `smw_parse_markdown_blocks` / `smw_health` 等工具（兼容 `parse_*` 与旧 `mvwb_*`） |
 | `examples/` | **本仓库自带**示例与测试用工作区（见 [`examples/README.md`](examples/README.md)）；与仓库根其它 `examples/` 无耦合 |
 
 ## OOP 分层（进行中）
@@ -85,8 +85,8 @@ python install.py        # 构建并自动安装 VS Code/Cursor 插件
 ### VS Code + MCP
 
 1. 在仓库根执行 `npm install`，然后执行 `npm run build:mcp`。
-2. 在 VS Code/Cursor 命令面板执行 `Software Modeling Workbench: Setup MCP Config`，会生成 `.vscode/mcp.json`。
-3. 配置使用 `mvwb-local`，启动命令为 `node packages/mcp-server/dist/server.js`，工作目录为 `${workspaceFolder}/software-modeling-workbench`。
+2. 在 VS Code/Cursor 命令面板执行 `Software Modeling Workbench: Setup MCP Config`，会生成 `.cursor/mcp.json`（Cursor）或 `.vscode/mcp.json`（VS Code）。
+3. 配置默认使用 `software-modeling-workbench-local`，启动命令为 `node ${workspaceFolder}/software-modeling-workbench/packages/mcp-server/dist/server.js`。
 
 ### 迁移提示（Mermaid 拆包）
 

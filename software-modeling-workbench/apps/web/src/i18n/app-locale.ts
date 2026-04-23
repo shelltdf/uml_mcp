@@ -1,6 +1,6 @@
 export type AppLocale = 'zh' | 'en';
 
-export const LOCALE_STORAGE_KEY = 'mvwb-locale';
+export const LOCALE_STORAGE_KEY = 'smw-locale';
 
 export function getInitialLocale(): AppLocale {
   try {

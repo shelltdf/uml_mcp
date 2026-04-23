@@ -45,21 +45,40 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showErrorMessage('请先打开一个工作区文件夹，再配置 MCP。');
       return;
     }
-    const vscodeDir = vscode.Uri.joinPath(folder.uri, '.vscode');
-    await vscode.workspace.fs.createDirectory(vscodeDir);
-    const mcpJsonUri = vscode.Uri.joinPath(vscodeDir, 'mcp.json');
-    const template = {
-      servers: {
-        'software-modeling-workbench-local': {
-          command: 'node',
-          args: ['packages/mcp-server/dist/server.js'],
-          cwd: '${workspaceFolder}/software-modeling-workbench',
-        },
-      },
+    const bundledDistAbs = path.join(context.extensionPath, 'media', 'mcp-server', 'server.cjs');
+    if (!fs.existsSync(bundledDistAbs)) {
+      vscode.window.showErrorMessage(
+        '扩展内置 mcp-server 不存在。请在扩展工程执行 npm run build:mcp && npm run copy:vscode-mcp 后重试。',
+      );
+      return;
+    }
+
+    const isCursor = vscode.env.appName.toLowerCase().includes('cursor');
+    const configDirName = isCursor ? '.cursor' : '.vscode';
+    const configDirUri = vscode.Uri.joinPath(folder.uri, configDirName);
+    await vscode.workspace.fs.createDirectory(configDirUri);
+    const mcpJsonUri = vscode.Uri.joinPath(configDirUri, 'mcp.json');
+
+    const serverConfig = {
+      command: 'node',
+      args: [bundledDistAbs],
     };
+    const template = isCursor
+      ? {
+          mcpServers: {
+            'software-modeling-workbench': serverConfig,
+          },
+        }
+      : {
+          servers: {
+            'software-modeling-workbench': serverConfig,
+          },
+        };
     const content = `${JSON.stringify(template, null, 2)}\n`;
     await vscode.workspace.fs.writeFile(mcpJsonUri, Buffer.from(content, 'utf8'));
-    vscode.window.showInformationMessage('已写入 .vscode/mcp.json（software-modeling-workbench-local）。请先执行 npm run build:mcp。');
+    vscode.window.showInformationMessage(
+      `已写入 ${configDirName}/mcp.json（software-modeling-workbench，使用扩展内置 mcp-server）。`,
+    );
   };
 
   const openCommandId = 'softwareModelingWorkbench.open';
@@ -75,8 +94,8 @@ export function activate(context: vscode.ExtensionContext): void {
           command: openCommandId,
         },
         {
-          label: '$(tools) 配置 MCP（写入 .vscode/mcp.json）',
-          description: '生成本地 MCP 服务器模板',
+          label: '$(tools) 配置 MCP',
+          description: '根据 VSCode/Cursor 自动生成 MCP 配置',
           command: setupMcpCommandId,
         },
       ],
@@ -95,14 +114,11 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(vscode.commands.registerCommand(setupMcpCommandId, setupMcp));
   context.subscriptions.push(vscode.commands.registerCommand(menuCommandId, showMenu));
 
-  // Backward-compatible aliases for earlier command IDs.
-  context.subscriptions.push(vscode.commands.registerCommand('mvwb.open', openPanel));
-  context.subscriptions.push(vscode.commands.registerCommand('mvwb.setupMcp', setupMcp));
-
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBarItem.text = '$(symbol-class) Modeling Workbench';
   statusBarItem.tooltip = 'Software Modeling Workbench';
   statusBarItem.command = menuCommandId;
+  statusBarItem.color = '#FFD54F';
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 }

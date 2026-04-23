@@ -3,7 +3,7 @@ import type { CodespaceLayoutLabelFns } from '../utils/codespace-svg-layout';
 import type { AppLocale } from './app-locale';
 
 /** `CodespaceCanvasEditor` provide → 子组件 inject */
-export const CS_CANVAS_MSG_KEY: InjectionKey<ComputedRef<CodespaceCanvasMessages>> = Symbol('mvwb.csCanvasMsg');
+export const CS_CANVAS_MSG_KEY: InjectionKey<ComputedRef<CodespaceCanvasMessages>> = Symbol('smw.csCanvasMsg');
 
 /**
  * 代码空间模型画布文案。

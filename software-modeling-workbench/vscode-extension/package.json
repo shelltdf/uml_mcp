@@ -3,6 +3,7 @@
   "displayName": "Software Modeling Workbench",
   "description": "软件建模工作台（Software Modeling Workbench，Webview）",
   "version": "0.1.0",
+  "icon": "media/workbench-icon.png",
   "license": "UNLICENSED",
   "publisher": "software-modeling-workbench",
   "private": true,
