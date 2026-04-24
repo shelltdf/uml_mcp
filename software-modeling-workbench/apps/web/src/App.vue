@@ -3153,7 +3153,7 @@ onUnmounted(() => {
                     :aria-label="ui.dockClosePanelTitle"
                     @click="closeLeftDockMarkdownPanel"
                   >
-                    <span aria-hidden="true">‹</span>
+                    <span aria-hidden="true">×</span>
                   </button>
                 </div>
                 <div id="left-dock-panel-md" class="dock-stack-panel__body dock-stack-panel__body--inset">
@@ -3281,7 +3281,7 @@ onUnmounted(() => {
                     :aria-label="ui.dockClosePanelTitle"
                     @click="closeLeftDockUisvgOutlinePanel"
                   >
-                    <span aria-hidden="true">‹</span>
+                    <span aria-hidden="true">×</span>
                   </button>
                 </div>
                 <div
@@ -3325,7 +3325,7 @@ onUnmounted(() => {
                     :aria-label="ui.dockClosePanelTitle"
                     @click="closeLeftDockUisvgLibraryPanel"
                   >
-                    <span aria-hidden="true">‹</span>
+                    <span aria-hidden="true">×</span>
                   </button>
                 </div>
                 <div
