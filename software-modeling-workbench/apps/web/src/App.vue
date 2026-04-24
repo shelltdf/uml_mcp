@@ -1016,6 +1016,13 @@ function toggleShowPropsDockMenu() {
   closeMenus();
 }
 
+function onRightDockPropertiesStripClick(): void {
+  propertiesDockCollapsed.value = !propertiesDockCollapsed.value;
+  if (!propertiesDockCollapsed.value && (rightDockMaximized.value === 'mindmap-format' || rightDockMaximized.value === 'mindmap-icon' || rightDockMaximized.value === 'mindmap-theme')) {
+    rightDockMaximized.value = null;
+  }
+}
+
 /** 竖条：切换对应 DockPanel 在 DockView 内的显示；窄条时先展开栏并显示该块 */
 function onLeftDockMarkdownStripClick(): void {
   if (outlineDockCollapsed.value) {
@@ -2430,6 +2437,11 @@ const showRightDockView = computed(() => {
     || mindmapThemeDockVisibleInView.value
     || designDockAnyPanelInScroll.value;
 });
+/**
+ * 右侧 Dock 外壳需要保留，以承载竖向条带按钮（用于从「全折叠」状态恢复）。
+ * 不能与 showRightDockView 绑定，否则最后一个条带也会被卸载，形成无入口死状态。
+ */
+const showRightDockAside = computed(() => showPropsDock.value);
 
 function sendMindmapDockCommand(action: MindmapDockCommand['action'], payload?: string): void {
   mindmapDockCmdSeq.value += 1;
@@ -3518,7 +3530,7 @@ onUnmounted(() => {
             <p v-else class="empty empty--in-column">{{ ui.emptyPickTab }}</p>
           </div>
           <aside
-            v-if="!blockOnly && showPropsDock"
+            v-if="!blockOnly && showRightDockAside"
             class="dock dock-right dock-area-right"
             :class="{ 'dock-area-right--buttons-only': !showRightDockView }"
             :aria-label="rightDockAreaAria"
@@ -3900,7 +3912,7 @@ onUnmounted(() => {
                     :disabled="!hasPropertiesDockPanel"
                     :title="locale === 'en' ? 'Toggle Properties panel — no global shortcut' : '切换属性面板 — 无全局快捷键'"
                     :aria-label="locale === 'en' ? 'Toggle Properties panel' : '切换属性面板'"
-                    @click="propertiesDockCollapsed = !propertiesDockCollapsed; if (!propertiesDockCollapsed && (rightDockMaximized === 'mindmap-format' || rightDockMaximized === 'mindmap-icon' || rightDockMaximized === 'mindmap-theme')) rightDockMaximized = null"
+                    @click="onRightDockPropertiesStripClick"
                   >
                     {{ ui.propsTitle }}
                   </button>
@@ -4975,8 +4987,16 @@ onUnmounted(() => {
   align-self: stretch;
   min-height: 0;
   max-height: 100%;
+  /**
+   * 固定右侧条带宽度，避免「buttons-only <-> 展开面板」在主布局中触发 38px/244px 横向跳变。
+   * 展开面板改为绝对定位悬浮到主内容左侧，不再参与文档流宽度计算。
+   */
+  width: 38px;
+  min-width: 38px;
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  z-index: 3;
 }
 .dock-area-left {
   display: flex;
@@ -4988,23 +5008,10 @@ onUnmounted(() => {
   overflow: hidden;
 }
 .dock-area-left--buttons-only {
-  width: 48px;
-  min-width: 48px;
+  width: 38px;
+  min-width: 38px;
 }
-.dock-area-left--buttons-only .dock-button-bar--left {
-  border-right: none;
-  padding-right: 0;
-  margin-right: 0;
-}
-.dock-area-right--buttons-only {
-  width: 48px;
-  min-width: 48px;
-}
-.dock-area-right--buttons-only .dock-button-bar {
-  border-left: none;
-  padding-left: 0;
-  margin-left: 0;
-}
+.dock-area-right--buttons-only { width: 38px; min-width: 38px; }
 .dock-view {
   flex: 1 1 auto;
   min-height: 0;
@@ -5018,7 +5025,16 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-right: 8px;
+  padding-right: 0;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 38px;
+  width: 206px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: var(--win-panel, #f8fafc);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
   /**
    * flex-basis:auto 会按内容撑高整列，侧栏突破视口、底部面板「悬在窗口外」；
    * 置 0% 后高度由 workspace-row 约束，长内容仅在 .dock-scroll--right-stack 内滚动。
