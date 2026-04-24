@@ -588,6 +588,8 @@ function selectCreatedObject(createdDomId: string) {
   void nextTick(() => {
     const logical = outlineLogicalIdFromDomId(svgMarkup.value, createdDomId)
     selectedIds.value = [logical]
+    /** 仅当新建对象不在可见区时平移过去；不做缩放。 */
+    canvasRef.value?.panOutlineIdIntoView?.(logical)
   })
 }
 

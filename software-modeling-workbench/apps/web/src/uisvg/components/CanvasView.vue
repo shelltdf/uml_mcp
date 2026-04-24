@@ -1881,6 +1881,60 @@ function frameOutlineIdInView(outlineOrDomId: string) {
   scheduleRefreshSelection()
 }
 
+/**
+ * 仅平移（不缩放）到可见区：当目标对象超出视口时，按最小位移把它挪回可见范围。
+ * 返回值表示本次是否执行了平移。
+ */
+function panOutlineIdIntoView(outlineOrDomId: string, paddingPx = 20): boolean {
+  const host = viewportRef.value
+  const root = rootSvgEl()
+  if (!host || !root) return false
+  const vw = host.clientWidth
+  const vh = host.clientHeight
+  if (vw <= 0 || vh <= 0) return false
+  const domId = resolveDomElementId(props.svgMarkup, outlineOrDomId)
+  if (!domId) return false
+  const el = svgElById(root, domId)
+  if (!el) return false
+  const cw = meta.value.width
+  const ch = meta.value.height
+  const rect = selectionInCanvasStack(el as Element, root, scale.value, cw, ch)
+  if (!rect || rect.width < 0.25 || rect.height < 0.25) return false
+
+  const pad = Math.max(0, paddingPx)
+  const maxL = Math.max(pad, vw - pad)
+  const maxT = Math.max(pad, vh - pad)
+  const left = rect.left * scale.value + panX.value
+  const top = rect.top * scale.value + panY.value
+  const right = (rect.left + rect.width) * scale.value + panX.value
+  const bottom = (rect.top + rect.height) * scale.value + panY.value
+  let dx = 0
+  let dy = 0
+
+  if (right - left > vw - 2 * pad) {
+    dx = (vw - (left + right)) / 2
+  } else if (left < pad) {
+    dx = pad - left
+  } else if (right > maxL) {
+    dx = maxL - right
+  }
+
+  if (bottom - top > vh - 2 * pad) {
+    dy = (vh - (top + bottom)) / 2
+  } else if (top < pad) {
+    dy = pad - top
+  } else if (bottom > maxT) {
+    dy = maxT - bottom
+  }
+
+  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return false
+  panX.value += dx
+  panY.value += dy
+  emitView()
+  scheduleRefreshSelection()
+  return true
+}
+
 /** 大纲拖放改父级：与画布拖拽松手改父级一致，用 `transform` 保持屏幕位置不跳变。 */
 function reparentFromOutline(childDomId: string, parentDomId: string): boolean {
   const svg = rootSvgEl()
@@ -1909,7 +1963,14 @@ onUnmounted(() => {
   selectionResizeObserver = null
 })
 
-defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect, reparentFromOutline })
+defineExpose({
+  resetView,
+  fitView,
+  frameOutlineIdInView,
+  panOutlineIdIntoView,
+  getVisibleUserRect,
+  reparentFromOutline,
+})
 </script>
 
 <template>

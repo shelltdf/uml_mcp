@@ -68,6 +68,8 @@ export function useUisvgCanvasHost(opts: {
     void nextTick(() => {
       const logical = outlineLogicalIdFromDomId(opts.svgMarkup.value, createdDomId);
       opts.selectedIds.value = [logical];
+      /** 仅在目标超出可见区时平移过去；保持当前缩放比例不变。 */
+      opts.canvasRef.value?.panOutlineIdIntoView?.(logical);
     });
   }
 

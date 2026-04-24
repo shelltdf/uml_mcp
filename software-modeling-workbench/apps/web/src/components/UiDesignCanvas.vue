@@ -23,6 +23,7 @@ const svgMarkup = ref('');
 const selectedIds = ref<string[]>([]);
 const canvasRef = ref<InstanceType<typeof CanvasView> | null>(null);
 const syncingFromProp = ref(false);
+const lastLocalEmittedModelValue = ref('');
 
 const lastDockCmdId = ref(0);
 
@@ -47,6 +48,16 @@ watch(
   (v) => {
     const normalized = normalizeUiDesignPayloadFromFence(v);
     if (normalized === svgMarkup.value) return;
+    const isLocalEcho = normalized === lastLocalEmittedModelValue.value;
+    if (isLocalEcho) {
+      // 本地编辑回传：同步文本但保持当前视口与选中态，不 resetView。
+      syncingFromProp.value = true;
+      svgMarkup.value = normalized;
+      void nextTick(() => {
+        syncingFromProp.value = false;
+      });
+      return;
+    }
     syncingFromProp.value = true;
     svgMarkup.value = normalized;
     selectedIds.value = [];
@@ -63,6 +74,7 @@ watch(svgMarkup, (v) => {
   const stripped = stripEditorCanvasChromeFromMarkup(v);
   const clean = formatSvgXmlForSave(stripped);
   if (clean === normalizeUiDesignPayloadFromFence(props.modelValue)) return;
+  lastLocalEmittedModelValue.value = clean;
   emit('update:modelValue', clean);
 });
 
