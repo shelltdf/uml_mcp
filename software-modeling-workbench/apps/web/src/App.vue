@@ -3680,6 +3680,9 @@ onUnmounted(() => {
                     :show-svg-object-dock="rightDockDesignSvgObjectShown"
                     :svg-markup="activeUiDesignDockState?.svgMarkup ?? ''"
                     :selected-id="activeUiDesignDockState?.selectedIds?.[0] ?? null"
+                    @close-ui-props-dock="rightDockDesignUiPropsShown = false"
+                    @close-svg-tree-dock="rightDockDesignSvgTreeShown = false"
+                    @close-svg-object-dock="rightDockDesignSvgObjectShown = false"
                     @update:svg="sendUiDesignDockCommand('update-svg', $event)"
                     @update:selected-id="
                       sendUiDesignDockCommand('update-selected-id', $event ?? '')

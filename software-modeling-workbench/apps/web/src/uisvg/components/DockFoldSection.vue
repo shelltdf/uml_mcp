@@ -6,6 +6,9 @@
  */
 const open = defineModel<boolean>({ default: true })
 const railOpen = defineModel<boolean>('railOpen', { default: true })
+const emit = defineEmits<{
+  close: []
+}>()
 
 withDefaults(
   defineProps<{
@@ -24,11 +27,12 @@ withDefaults(
     plainBody?: boolean
     /**
      * 与主窗口右侧「属性」面板一致：`dock-special-panel` + `dock-special-head` + 内容区；
-     * 无收起到边条，仅用 ▾/▸ 折叠内容。
+     * 无收起到边条，右上角仅保留关闭当前 panel。
      */
     workbenchDockPanel?: boolean
+    closeTitle?: string
   }>(),
-  { externalRailStrip: false, plainBody: false, workbenchDockPanel: false },
+  { externalRailStrip: false, plainBody: false, workbenchDockPanel: false, closeTitle: '' },
 )
 </script>
 
@@ -43,23 +47,19 @@ withDefaults(
       <div class="dock-special-head-actions">
         <button
           type="button"
-          class="dock-special-toggle"
-          :aria-expanded="open"
-          :aria-controls="panelId"
-          :title="open ? 'Fold' : 'Expand'"
-          :aria-label="open ? 'Fold section' : 'Expand section'"
-          @click="open = !open"
+          class="dock-fold-workbench__close"
+          :title="closeTitle || 'Hide this panel'"
+          :aria-label="closeTitle || 'Hide this panel'"
+          @click="emit('close')"
         >
-          {{ open ? '▾' : '▸' }}
+          ×
         </button>
       </div>
     </div>
     <div
-      v-show="open"
       :id="panelId"
       class="dock-fold-workbench__body"
       role="region"
-      :aria-hidden="!open"
     >
       <slot />
     </div>
@@ -165,6 +165,25 @@ withDefaults(
   overflow: auto;
   display: flex;
   flex-direction: column;
+}
+
+.dock-fold-workbench__close {
+  margin: 0;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  cursor: pointer;
+  color: #1e293b;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.dock-fold-workbench__close:hover {
+  border-color: #64748b;
+  background: #f8fafc;
 }
 
 .dock-fold-outer--plain {

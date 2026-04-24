@@ -57,6 +57,9 @@ const emit = defineEmits<{
   'update:selectedId': [id: string | null]
   /** 三个 dock 全部收起到右侧边条时，供 AppShell 将侧栏缩为窄条 */
   'update:allRightRailsCollapsed': [collapsed: boolean]
+  'close-ui-props-dock': []
+  'close-svg-tree-dock': []
+  'close-svg-object-dock': []
 }>()
 
 const displayLabel = ref('')
@@ -425,10 +428,12 @@ defineExpose({ expandAllRails })
             v-model:railOpen="uiRailOpen"
             :external-rail-strip="!workbenchDockEmbed"
             :workbench-dock-panel="workbenchDockEmbed"
+            :close-title="locale === 'en' ? 'Hide this panel' : '隐藏此面板'"
             :title="t('panel.dockUiProps')"
             panel-id="dp-ui-props"
             :root-class="workbenchUiPropsRootClass"
             rail-edge="right"
+            @close="emit('close-ui-props-dock')"
           >
       <div v-if="!uiModel" class="section-muted">{{ t('panel.notSelectedObject') }}</div>
       <div v-else class="ui-props-body">
@@ -562,10 +567,12 @@ defineExpose({ expandAllRails })
             v-model:railOpen="treeRailOpen"
             :external-rail-strip="!workbenchDockEmbed"
             :workbench-dock-panel="workbenchDockEmbed"
+            :close-title="locale === 'en' ? 'Hide this panel' : '隐藏此面板'"
             :title="t('panel.dockSvgTree')"
             panel-id="dp-svg-tree"
             :root-class="workbenchTreeRootClass"
             rail-edge="right"
+            @close="emit('close-svg-tree-dock')"
           >
             <div class="tree-scroll">
               <SvgDomTree :svg-markup="svgMarkup" :selected-id="selectedId" @select="onTreeSelect" />
@@ -591,10 +598,12 @@ defineExpose({ expandAllRails })
             v-model:railOpen="svgRailOpen"
             :external-rail-strip="!workbenchDockEmbed"
             :workbench-dock-panel="workbenchDockEmbed"
+            :close-title="locale === 'en' ? 'Hide this panel' : '隐藏此面板'"
             :title="t('panel.dockSvgObjectProps')"
             panel-id="dp-svg-props"
             :root-class="workbenchSvgPropsRootClass"
             rail-edge="right"
+            @close="emit('close-svg-object-dock')"
           >
       <div v-if="!resolvedDomId" class="data-meta muted">{{ t('panel.notEditableNode') }}</div>
 
