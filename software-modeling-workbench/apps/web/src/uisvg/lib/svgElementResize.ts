@@ -2721,11 +2721,15 @@ export function canResizeSvgElement(el: SVGElement | null): boolean {
   if (el.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(el)) {
     const local = readUisvgBundleFromObjectRoot(el).uisvgLocalName.replace(/^win\./, '')
     if (
+      local === 'MenuBar' ||
       local === 'MenuStrip' ||
       local === 'Menu' ||
       local === 'MenuItem' ||
+      local === 'ContextMenu' ||
       local === 'ContextMenuStrip' ||
+      local === 'ToolBar' ||
       local === 'ToolStrip' ||
+      local === 'StatusBar' ||
       local === 'ToolButton'
     )
       return false

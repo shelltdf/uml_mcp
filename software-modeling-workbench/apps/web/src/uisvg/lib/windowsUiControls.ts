@@ -50,13 +50,13 @@ export const WINDOWS_UI_GROUPS: { titleKey: MessageKey; items: WindowsPaletteIte
   {
     titleKey: 'uiLib.group.menusAndBars',
     items: [
-      { id: 'MenuStrip', label: 'MenuBar', win32: '#32768 (HMENU+rebar)', qt: 'QMenuBar' },
+      { id: 'MenuBar', label: 'Menu Bar', win32: '#32768 (HMENU+rebar)', qt: 'QMenuBar' },
       { id: 'Menu', label: 'Menu', win32: '#32768 (menu)', qt: 'QMenu' },
-      { id: 'MenuItem', label: 'MenuItem', win32: 'MENUITEMINFO', qt: 'QAction' },
-      { id: 'ToolStrip', label: 'ToolBar', win32: 'ToolbarWindow32', qt: 'QToolBar' },
-      { id: 'ToolButton', label: 'ToolButton', win32: 'ToolbarWindow32 button', qt: 'QToolButton / QAction' },
-      { id: 'StatusStrip', label: 'StatusBar', win32: 'msctls_statusbar32', qt: 'QStatusBar' },
-      { id: 'ContextMenuStrip', label: 'ContextMenu', win32: '#32768 (popup)', qt: 'QMenu' },
+      { id: 'MenuItem', label: 'Menu Item', win32: 'MENUITEMINFO', qt: 'QAction' },
+      { id: 'ToolBar', label: 'Tool Bar', win32: 'ToolbarWindow32', qt: 'QToolBar' },
+      { id: 'ToolButton', label: 'Tool Button', win32: 'ToolbarWindow32 button', qt: 'QToolButton / QAction' },
+      { id: 'StatusBar', label: 'Status Bar', win32: 'msctls_statusbar32', qt: 'QStatusBar' },
+      { id: 'ContextMenu', label: 'Context Menu', win32: '#32768 (popup)', qt: 'QMenu' },
     ],
   },
   {
@@ -153,10 +153,10 @@ export function uisvgPaletteTagForBasicShape(id: 'rect' | 'text' | 'frame'): str
 }
 
 function canParentAcceptWindowsChild(parent: Element, parentId: string, childId: string): boolean {
-  if (childId === 'ToolButton') return parentId === 'ToolStrip'
-  if (parentId === 'MenuStrip') return childId === 'Menu'
+  if (childId === 'ToolButton') return parentId === 'ToolBar' || parentId === 'ToolStrip'
+  if (parentId === 'MenuBar' || parentId === 'MenuStrip') return childId === 'Menu'
   if (parentId === 'Menu') return childId === 'Menu' || childId === 'MenuItem'
-  if (parentId === 'ContextMenuStrip') {
+  if (parentId === 'ContextMenu' || parentId === 'ContextMenuStrip') {
     if (childId !== 'Menu') return false
     for (const ch of parent.children) {
       if (ch.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(ch)) continue
@@ -174,10 +174,10 @@ function localNameOfObjectRoot(g: Element): string {
 
 function normalizeMenuLocalName(local: string): string {
   const k = local.trim().toLowerCase()
-  if (k === 'menustrip' || k === 'menubar') return 'MenuStrip'
+  if (k === 'menustrip' || k === 'menubar') return 'MenuBar'
   if (k === 'menu') return 'Menu'
   if (k === 'menuitem') return 'MenuItem'
-  if (k === 'contextmenu' || k === 'contextmenustrip') return 'ContextMenuStrip'
+  if (k === 'contextmenu' || k === 'contextmenustrip') return 'ContextMenu'
   return local
 }
 
@@ -190,7 +190,7 @@ function menuDisplayName(g: Element): string {
     ?.trim()
   if (caption) return caption
   const local = b.uisvgLocalName.replace(/^win\./, '')
-  const fallbackByType = local === 'MenuItem' ? 'Menu Item' : local === 'MenuStrip' ? 'MenuBar' : 'Menu'
+  const fallbackByType = local === 'MenuItem' ? 'Menu Item' : local === 'MenuBar' ? 'Menu Bar' : 'Menu'
   const label = (b.label || '').trim()
   // 过滤自动生成 id 风格标签（如 uisvg-Menu-1），避免误当成可见标题。
   if (!label || /^uisvg-[\w-]+-\d+$/i.test(label)) return fallbackByType
@@ -273,7 +273,8 @@ function relayoutToolButtonVisual(g: Element): void {
 
 export function relayoutToolStripChildren(toolStripG: Element): void {
   if (!isUisvgObjectRootG(toolStripG)) return
-  if (localNameOfObjectRoot(toolStripG) !== 'ToolStrip') return
+  const pLocal = localNameOfObjectRoot(toolStripG)
+  if (pLocal !== 'ToolBar' && pLocal !== 'ToolStrip') return
   let x = 4
   const y = 1
   const gap = 4
@@ -290,10 +291,10 @@ export function relayoutToolStripChildren(toolStripG: Element): void {
   }
   const face = toolStripG.querySelector(':scope > rect[data-uisvg-part="toolstrip-face"]') as SVGRectElement | null
   if (face) {
-    const minW = WINDOWS_CONTROL_PLACEMENT_SIZE.ToolStrip.w
+    const minW = WINDOWS_CONTROL_PLACEMENT_SIZE.ToolBar.w
     const nextW = x > 4 ? x : minW
     face.setAttribute('width', String(Math.max(minW, nextW)))
-    face.setAttribute('height', String(WINDOWS_CONTROL_PLACEMENT_SIZE.ToolStrip.h))
+    face.setAttribute('height', String(WINDOWS_CONTROL_PLACEMENT_SIZE.ToolBar.h))
   }
 }
 
@@ -472,7 +473,7 @@ export function relayoutMenuHierarchy(parent: Element): void {
     relayoutMenuNode(parent, false, false)
     return
   }
-  if (parentLocal === 'MenuStrip') {
+  if (parentLocal === 'MenuBar') {
     const menus = objectChildrenByLocal(parent, new Set(['Menu']))
     let x = 0
     const names: string[] = []
@@ -486,8 +487,8 @@ export function relayoutMenuHierarchy(parent: Element): void {
     if (face) {
       face.setAttribute('x', '0')
       face.setAttribute('y', '0')
-      face.setAttribute('height', String(WINDOWS_CONTROL_PLACEMENT_SIZE.MenuStrip.h))
-      face.setAttribute('width', String(Math.max(WINDOWS_CONTROL_PLACEMENT_SIZE.MenuStrip.w, x)))
+      face.setAttribute('height', String(WINDOWS_CONTROL_PLACEMENT_SIZE.MenuBar.h))
+      face.setAttribute('width', String(Math.max(WINDOWS_CONTROL_PLACEMENT_SIZE.MenuBar.w, x)))
     }
     const caption = parent.querySelector(':scope > text[data-uisvg-part="win-bar-caption"]') as SVGTextElement | null
     if (caption) {
@@ -503,7 +504,7 @@ export function relayoutMenuHierarchy(parent: Element): void {
     }
     return
   }
-  if (parentLocal === 'Menu' || parentLocal === 'ContextMenuStrip') {
+  if (parentLocal === 'Menu' || parentLocal === 'ContextMenu') {
     if (parentLocal === 'Menu') {
       const parentObj = parent.parentElement
       const parentLocal2 =
@@ -1197,7 +1198,7 @@ const builders: Record<string, Builder> = {
     g.appendChild(E(doc, 'line', { x1: '60', y1: '0', x2: '60', y2: '56', stroke: WIN_BORDER }))
     g.appendChild(E(doc, 'line', { x1: '0', y1: '28', x2: '120', y2: '28', stroke: WIN_BORDER }))
   },
-  MenuStrip(doc, g) {
+  MenuBar(doc, g) {
     g.appendChild(
       E(doc, 'rect', {
         'data-uisvg-part': 'win-bar-face',
@@ -1296,7 +1297,7 @@ const builders: Record<string, Builder> = {
     g.appendChild(cap)
     relayoutToolButtonVisual(g)
   },
-  ToolStrip(doc, g) {
+  ToolBar(doc, g) {
     g.appendChild(
       E(doc, 'rect', {
         'data-uisvg-part': 'toolstrip-face',
@@ -1307,7 +1308,7 @@ const builders: Record<string, Builder> = {
       }),
     )
   },
-  StatusStrip(doc, g) {
+  StatusBar(doc, g) {
     g.appendChild(
       E(doc, 'rect', {
         'data-uisvg-part': 'win-bar-face',
@@ -1321,7 +1322,7 @@ const builders: Record<string, Builder> = {
     t.setAttribute('data-uisvg-part', 'win-bar-caption')
     g.appendChild(t)
   },
-  ContextMenuStrip(doc, g) {
+  ContextMenu(doc, g) {
     g.appendChild(
       E(doc, 'rect', {
         'data-uisvg-part': 'contextmenu-face',
@@ -1468,6 +1469,12 @@ const builders: Record<string, Builder> = {
   },
 }
 
+// Backward-compat aliases for legacy control ids.
+builders.MenuStrip = builders.MenuBar
+builders.ToolStrip = builders.ToolBar
+builders.StatusStrip = builders.StatusBar
+builders.ContextMenuStrip = builders.ContextMenu
+
 /** 与 `builders` 一致的控件 id 列表（像素导入等用于校验）。 */
 export const WINDOWS_BUILDER_CONTROL_IDS: readonly string[] = Object.keys(builders)
 
@@ -1540,11 +1547,12 @@ export function appendWindowsControlUnderParent(
       const parentLocal = pb.uisvgLocalName.replace(/^win\./, '') || 'Panel'
       if (!canParentAcceptWindowsChild(parent, parentLocal, controlId)) return
     }
-    if (controlId === 'StatusStrip' && isUisvgObjectRootG(parent)) {
+    if ((controlId === 'StatusBar' || controlId === 'StatusStrip') && isUisvgObjectRootG(parent)) {
       for (const ch of parent.children) {
         if (ch.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(ch)) continue
         const b = readUisvgBundleFromObjectRoot(ch as Element)
-        if (b.uisvgLocalName.replace(/^win\./, '') === 'StatusStrip') return
+        if (b.uisvgLocalName.replace(/^win\./, '') === 'StatusBar' || b.uisvgLocalName.replace(/^win\./, '') === 'StatusStrip')
+          return
       }
     }
     const { x, y } = placement
@@ -1570,13 +1578,21 @@ export function appendWindowsControlUnderParent(
     parent.appendChild(g)
     if (isUisvgObjectRootG(parent)) {
       const parentLocal = localNameOfObjectRoot(parent)
-      if (parentLocal === 'MenuStrip' || parentLocal === 'Menu' || parentLocal === 'ContextMenuStrip') {
+      if (parentLocal === 'MenuBar' || parentLocal === 'Menu' || parentLocal === 'ContextMenu') {
         relayoutMenuHierarchy(parent)
-      } else if (parentLocal === 'ToolStrip') {
+      } else if (parentLocal === 'ToolBar' || parentLocal === 'ToolStrip') {
         relayoutToolStripChildren(parent)
       }
     }
-    if (isUisvgObjectRootG(parent) && (controlId === 'MenuStrip' || controlId === 'ToolStrip' || controlId === 'StatusStrip')) {
+    if (
+      isUisvgObjectRootG(parent) &&
+      (controlId === 'MenuBar' ||
+        controlId === 'MenuStrip' ||
+        controlId === 'ToolBar' ||
+        controlId === 'ToolStrip' ||
+        controlId === 'StatusBar' ||
+        controlId === 'StatusStrip')
+    ) {
       const pb = readUisvgBundleFromObjectRoot(parent)
       if (pb.uisvgLocalName.replace(/^win\./, '') === 'Form') {
         relayoutFormBars(parent as unknown as SVGGElement)
@@ -1596,11 +1612,11 @@ export function relayoutMenuHierarchyInSvgString(svgXml: string, anchorDomId: st
     if (n.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(n)) {
       const local = localNameOfObjectRoot(n)
       const norm = normalizeMenuLocalName(local)
-      if (norm === 'MenuStrip' || norm === 'Menu' || norm === 'ContextMenuStrip' || norm === 'MenuItem') {
+      if (norm === 'MenuBar' || norm === 'Menu' || norm === 'ContextMenu' || norm === 'MenuItem') {
         relayoutMenuHierarchy(n)
         if (norm === 'Menu' && n.parentElement && isUisvgObjectRootG(n.parentElement)) {
           const pl = normalizeMenuLocalName(localNameOfObjectRoot(n.parentElement))
-          if (pl === 'Menu' || pl === 'MenuStrip' || pl === 'ContextMenuStrip') relayoutMenuHierarchy(n.parentElement)
+          if (pl === 'Menu' || pl === 'MenuBar' || pl === 'ContextMenu') relayoutMenuHierarchy(n.parentElement)
         }
         return new XMLSerializer().serializeToString(doc)
       }
@@ -1615,13 +1631,18 @@ export function relayoutToolButtonInSvgString(svgXml: string, anchorDomId: strin
   const doc = parser.parseFromString(svgXml, 'image/svg+xml')
   const anchor = doc.getElementById(anchorDomId)
   if (!anchor || anchor.tagName.toLowerCase() !== 'g') return null
-  if (isUisvgObjectRootG(anchor) && localNameOfObjectRoot(anchor) === 'ToolStrip') {
+  if (isUisvgObjectRootG(anchor) && (localNameOfObjectRoot(anchor) === 'ToolBar' || localNameOfObjectRoot(anchor) === 'ToolStrip')) {
     relayoutToolStripChildren(anchor)
     return new XMLSerializer().serializeToString(doc)
   }
   relayoutToolButtonVisual(anchor)
   const p = anchor.parentElement
-  if (p && p.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(p) && localNameOfObjectRoot(p) === 'ToolStrip') {
+  if (
+    p &&
+    p.tagName.toLowerCase() === 'g' &&
+    isUisvgObjectRootG(p) &&
+    (localNameOfObjectRoot(p) === 'ToolBar' || localNameOfObjectRoot(p) === 'ToolStrip')
+  ) {
     relayoutToolStripChildren(p)
   }
   return new XMLSerializer().serializeToString(doc)
@@ -1637,7 +1658,7 @@ export function relayoutAllMenuHierarchiesInSvgString(svgXml: string): string | 
     const g = groups[i] as Element
     if (!isUisvgObjectRootG(g)) continue
     const local = normalizeMenuLocalName(localNameOfObjectRoot(g))
-    if (local !== 'MenuStrip' && local !== 'Menu' && local !== 'ContextMenuStrip' && local !== 'MenuItem') continue
+    if (local !== 'MenuBar' && local !== 'Menu' && local !== 'ContextMenu' && local !== 'MenuItem') continue
     hitCount++
     relayoutMenuHierarchy(g)
     changed = true

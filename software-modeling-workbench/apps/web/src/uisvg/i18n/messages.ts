@@ -205,12 +205,16 @@ export type MessageKey =
   | 'uiLib.group.graphicsAndOther'
   | 'uiLib.win.Form'
   | 'uiLib.win.MenuStrip'
+  | 'uiLib.win.MenuBar'
   | 'uiLib.win.Menu'
   | 'uiLib.win.MenuItem'
   | 'uiLib.win.ToolStrip'
+  | 'uiLib.win.ToolBar'
   | 'uiLib.win.ToolButton'
   | 'uiLib.win.StatusStrip'
+  | 'uiLib.win.StatusBar'
   | 'uiLib.win.ContextMenuStrip'
+  | 'uiLib.win.ContextMenu'
   | 'uiLib.win.GroupBox'
   | 'uiLib.win.Panel'
   | 'uiLib.win.TabControl'
@@ -430,7 +434,7 @@ export const zh: Record<MessageKey, string> = {
   'status.addedText': '已添加文本',
   'status.addedFrame': '已添加容器',
   'status.addedWin': '已添加 Windows 控件: {id}',
-  'status.formStatusStripExists': '该 Form 已有状态栏（StatusStrip），每个窗体仅允许一个。',
+  'status.formStatusStripExists': '该 Form 已有状态栏（StatusBar），每个窗体仅允许一个。',
   'saveAs.prompt': '另存为文件名（含扩展名，例如 design.ui.svg）',
   'canvasSettings.title': '画布设置',
   'canvasSettings.hint':
@@ -497,13 +501,17 @@ export const zh: Record<MessageKey, string> = {
   'uiLib.group.listAndTree': '列表与树',
   'uiLib.group.graphicsAndOther': '图形与其他',
   'uiLib.win.Form': '主窗口',
-  'uiLib.win.MenuStrip': 'MenuBar',
+  'uiLib.win.MenuStrip': 'Menu Bar',
+  'uiLib.win.MenuBar': 'Menu Bar',
   'uiLib.win.Menu': '菜单',
-  'uiLib.win.MenuItem': '菜单项',
-  'uiLib.win.ToolStrip': 'ToolBar',
+  'uiLib.win.MenuItem': 'Menu Item',
+  'uiLib.win.ToolStrip': 'Tool Bar',
+  'uiLib.win.ToolBar': 'Tool Bar',
   'uiLib.win.ToolButton': '工具按钮',
-  'uiLib.win.StatusStrip': 'StatusBar',
-  'uiLib.win.ContextMenuStrip': 'ContextMenu',
+  'uiLib.win.StatusStrip': 'Status Bar',
+  'uiLib.win.StatusBar': 'Status Bar',
+  'uiLib.win.ContextMenuStrip': 'Context Menu',
+  'uiLib.win.ContextMenu': 'Context Menu',
   'uiLib.win.GroupBox': '分组框',
   'uiLib.win.Panel': '面板',
   'uiLib.win.TabControl': '选项卡',
@@ -725,7 +733,7 @@ export const en: Record<MessageKey, string> = {
   'status.addedText': 'Text added',
   'status.addedFrame': 'Frame added',
   'status.addedWin': 'Windows control added: {id}',
-  'status.formStatusStripExists': 'This Form already has a status bar (StatusStrip); only one is allowed per form.',
+  'status.formStatusStripExists': 'This Form already has a status bar (StatusBar); only one is allowed per form.',
   'saveAs.prompt': 'File name (with extension, e.g. design.ui.svg)',
   'canvasSettings.title': 'Canvas settings',
   'canvasSettings.hint':
@@ -793,13 +801,17 @@ export const en: Record<MessageKey, string> = {
   'uiLib.group.listAndTree': 'List & tree',
   'uiLib.group.graphicsAndOther': 'Graphics & other',
   'uiLib.win.Form': 'Main window',
-  'uiLib.win.MenuStrip': 'MenuBar',
+  'uiLib.win.MenuStrip': 'Menu Bar',
+  'uiLib.win.MenuBar': 'Menu Bar',
   'uiLib.win.Menu': 'Menu',
   'uiLib.win.MenuItem': 'Menu item',
-  'uiLib.win.ToolStrip': 'ToolBar',
+  'uiLib.win.ToolStrip': 'Tool Bar',
+  'uiLib.win.ToolBar': 'Tool Bar',
   'uiLib.win.ToolButton': 'Tool button',
-  'uiLib.win.StatusStrip': 'StatusBar',
-  'uiLib.win.ContextMenuStrip': 'ContextMenu',
+  'uiLib.win.StatusStrip': 'Status Bar',
+  'uiLib.win.StatusBar': 'Status Bar',
+  'uiLib.win.ContextMenuStrip': 'Context Menu',
+  'uiLib.win.ContextMenu': 'Context Menu',
   'uiLib.win.GroupBox': 'Group box',
   'uiLib.win.Panel': 'Panel',
   'uiLib.win.TabControl': 'Tab control',

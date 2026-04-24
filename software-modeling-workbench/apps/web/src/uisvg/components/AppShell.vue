@@ -654,7 +654,7 @@ function onPaletteDropWin(payload: {
     getDefaultUiPropsRecordForWinControl(payload.controlId),
   )
   if (!createdDomId) {
-    if (payload.parentDomId !== 'layer-root' && payload.controlId === 'StatusStrip') {
+    if (payload.parentDomId !== 'layer-root' && (payload.controlId === 'StatusBar' || payload.controlId === 'StatusStrip')) {
       statusLeft.value = t('status.formStatusStripExists')
       return
     }

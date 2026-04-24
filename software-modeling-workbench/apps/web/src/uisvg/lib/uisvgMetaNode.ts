@@ -311,9 +311,13 @@ const SVG_HOSTED_WIN_SEMANTIC_LOCALNAME_LOWER = new Set(
     'picturebox',
     'propertygrid',
     'menustrip',
+    'menubar',
     'toolstrip',
+    'toolbar',
     'statusstrip',
+    'statusbar',
     'contextmenustrip',
+    'contextmenu',
   ],
 )
 

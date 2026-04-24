@@ -1440,7 +1440,7 @@ function applyFormBarLayoutAfterPointer(svg: SVGSVGElement, finishedIds: string[
     if (!isFormBarControlId(name)) continue
     const pt = canvasClientToSvgUser(svg, lastClientX, lastClientY)
     const { lx, ly } = globalXYToParentLocal(form, pt.x, pt.y)
-    if (name === 'ToolStrip') {
+    if (name === 'ToolBar' || name === 'ToolStrip') {
       updateToolStripDockByPointerAndRelayout(form, id, lx, ly)
     } else {
       relayoutFormBars(form)
@@ -1459,12 +1459,13 @@ function applyMenuLayoutAfterPointer(svg: SVGSVGElement, finishedIds: string[]) 
     for (let i = 0; i < 64 && n; i++) {
       if (n.tagName.toLowerCase() === 'g') {
         const pid = uisvgLocalNameOfObjectRoot(n)
-        if (pid === 'Menu' || pid === 'MenuStrip' || pid === 'ContextMenuStrip') {
+        if (pid === 'Menu' || pid === 'MenuBar' || pid === 'MenuStrip' || pid === 'ContextMenu' || pid === 'ContextMenuStrip') {
           relayoutMenuHierarchy(n)
           applied = true
           if (pid === 'Menu' && n.parentElement && n.parentElement.tagName.toLowerCase() === 'g') {
             const pp = uisvgLocalNameOfObjectRoot(n.parentElement)
-            if (pp === 'Menu' || pp === 'MenuStrip' || pp === 'ContextMenuStrip') relayoutMenuHierarchy(n.parentElement)
+            if (pp === 'Menu' || pp === 'MenuBar' || pp === 'MenuStrip' || pp === 'ContextMenu' || pp === 'ContextMenuStrip')
+              relayoutMenuHierarchy(n.parentElement)
           }
           break
         }
@@ -1485,7 +1486,7 @@ function applyToolStripLayoutAfterPointer(svg: SVGSVGElement, finishedIds: strin
     const local = uisvgLocalNameOfObjectRoot(el)
     if (local !== 'ToolButton') continue
     const p = el.parentElement
-    if (p && p.tagName.toLowerCase() === 'g' && uisvgLocalNameOfObjectRoot(p) === 'ToolStrip') {
+    if (p && p.tagName.toLowerCase() === 'g' && (uisvgLocalNameOfObjectRoot(p) === 'ToolBar' || uisvgLocalNameOfObjectRoot(p) === 'ToolStrip')) {
       relayoutToolStripChildren(p)
     }
   }
@@ -1509,7 +1510,7 @@ function refreshMenuSnapPreviewFromDrag(svg: SVGSVGElement) {
   let anchor: Element | null = el
   for (let i = 0; i < 64 && anchor; i++) {
     const k = uisvgLocalNameOfObjectRoot(anchor)
-    if (k === 'MenuStrip' || k === 'Menu' || k === 'ContextMenuStrip') break
+    if (k === 'MenuBar' || k === 'MenuStrip' || k === 'Menu' || k === 'ContextMenu' || k === 'ContextMenuStrip') break
     anchor = anchor.parentElement
   }
   if (!anchor || anchor.tagName.toLowerCase() !== 'g') {

@@ -175,13 +175,13 @@ export function classifySemanticControl(
     return 'Form'
   }
   if (ar > 5 && r.h < ih * 0.14 && cy < 0.24) {
-    return 'MenuStrip'
+    return 'MenuBar'
   }
   if (ar > 4 && r.h < ih * 0.12 && cy > 0.76) {
-    return 'StatusStrip'
+    return 'StatusBar'
   }
   if (ar > 2.8 && r.h < ih * 0.13 && cy > 0.22 && cy < 0.72 && r.w > iw * 0.18) {
-    return 'ToolStrip'
+    return 'ToolBar'
   }
   if (ar > 3.2 && r.h < ih * 0.12 && r.w > iw * 0.15) {
     return 'HScrollBar'

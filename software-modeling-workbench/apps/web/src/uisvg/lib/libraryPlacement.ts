@@ -25,19 +25,19 @@ export const FORM_TITLE_BAR_HEIGHT = 26
 /** 标题栏文字字号（与 `windowsUiControls` Form 标题一致；重排时用于抵消误缩放） */
 export const FORM_TITLE_TEXT_FONT_SIZE = '11'
 
-/** MenuStrip / StatusStrip 横向条：标签距左、基线距条顶（与 builders 默认一致） */
+/** MenuBar / StatusBar 横向条：标签距左、基线距条顶（与 builders 默认一致） */
 export const WIN_FLAT_BAR_CAPTION_PAD_X = 6
 export const WIN_FLAT_BAR_CAPTION_BASELINE_Y = 16
 export const WIN_FLAT_BAR_CAPTION_FONT_SIZE = '11'
 
-/** ToolStrip：条内占位按钮相对条左上、固定尺寸与水平间距（与 builders 默认一致） */
+/** ToolBar：条内占位按钮相对条左上、固定尺寸与水平间距（与 builders 默认一致） */
 export const TOOLSTRIP_ITEM_INSET_X = 6
 export const TOOLSTRIP_ITEM_INSET_Y = 4
 export const TOOLSTRIP_ITEM_WIDTH = 22
 export const TOOLSTRIP_ITEM_HEIGHT = 18
 export const TOOLSTRIP_ITEM_GAP = 4
 
-/** ContextMenuStrip：菜单项文字左内边距、首行基线、行距与字号（与 builders 默认 8,16 / 8,32 / 11 一致） */
+/** ContextMenu：菜单项文字左内边距、首行基线、行距与字号（与 builders 默认 8,16 / 8,32 / 11 一致） */
 export const CONTEXT_MENU_TEXT_PAD_X = 8
 export const CONTEXT_MENU_FIRST_BASELINE_Y = 16
 export const CONTEXT_MENU_ROW_STEP = 16
@@ -324,12 +324,16 @@ export const WINDOWS_CONTROL_PLACEMENT_SIZE: Record<string, { w: number; h: numb
   SplitContainer: { w: 116, h: 72 },
   FlowLayoutPanel: { w: 120, h: 56 },
   TableLayoutPanel: { w: 120, h: 56 },
+  MenuBar: { w: 160, h: 22 },
   MenuStrip: { w: 160, h: 22 },
   Menu: { w: 120, h: 22 },
   MenuItem: { w: 140, h: 22 },
+  ToolBar: { w: 160, h: 26 },
   ToolStrip: { w: 160, h: 26 },
   ToolButton: { w: 96, h: 24 },
+  StatusBar: { w: 160, h: 22 },
   StatusStrip: { w: 160, h: 22 },
+  ContextMenu: { w: 120, h: 22 },
   ContextMenuStrip: { w: 120, h: 22 },
   PictureBox: { w: 88, h: 64 },
   PropertyGrid: { w: 120, h: 88 },

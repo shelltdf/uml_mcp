@@ -30,7 +30,16 @@ const WIN_CONTAINER_CONTROL_IDS = new Set([
 ])
 
 /** 允许作为父级的对象：通用容器 + 菜单层级容器。 */
-const WIN_PARENT_CONTROL_IDS = new Set([...WIN_CONTAINER_CONTROL_IDS, 'MenuStrip', 'Menu', 'ContextMenuStrip', 'ToolStrip'])
+const WIN_PARENT_CONTROL_IDS = new Set([
+  ...WIN_CONTAINER_CONTROL_IDS,
+  'MenuBar',
+  'MenuStrip',
+  'Menu',
+  'ContextMenu',
+  'ContextMenuStrip',
+  'ToolBar',
+  'ToolStrip',
+])
 
 function localNameFromObjectRoot(g: Element): string {
   const b = readUisvgBundleFromObjectRoot(g)
@@ -56,10 +65,10 @@ function countChildObjectRootsByLocalName(parent: Element, childLocalName: strin
 }
 
 function canParentAcceptChild(parentId: string, childId: string, parentEl?: Element, movingChildId = ''): boolean {
-  if (childId === 'ToolButton') return parentId === 'ToolStrip'
-  if (parentId === 'MenuStrip') return childId === 'Menu'
+  if (childId === 'ToolButton') return parentId === 'ToolBar' || parentId === 'ToolStrip'
+  if (parentId === 'MenuBar' || parentId === 'MenuStrip') return childId === 'Menu'
   if (parentId === 'Menu') return childId === 'Menu' || childId === 'MenuItem'
-  if (parentId === 'ContextMenuStrip') {
+  if (parentId === 'ContextMenu' || parentId === 'ContextMenuStrip') {
     if (childId !== 'Menu') return false
     if (!parentEl) return true
     return countChildObjectRootsByLocalName(parentEl, 'Menu', movingChildId) < 1
@@ -436,12 +445,12 @@ function resolveWinContainerDropTarget(
         if (innerClientScreen && !clientPointInsideScreenRect(clientX, clientY, innerClientScreen)) {
           return layerRoot
         }
-      } else if (cid === 'ToolStrip' && draggedLocal === 'ToolButton') {
+      } else if ((cid === 'ToolBar' || cid === 'ToolStrip') && draggedLocal === 'ToolButton') {
         const ownScreen = screenBoundingRectForControlOwnBox(dragParent as SVGGraphicsElement, cid)
         if (ownScreen && !clientPointInsideScreenRect(clientX, clientY, ownScreen)) {
           return layerRoot
         }
-      } else if (cid === 'MenuStrip' || cid === 'Menu' || cid === 'ContextMenuStrip') {
+      } else if (cid === 'MenuBar' || cid === 'MenuStrip' || cid === 'Menu' || cid === 'ContextMenu' || cid === 'ContextMenuStrip') {
         const ownScreen = screenBoundingRectForControlOwnBox(dragParent as SVGGraphicsElement, cid)
         if (ownScreen && !clientPointInsideScreenRect(clientX, clientY, ownScreen)) {
           return layerRoot
@@ -463,7 +472,7 @@ function resolveWinContainerDropTarget(
           n = n.parentElement
           continue
         }
-        if (menuChild && cid !== 'MenuStrip' && cid !== 'Menu' && cid !== 'ContextMenuStrip') {
+        if (menuChild && cid !== 'MenuBar' && cid !== 'MenuStrip' && cid !== 'Menu' && cid !== 'ContextMenu' && cid !== 'ContextMenuStrip') {
           n = n.parentElement
           continue
         }
@@ -591,13 +600,13 @@ export function reparentCanvasObjectAfterDrag(
   preserveVisualAfterReparent(svg, el, targetParent)
   if (oldParent && isUisvgObjectRootG(oldParent)) relayoutMenuHierarchy(oldParent)
   if (isUisvgObjectRootG(targetParent)) relayoutMenuHierarchy(targetParent)
-  if (oldParent && isUisvgObjectRootG(oldParent) && localNameFromObjectRoot(oldParent) === 'ToolStrip') {
+  if (oldParent && isUisvgObjectRootG(oldParent) && (localNameFromObjectRoot(oldParent) === 'ToolBar' || localNameFromObjectRoot(oldParent) === 'ToolStrip')) {
     relayoutToolStripChildren(oldParent)
   }
-  if (isUisvgObjectRootG(targetParent) && localNameFromObjectRoot(targetParent) === 'ToolStrip') {
+  if (isUisvgObjectRootG(targetParent) && (localNameFromObjectRoot(targetParent) === 'ToolBar' || localNameFromObjectRoot(targetParent) === 'ToolStrip')) {
     relayoutToolStripChildren(targetParent)
   }
-  if (!isUisvgObjectRootG(targetParent) && (movedLocal === 'Menu' || movedLocal === 'ContextMenuStrip')) {
+  if (!isUisvgObjectRootG(targetParent) && (movedLocal === 'Menu' || movedLocal === 'ContextMenu' || movedLocal === 'ContextMenuStrip')) {
     relayoutMenuHierarchy(el)
   }
 
@@ -664,13 +673,13 @@ export function reparentUisvgObjectPreserveVisualOnSvg(
   preserveVisualAfterReparent(svg, pair.child, pair.newParent)
   if (oldParent && isUisvgObjectRootG(oldParent)) relayoutMenuHierarchy(oldParent)
   if (isUisvgObjectRootG(pair.newParent)) relayoutMenuHierarchy(pair.newParent)
-  if (oldParent && isUisvgObjectRootG(oldParent) && localNameFromObjectRoot(oldParent) === 'ToolStrip') {
+  if (oldParent && isUisvgObjectRootG(oldParent) && (localNameFromObjectRoot(oldParent) === 'ToolBar' || localNameFromObjectRoot(oldParent) === 'ToolStrip')) {
     relayoutToolStripChildren(oldParent)
   }
-  if (isUisvgObjectRootG(pair.newParent) && localNameFromObjectRoot(pair.newParent) === 'ToolStrip') {
+  if (isUisvgObjectRootG(pair.newParent) && (localNameFromObjectRoot(pair.newParent) === 'ToolBar' || localNameFromObjectRoot(pair.newParent) === 'ToolStrip')) {
     relayoutToolStripChildren(pair.newParent)
   }
-  if (!isUisvgObjectRootG(pair.newParent) && (movedLocal === 'Menu' || movedLocal === 'ContextMenuStrip')) {
+  if (!isUisvgObjectRootG(pair.newParent) && (movedLocal === 'Menu' || movedLocal === 'ContextMenu' || movedLocal === 'ContextMenuStrip')) {
     relayoutMenuHierarchy(pair.child)
   }
   ensureAllObjectRootChildrenHaveIds(doc)
@@ -700,13 +709,13 @@ export function reparentUisvgObjectInSvgString(
   pair.newParent.appendChild(pair.child)
   if (oldParent && isUisvgObjectRootG(oldParent)) relayoutMenuHierarchy(oldParent)
   if (isUisvgObjectRootG(pair.newParent)) relayoutMenuHierarchy(pair.newParent)
-  if (oldParent && isUisvgObjectRootG(oldParent) && localNameFromObjectRoot(oldParent) === 'ToolStrip') {
+  if (oldParent && isUisvgObjectRootG(oldParent) && (localNameFromObjectRoot(oldParent) === 'ToolBar' || localNameFromObjectRoot(oldParent) === 'ToolStrip')) {
     relayoutToolStripChildren(oldParent)
   }
-  if (isUisvgObjectRootG(pair.newParent) && localNameFromObjectRoot(pair.newParent) === 'ToolStrip') {
+  if (isUisvgObjectRootG(pair.newParent) && (localNameFromObjectRoot(pair.newParent) === 'ToolBar' || localNameFromObjectRoot(pair.newParent) === 'ToolStrip')) {
     relayoutToolStripChildren(pair.newParent)
   }
-  if (!isUisvgObjectRootG(pair.newParent) && (movedLocal === 'Menu' || movedLocal === 'ContextMenuStrip')) {
+  if (!isUisvgObjectRootG(pair.newParent) && (movedLocal === 'Menu' || movedLocal === 'ContextMenu' || movedLocal === 'ContextMenuStrip')) {
     relayoutMenuHierarchy(pair.child)
   }
   ensureAllObjectRootChildrenHaveIds(doc)

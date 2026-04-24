@@ -90,7 +90,7 @@ export function useUisvgCanvasHost(opts: {
       getDefaultUiPropsRecordForWinControl(payload.controlId),
     );
     if (!createdDomId) {
-      if (payload.parentDomId !== 'layer-root' && payload.controlId === 'StatusStrip') {
+      if (payload.parentDomId !== 'layer-root' && (payload.controlId === 'StatusBar' || payload.controlId === 'StatusStrip')) {
         return;
       }
       const sz = getWindowsControlPlacementSize(payload.controlId);

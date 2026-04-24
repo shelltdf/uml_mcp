@@ -19,7 +19,7 @@ const STATUS_H = 22
 const TOOL_H = 26
 const TOOL_VW = 26
 
-export const FORM_BAR_CONTROL_IDS = new Set(['MenuStrip', 'ToolStrip', 'StatusStrip'])
+export const FORM_BAR_CONTROL_IDS = new Set(['MenuBar', 'ToolBar', 'StatusBar', 'MenuStrip', 'ToolStrip', 'StatusStrip'])
 
 export type ToolStripDockKind = 'Top' | 'Bottom' | 'Left' | 'Right' | 'None'
 
@@ -117,10 +117,10 @@ export function computePlacedFormBarBoxes(
   const items = collectFormBarItems(formG, virtualBar ?? null)
   if (!items.length) return { inner, boxes: [] }
 
-  const statuses = items.filter((i) => i.local === 'StatusStrip')
-  const menus = items.filter((i) => i.local === 'MenuStrip')
+  const statuses = items.filter((i) => i.local === 'StatusBar' || i.local === 'StatusStrip')
+  const menus = items.filter((i) => i.local === 'MenuBar' || i.local === 'MenuStrip')
   const status = statuses[0] ?? null
-  const tools = items.filter((i) => i.local === 'ToolStrip')
+  const tools = items.filter((i) => i.local === 'ToolBar' || i.local === 'ToolStrip')
 
   const getDock = (id: string): ToolStripDockKind => dockById.get(id) || 'Top'
   const topTools = tools.filter((t) => getDock(t.id) === 'Top')
@@ -217,7 +217,7 @@ function buildDockMapFromForm(
 ): Map<string, ToolStripDockKind> {
   const m = new Map<string, ToolStripDockKind>()
   for (const it of collectFormBarItems(formG, virtualBar ?? null)) {
-    if (it.local !== 'ToolStrip') continue
+    if (it.local !== 'ToolBar' && it.local !== 'ToolStrip') continue
     if (it.g) {
       const b = readUisvgBundleFromObjectRoot(it.g)
       m.set(it.id, parseToolStripDock(b.uiProps))
@@ -233,7 +233,7 @@ function applyPlacedToDom(formG: Element, boxes: FormBarPlacedBox[], dockById: M
   for (const [id, d] of dockById) {
     const g = formG.ownerDocument?.getElementById(id) as SVGGElement | null
     if (!g) continue
-    if (!collectFormBarItems(formG, null).some((x) => x.id === id && x.local === 'ToolStrip')) continue
+    if (!collectFormBarItems(formG, null).some((x) => x.id === id && (x.local === 'ToolBar' || x.local === 'ToolStrip'))) continue
     const b = readUisvgBundleFromObjectRoot(g)
     setToolStripDock(b, d)
     writeUisvgBundleToObjectRoot(g, b)
@@ -242,7 +242,7 @@ function applyPlacedToDom(formG: Element, boxes: FormBarPlacedBox[], dockById: M
     const g = formG.ownerDocument?.getElementById(b.id) as SVGGElement | null
     if (!g) continue
     g.setAttribute('transform', `translate(${b.x},${b.y})`)
-    if (b.local === 'MenuStrip' || b.local === 'StatusStrip') {
+    if (b.local === 'MenuBar' || b.local === 'MenuStrip' || b.local === 'StatusBar' || b.local === 'StatusStrip') {
       const face = g.querySelector(':scope > rect[data-uisvg-part="win-bar-face"]') as SVGRectElement | null
       if (face) {
         face.setAttribute('x', '0')
@@ -251,7 +251,7 @@ function applyPlacedToDom(formG: Element, boxes: FormBarPlacedBox[], dockById: M
         face.setAttribute('height', String(b.h))
       }
       ensureWinFlatBarResizeSynced(g)
-    } else if (b.local === 'ToolStrip') {
+    } else if (b.local === 'ToolBar' || b.local === 'ToolStrip') {
       const face = g.querySelector(':scope > rect[data-uisvg-part="toolstrip-face"]') as SVGRectElement | null
       if (face) {
         face.setAttribute('x', '0')
@@ -316,7 +316,7 @@ export function computeFormBarSnapPreview(
   const innerR = getInnerClientBoundsForContainer('Form', formG)
   const inner = { x: innerR.x, y: innerR.y, width: innerR.width, height: innerR.height }
 
-  const stCount = collectFormBarItems(formG, virtualBar).filter((i) => i.local === 'StatusStrip').length
+  const stCount = collectFormBarItems(formG, virtualBar).filter((i) => i.local === 'StatusBar' || i.local === 'StatusStrip').length
   if (stCount > 1) {
     return {
       x: inner.x + 4,
@@ -347,7 +347,7 @@ export function computeFormBarSnapPreview(
     width: b.w,
     height: b.h,
     illegal: false,
-    targetDock: options.localName === 'ToolStrip' ? dmap.get(options.movingDomId) ?? 'Top' : null,
+    targetDock: options.localName === 'ToolBar' || options.localName === 'ToolStrip' ? dmap.get(options.movingDomId) ?? 'Top' : null,
   }
 }
 
@@ -362,11 +362,11 @@ function buildDockMapForPreview(
 ): Map<string, ToolStripDockKind> {
   const m = new Map<string, ToolStripDockKind>()
   for (const it of collectFormBarItems(formG, virtualBar)) {
-    if (it.local !== 'ToolStrip') continue
+    if (it.local !== 'ToolBar' && it.local !== 'ToolStrip') continue
     let d = it.g
       ? parseToolStripDock(readUisvgBundleFromObjectRoot(it.g).uiProps ?? {})
       : parseToolStripDock({ Dock: 'Top' })
-    if (it.id === movingId && local === 'ToolStrip') d = computeNearestToolStripDock(inner, plx, ply)
+    if (it.id === movingId && (local === 'ToolBar' || local === 'ToolStrip')) d = computeNearestToolStripDock(inner, plx, ply)
     m.set(it.id, d)
   }
   return m
@@ -405,7 +405,7 @@ export function updateToolStripDockByPointerAndRelayout(
 ): void {
   if (!isFormObjectRootG(formG)) return
   const it = collectFormBarItems(formG, null).find((x) => x.id === childDomId)
-  if (!it || it.local !== 'ToolStrip' || !it.g) return
+  if (!it || (it.local !== 'ToolBar' && it.local !== 'ToolStrip') || !it.g) return
   const innerR = getInnerClientBoundsForContainer('Form', formG)
   const d = computeNearestToolStripDock(
     { x: innerR.x, y: innerR.y, width: innerR.width, height: innerR.height },
