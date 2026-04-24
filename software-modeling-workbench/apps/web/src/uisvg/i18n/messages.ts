@@ -175,6 +175,9 @@ export type MessageKey =
   | 'canvas.zoomFit'
   | 'canvas.zoomHudAria'
   | 'canvas.selectionFrameGeom'
+  | 'canvas.reparentDropHintTitle'
+  | 'canvas.reparentDropActiveTitle'
+  | 'canvas.reparentDropActiveLabel'
   | 'canvas.alignDebug.header'
   | 'canvas.alignDebug.hintNoSummary'
   | 'canvas.alignDebug.hintAfterMulti'
@@ -458,6 +461,9 @@ export const zh: Record<MessageKey, string> = {
   'canvas.zoomHudAria': '画布缩放',
   'canvas.selectionFrameGeom':
     '选择框位置（画布坐标）: left={left} top={top} width={width} height={height}',
+  'canvas.reparentDropHintTitle': '可成为父级的容器；松手后可将选中对象挂入其中',
+  'canvas.reparentDropActiveTitle': '指针下：松手将把选中对象挂入此父级（若合法）',
+  'canvas.reparentDropActiveLabel': '松手 → 改父级',
   'canvas.alignDebug.header': '--- 对齐调试 ---',
   'canvas.alignDebug.hintNoSummary':
     '尚无摘要：请点工具栏「对齐」按钮，或菜单「编辑」→ 对齐，或画布右键→「对齐」。',
@@ -746,6 +752,9 @@ export const en: Record<MessageKey, string> = {
   'canvas.zoomHudAria': 'Canvas zoom',
   'canvas.selectionFrameGeom':
     'Selection box (canvas coords): left={left} top={top} width={width} height={height}',
+  'canvas.reparentDropHintTitle': 'Valid parent containers; release to reparent the selection into one',
+  'canvas.reparentDropActiveTitle': 'Under pointer: release will set this as parent (if valid)',
+  'canvas.reparentDropActiveLabel': 'Release → reparent',
   'canvas.alignDebug.header': '--- Align debug ---',
   'canvas.alignDebug.hintNoSummary':
     'No summary yet: use toolbar Align, menu Edit → Align, or canvas menu → Align.',

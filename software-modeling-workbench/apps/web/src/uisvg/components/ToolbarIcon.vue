@@ -29,8 +29,8 @@ defineProps<{
       <path d="M2 6h3.5l1.2-1.5H14v9H2V6z" fill="#fff" />
       <path d="M2 6h12" />
     </g>
-    <g v-else-if="name === 'save'" stroke="currentColor" stroke-width="1.1">
-      <rect x="3" y="2" width="10" height="12" rx="1" fill="#fff" />
+    <g v-else-if="name === 'save'" fill="none">
+      <rect x="3" y="2" width="10" height="12" rx="1" fill="#fff" stroke="currentColor" stroke-width="1.1" />
       <rect x="5" y="2" width="6" height="3.5" fill="currentColor" opacity="0.22" stroke="none" />
       <rect x="5" y="9" width="6" height="3.5" fill="currentColor" opacity="0.12" stroke="none" />
     </g>

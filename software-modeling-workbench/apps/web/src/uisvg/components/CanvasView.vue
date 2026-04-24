@@ -37,9 +37,11 @@ import {
 } from '../lib/svgElementResize'
 import {
   canvasClientToSvgUser,
+  collectReparentDropHighlightElements,
   findWinContainerParentForPaletteDrop,
   reparentCanvasObjectAfterDrag,
   reparentUisvgObjectPreserveVisualOnSvg,
+  resolveCanvasReparentDropTarget,
 } from '../lib/svgReparent'
 import {
   clampLocalPlacementToInner,
@@ -357,6 +359,56 @@ let lastObjectDragDeltaUser = { dx: 0, dy: 0 }
 let pendingDrag: { domIds: string[]; startX: number; startY: number } | null = null
 const DRAG_THRESHOLD_PX = 3
 
+/** 单选拖拽时：可成为父级的 WinForms 容器（缓存 DOM，mousemove 只算屏幕高亮） */
+let reparentDropTargetElsCache: Element[] = []
+
+type ReparentDropHighlight = {
+  left: number
+  top: number
+  width: number
+  height: number
+  id: string
+  active: boolean
+}
+
+const reparentDropHighlights = ref<ReparentDropHighlight[]>([])
+
+function clearReparentDropUi() {
+  reparentDropTargetElsCache = []
+  reparentDropHighlights.value = []
+}
+
+function refreshReparentDropUi(clientX: number, clientY: number) {
+  if (!objectDragging || objectDragIds.length !== 1) {
+    reparentDropHighlights.value = []
+    return
+  }
+  const root = rootSvgEl()
+  const doc = root?.ownerDocument
+  if (!root || !doc) {
+    reparentDropHighlights.value = []
+    return
+  }
+  const dragged = svgElById(root, objectDragIds[0]) as SVGGraphicsElement | null
+  if (!dragged) {
+    reparentDropHighlights.value = []
+    return
+  }
+  const layerRoot = findLayerRoot(doc)
+  const target = resolveCanvasReparentDropTarget(layerRoot, clientX, clientY, dragged)
+  const s = scale.value
+  const cw = meta.value.width
+  const ch = meta.value.height
+  const next: ReparentDropHighlight[] = []
+  for (const el of reparentDropTargetElsCache) {
+    const r = selectionInCanvasStackForReparentDrop(el as Element, root, s, cw, ch, dragged)
+    const id = el.getAttribute('id')?.trim() ?? ''
+    if (!r || !id) continue
+    next.push({ ...r, id, active: el === target })
+  }
+  reparentDropHighlights.value = next
+}
+
 /** 框选：在空白处按下左键拖拽 */
 const marqueeStart = ref<{ x: number; y: number; additive: boolean } | null>(null)
 const marqueeCurrent = ref<{ x: number; y: number } | null>(null)
@@ -544,6 +596,91 @@ function selectionFromDescendantUnion(
   }
   if (![local.left, local.top, local.width, local.height].every(Number.isFinite)) return null
   return intersectWithCanvasRect(local, cw, ch)
+}
+
+/** 与 `selectionFromDescendantUnion` 相同，但忽略 `excludeSubroot` 子树内图元（拖子控件时避免父容器高亮框跟子一起胀） */
+function selectionFromDescendantUnionExcluding(
+  rootEl: Element,
+  rootSvg: SVGSVGElement,
+  scaleVal: number,
+  cw: number,
+  ch: number,
+  excludeSubroot: Element,
+): { left: number; top: number; width: number; height: number } | null {
+  const ref = rootSvg.getBoundingClientRect()
+  let minL = Infinity
+  let minT = Infinity
+  let maxR = -Infinity
+  let maxB = -Infinity
+  let any = false
+
+  function consider(r: DOMRect) {
+    if (r.width < 0.25 && r.height < 0.25) return
+    minL = Math.min(minL, r.left)
+    minT = Math.min(minT, r.top)
+    maxR = Math.max(maxR, r.right)
+    maxB = Math.max(maxB, r.bottom)
+    any = true
+  }
+
+  for (const tag of SVG_SHAPE_TAGS) {
+    try {
+      rootEl.querySelectorAll(tag).forEach((node) => {
+        if (!(node instanceof Element)) return
+        if (node !== excludeSubroot && excludeSubroot.contains(node)) return
+        consider(node.getBoundingClientRect())
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!any || !Number.isFinite(minL)) return null
+
+  const local = {
+    left: (minL - ref.left) / scaleVal,
+    top: (minT - ref.top) / scaleVal,
+    width: (maxR - minL) / scaleVal,
+    height: (maxB - minT) / scaleVal,
+  }
+  if (![local.left, local.top, local.width, local.height].every(Number.isFinite)) return null
+  return intersectWithCanvasRect(local, cw, ch)
+}
+
+/** 改父级高亮：父容器 `<g>` 的并集不含正在拖动的后代，避免 Form 虚线框随 Panel 拖动变大 */
+function selectionInCanvasStackForReparentDrop(
+  el: Element,
+  rootSvg: SVGSVGElement,
+  scaleVal: number,
+  cw: number,
+  ch: number,
+  dragged: SVGGraphicsElement | null,
+): { left: number; top: number; width: number; height: number } | null {
+  const exclude =
+    dragged && el !== dragged && dragged instanceof Element && el.contains(dragged) ? dragged : null
+  if (scaleVal <= 0) return null
+  const ref = rootSvg.getBoundingClientRect()
+  /**
+   * 多数浏览器上 `<g>` 的 `getBoundingClientRect()` 已是「全体后代」外包盒（含 `transform` 中的子对象根），
+   * 会先于排除逻辑返回，导致 Form 改父级高亮仍随子 Panel 胀缩。有 `exclude` 且目标为 `<g>` 时禁用此捷径。
+   */
+  const skipGroupClientRect = Boolean(exclude && el.tagName.toLowerCase() === 'g')
+  const er = el.getBoundingClientRect()
+  if (!skipGroupClientRect && er.width >= 0.5 && er.height >= 0.5) {
+    const local = {
+      left: (er.left - ref.left) / scaleVal,
+      top: (er.top - ref.top) / scaleVal,
+      width: er.width / scaleVal,
+      height: er.height / scaleVal,
+    }
+    const hit = intersectWithCanvasRect(local, cw, ch)
+    if (hit) return hit
+  }
+  if (exclude) {
+    const fromEx = selectionFromDescendantUnionExcluding(el, rootSvg, scaleVal, cw, ch, exclude)
+    if (fromEx) return fromEx
+  }
+  return selectionFromDescendantUnion(el, rootSvg, scaleVal, cw, ch)
 }
 
 /** 与逻辑画布 [0,cw]×[0,ch] 求交，保证选中框只画在画布内 */
@@ -1061,6 +1198,7 @@ function onResizeHandleDown(e: MouseEvent, handle: ResizeHandle) {
 
 function clearPendingDrag() {
   pendingDrag = null
+  clearReparentDropUi()
   window.removeEventListener('mousemove', onPendingDragMove)
   window.removeEventListener('mouseup', onPendingDragUp)
 }
@@ -1092,8 +1230,20 @@ function onPendingDragMove(e: MouseEvent) {
   lastObjectDragDeltaUser = { dx: 0, dy: 0 }
   guideLines.value = {}
 
+  if (movable.length === 1 && root.ownerDocument) {
+    const gel = svgElById(root, movable[0]) as SVGGraphicsElement | null
+    const lr = findLayerRoot(root.ownerDocument)
+    reparentDropTargetElsCache =
+      gel && lr.contains(gel) ? collectReparentDropHighlightElements(lr, gel) : []
+  } else {
+    reparentDropTargetElsCache = []
+  }
+
   window.addEventListener('mousemove', onObjectMove)
-  window.addEventListener('mouseup', onObjectUp)
+  /** 捕获阶段 + pointer：避免嵌入式 WebView / Simple Browser 丢冒泡导致永不松手、不改父级 */
+  window.addEventListener('mouseup', onObjectDragEndFromWindow, true)
+  window.addEventListener('pointerup', onObjectDragEndFromWindow, true)
+  window.addEventListener('pointercancel', onObjectDragEndFromWindow, true)
   onObjectMove(e)
 }
 
@@ -1103,12 +1253,12 @@ function onPendingDragUp() {
 
 function endObjectDrag(skipEndSnap = false) {
   if (!objectDragging) return
+  clearReparentDropUi()
   const finishedIds = objectDragIds.slice()
   objectDragging = false
   objectDragIds = []
   guideLines.value = {}
-  window.removeEventListener('mousemove', onObjectMove)
-  window.removeEventListener('mouseup', onObjectUp)
+  detachObjectDragWindowListeners()
 
   const svg = rootSvgEl()
   if (svg && finishedIds.length && !skipEndSnap) {
@@ -1126,6 +1276,8 @@ function onObjectMove(e: MouseEvent) {
   if (!objectDragging || !objectDragIds.length) return
   const root = rootSvgEl()
   if (!root) return
+
+  refreshReparentDropUi(e.clientX, e.clientY)
 
   const dxUser = svgUserDeltaFromClient(e.clientX - lastClientX)
   const dyUser = svgUserDeltaFromClient(e.clientY - lastClientY)
@@ -1147,11 +1299,21 @@ function onObjectMove(e: MouseEvent) {
   scheduleRefreshSelection()
 }
 
-function onObjectUp(e: MouseEvent) {
+function detachObjectDragWindowListeners() {
+  window.removeEventListener('mousemove', onObjectMove)
+  window.removeEventListener('mouseup', onObjectDragEndFromWindow, true)
+  window.removeEventListener('pointerup', onObjectDragEndFromWindow, true)
+  window.removeEventListener('pointercancel', onObjectDragEndFromWindow, true)
+}
+
+function onObjectDragEndFromWindow(e: MouseEvent | PointerEvent) {
+  if (!objectDragging) return
+  /** `pointercancel` 在部分 UA 上 `button` 非 0，仍需结束拖拽 */
+  if (e.type !== 'pointercancel' && e.button !== 0) return
   lastClientX = e.clientX
   lastClientY = e.clientY
   /** 松手时按住 Alt：不做对齐吸附（与常见设计软件一致） */
-  endObjectDrag(e.altKey)
+  endObjectDrag(e.altKey === true)
 }
 
 function tryBeginObjectDrag(e: MouseEvent, pickedDomId: string | null, logicalIds: string[]): boolean {
@@ -1522,8 +1684,7 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', endObjectDragIfHidden)
   clearPendingDrag()
   window.removeEventListener('mousemove', onWindowMarqueeMove)
-  window.removeEventListener('mousemove', onObjectMove)
-  window.removeEventListener('mouseup', onObjectUp)
+  detachObjectDragWindowListeners()
   window.removeEventListener('mousemove', onResizeMove)
   window.removeEventListener('mouseup', onResizeUp)
   window.removeEventListener('scroll', onScrollResizeRefresh, true)
@@ -1600,6 +1761,22 @@ defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect, rep
           }"
           aria-hidden="true"
         />
+        <div
+          v-for="h in reparentDropHighlights"
+          :key="'rp-' + h.id"
+          class="canvas-reparent-drop-hint"
+          :class="{ 'canvas-reparent-drop-hint--active': h.active }"
+          :style="{
+            left: `${h.left}px`,
+            top: `${h.top}px`,
+            width: `${h.width}px`,
+            height: `${h.height}px`,
+          }"
+          :title="h.active ? t('canvas.reparentDropActiveTitle') : t('canvas.reparentDropHintTitle')"
+          aria-hidden="true"
+        >
+          <span v-if="h.active" class="canvas-reparent-drop-hint__label">{{ t('canvas.reparentDropActiveLabel') }}</span>
+        </div>
         <div
           v-if="selectionCanvasRect"
           class="canvas-selection-frame"
@@ -1939,6 +2116,40 @@ defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect, rep
   top: 0;
   z-index: 4;
   overflow: visible;
+}
+
+.canvas-reparent-drop-hint {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px dashed rgba(0, 120, 212, 0.45);
+  border-radius: 2px;
+  z-index: 1;
+  transition:
+    border-color 0.1s ease,
+    box-shadow 0.1s ease;
+}
+
+.canvas-reparent-drop-hint--active {
+  border-color: #0078d4;
+  box-shadow: 0 0 0 1px rgba(0, 120, 212, 0.28);
+}
+
+.canvas-reparent-drop-hint__label {
+  position: absolute;
+  left: 4px;
+  top: -22px;
+  max-width: 240px;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #0b5cab;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(0, 120, 212, 0.35);
+  border-radius: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .canvas-marquee {

@@ -11,6 +11,8 @@
 const UISVG_NS = 'http://uisvg.org/ns/1'
 /** 通过 HTML `innerHTML` 嵌入的 SVG 中，语义子元素常落在 SVG 命名空间（而非 UISVG_NS） */
 const SVG_NS = 'http://www.w3.org/2000/svg'
+/** `v-html` 下部分宿主会把 Win 语义子节点解析为 XHTML 命名空间（如 `<form>`） */
+const XHTML_NS = 'http://www.w3.org/1999/xhtml'
 const KIND_ATTR = 'data-uisvg-kind'
 const LABEL_ATTR = 'data-uisvg-label'
 const UI_PROPS_ATTR = 'data-uisvg-ui-props'
@@ -207,6 +209,21 @@ function inferKindFromTag(el: Element): string {
   return t || 'node'
 }
 
+/**
+ * `appendWindowsControl` 使用 `uisvg-{ControlId}-{n}`；经 `v-html` / HTML 解析后
+ * `uisvg:Form` 等语义子节点可能被剥离，仍可从对象根 `id` 恢复 Win 类型名（PascalCase 段）。
+ */
+function inferWinUisvgLocalNameFromObjectRootDomId(el: Element): string | null {
+  const id = el.getAttribute('id')?.trim() ?? ''
+  if (!id.startsWith('uisvg-')) return null
+  const rest = id.slice('uisvg-'.length)
+  const lastHyphen = rest.lastIndexOf('-')
+  if (lastHyphen <= 0) return null
+  const middle = rest.slice(0, lastHyphen)
+  if (!/^[A-Z][A-Za-z0-9]*$/.test(middle)) return null
+  return middle
+}
+
 function parseUiPropsAttrOn(el: Element): Record<string, string> {
   const raw = el.getAttribute(UI_PROPS_ATTR)
   if (!raw?.trim()) return {}
@@ -256,13 +273,64 @@ function findBundleOrLegacyMeta(el: Element): Element | null {
 }
 
 /**
+ * 经 `v-html` / HTML 解析后，WinForms 语义子节点常为 **SVG 命名空间 + 全小写** localName（如 `form`），
+ * 若仅认 PascalCase，则 `findFirstUisvgSemanticChild` 为空 → `isUisvgObjectRootG` 为假 → 画布改父级永远判不中 Form。
+ * 白名单与组件库 `WINDOWS_UI_GROUPS` 的 id 及基础 `Frame` 对齐；**不含** `rect`/`text`/`image` 等纯 SVG 几何名。
+ */
+const SVG_HOSTED_WIN_SEMANTIC_LOCALNAME_LOWER = new Set(
+  [
+    'form',
+    'frame',
+    'panel',
+    'groupbox',
+    'tabcontrol',
+    'splitcontainer',
+    'flowlayoutpanel',
+    'tablelayoutpanel',
+    'button',
+    'label',
+    'linklabel',
+    'textbox',
+    'maskedtextbox',
+    'richtextbox',
+    'checkbox',
+    'radiobutton',
+    'combobox',
+    'listbox',
+    'checkedlistbox',
+    'numericupdown',
+    'datetimepicker',
+    'monthcalendar',
+    'trackbar',
+    'progressbar',
+    'hscrollbar',
+    'vscrollbar',
+    'treeview',
+    'listview',
+    'datagridview',
+    'picturebox',
+    'propertygrid',
+    'menustrip',
+    'toolstrip',
+    'statusstrip',
+    'contextmenustrip',
+  ],
+)
+
+/**
  * HTML 嵌入的 SVG 内：`Form`/`Frame` 等常为 SVG 命名空间 + PascalCase localName（与标准小写 `rect`/`text` 区分）。
  */
 function isSvgHostedUisvgSemanticEquivalent(el: Element): boolean {
   if (el.namespaceURI !== SVG_NS) return false
   const ln = el.localName
   if (ln === 'bundle' || ln === 'meta') return true
-  return /^[A-Z][A-Za-z0-9]*$/.test(ln)
+  if (/^[A-Z][A-Za-z0-9]*$/.test(ln)) return true
+  return SVG_HOSTED_WIN_SEMANTIC_LOCALNAME_LOWER.has(ln.toLowerCase())
+}
+
+function isHtmlHostedUisvgSemanticEquivalent(el: Element): boolean {
+  if (el.namespaceURI !== XHTML_NS) return false
+  return SVG_HOSTED_WIN_SEMANTIC_LOCALNAME_LOWER.has(el.localName.toLowerCase())
 }
 
 /** 对象根 `<g>` 下第一个语义子节点（uisvg 命名空间，或 HTML 嵌入时的 SVG 命名空间等价标签） */
@@ -271,6 +339,7 @@ export function findFirstUisvgSemanticChild(el: Element): Element | null {
     const c = el.children[i] as Element
     if (c.namespaceURI === UISVG_NS) return c
     if (isSvgHostedUisvgSemanticEquivalent(c)) return c
+    if (isHtmlHostedUisvgSemanticEquivalent(c)) return c
   }
   return null
 }
@@ -352,7 +421,10 @@ export function readUisvgBundleFromObjectRoot(el: Element): UisvgObjectBundleV1 
         }
       : undefined
 
-  const legacyKind = el.getAttribute(KIND_ATTR)?.trim() || inferKindFromTag(el)
+  const legacyKind =
+    el.getAttribute(KIND_ATTR)?.trim() ||
+    inferWinUisvgLocalNameFromObjectRootDomId(el) ||
+    inferKindFromTag(el)
   return normalizeBundle({
     v: 1,
     uisvgLocalName: legacyLogicalKindToUisvgLocalName(legacyKind),
@@ -366,7 +438,13 @@ export function readUisvgBundleFromObjectRoot(el: Element): UisvgObjectBundleV1 
 function removeAllUisvgSemanticDirectChildren(el: Element): void {
   for (let i = el.children.length - 1; i >= 0; i--) {
     const c = el.children[i] as Element
-    if (c.namespaceURI === UISVG_NS || isSvgHostedUisvgSemanticEquivalent(c)) c.remove()
+    if (
+      c.namespaceURI === UISVG_NS ||
+      isSvgHostedUisvgSemanticEquivalent(c) ||
+      isHtmlHostedUisvgSemanticEquivalent(c)
+    ) {
+      c.remove()
+    }
   }
 }
 
@@ -455,7 +533,11 @@ export function migrateLegacyUisvgAttrsToMetaChild(doc: Document): void {
 
 /** 是否为对象根下的 uisvg 语义子节点（uisvg 命名空间，或 HTML 嵌入时的 SVG 命名空间等价标签） */
 export function isUisvgSemanticElement(el: Element): boolean {
-  return el.namespaceURI === UISVG_NS || isSvgHostedUisvgSemanticEquivalent(el)
+  return (
+    el.namespaceURI === UISVG_NS ||
+    isSvgHostedUisvgSemanticEquivalent(el) ||
+    isHtmlHostedUisvgSemanticEquivalent(el)
+  )
 }
 
 /**
@@ -477,6 +559,7 @@ export function isUisvgObjectRootG(el: Element): boolean {
   }
   if (el.getElementsByTagNameNS(UISVG_NS, UISVG_BUNDLE_LOCAL).length > 0) return true
   if (el.getElementsByTagNameNS(UISVG_NS, UISVG_LEGACY_META_LOCAL).length > 0) return true
+  if (inferWinUisvgLocalNameFromObjectRootDomId(el)) return true
   return false
 }
 

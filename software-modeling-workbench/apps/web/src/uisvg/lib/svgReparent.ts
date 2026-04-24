@@ -1,6 +1,7 @@
 /**
- * 画布拖拽结束后：用鼠标**视口坐标**检测落在哪些 `g[id]` 的 `getBoundingClientRect` 内（与 CSS 变换一致）；
- * 候选中取 **DOM 相对 layer-root 最深**者；**同深度**时取 **屏幕盒面积更大**的（兄弟重叠时 Form 通常大于 Button，避免判成小控件）。
+ * 画布拖拽松手：用视口坐标 (clientX/Y) 判断落在哪个 `g[id]` 上。
+ * 主判据：`g.getScreenCTM().inverse()` 将点变到对象根局部坐标，与 `getBBox()` 比较（含外层 CSS transform、兄弟叠放）。
+ * 后备：`getBoundingClientRect` / bbox 四角屏幕盒。候选取相对 `#layer-root` 最深，同深度取屏幕面积大者。
  */
 import { applyTranslateToSVGElement } from './svgElementMove'
 import { readUisvgBundleFromObjectRoot, isUisvgObjectRootG } from './uisvgMetaNode'
@@ -14,6 +15,7 @@ import {
   removeEditorCanvasChrome,
 } from './uisvgDocument'
 import { ensureAllObjectRootChildrenHaveIds } from './uisvgMetaNode'
+import { getInnerClientBoundsForContainer } from './libraryPlacement'
 
 /** 可接受子控件的 WinForms 类（与 `libraryPlacement.innerClientBoundsForContainerKind` 一致） */
 const WIN_CONTAINER_CONTROL_IDS = new Set([
@@ -75,10 +77,141 @@ function pointInClientRect(clientX: number, clientY: number, r: DOMRect, inset =
 }
 
 /**
- * 用屏幕矩形判断落点；同深度多选时取面积更大者（解决 Form/Button 兄弟叠放）。
+ * 将 `clientX/Y` 映到对象根 `g` 的局部用户空间（与 `getBBox()` 同一坐标系），判断是否落在 bbox 内。
+ * 使用 `g.getScreenCTM()`，与编辑器画布外层 CSS `transform` 一致；兄弟叠放时不必依赖 `elementsFromPoint`。
+ */
+function clientPointInObjectRootLocalBBox(g: SVGGraphicsElement, clientX: number, clientY: number): boolean {
+  try {
+    if (!g.ownerSVGElement) return false
+    const m = g.getScreenCTM()
+    if (!m) return false
+    let inv: DOMMatrix
+    try {
+      inv = m.inverse()
+    } catch {
+      return false
+    }
+    /** `DOMPoint` + `DOMMatrix`：避免 `createSVGPoint` 在部分宿主下与 client 坐标系对齐不稳 */
+    const lp = new DOMPoint(clientX, clientY).matrixTransform(inv)
+    const bb = g.getBBox()
+    if (!Number.isFinite(bb.x) || !Number.isFinite(bb.y)) return false
+    if (!Number.isFinite(bb.width) || !Number.isFinite(bb.height)) return false
+    if (bb.width <= 0 || bb.height <= 0) return false
+    const e = 0.5
+    return (
+      lp.x >= bb.x - e &&
+      lp.x <= bb.x + bb.width + e &&
+      lp.y >= bb.y - e &&
+      lp.y <= bb.y + bb.height + e
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * WinForms 对象根 `<g>` 常无自有几何，`getBoundingClientRect` 为 0×0，导致松手落点永远判不中 Form。
+ * 此时用 `getBBox`（含后代几何）经 `getScreenCTM` 映射到屏幕像素再参与命中。
+ */
+function objectRootGScreenRectForHitTest(g: SVGGraphicsElement): DOMRect | null {
+  try {
+    const r = g.getBoundingClientRect()
+    if (r.width >= 1 && r.height >= 1) return r
+
+    const b = g.getBBox()
+    if (!Number.isFinite(b.x) || !Number.isFinite(b.y) || !Number.isFinite(b.width) || !Number.isFinite(b.height)) {
+      return r.width >= 0.5 || r.height >= 0.5 ? r : null
+    }
+
+    const svg = g.ownerSVGElement
+    const m = g.getScreenCTM()
+    if (!svg || !m) return r.width >= 0.5 || r.height >= 0.5 ? r : null
+
+    const pt = svg.createSVGPoint()
+    const xs: number[] = []
+    const ys: number[] = []
+    for (const [x, y] of [
+      [b.x, b.y],
+      [b.x + b.width, b.y],
+      [b.x + b.width, b.y + b.height],
+      [b.x, b.y + b.height],
+    ] as const) {
+      pt.x = x
+      pt.y = y
+      const sp = pt.matrixTransform(m)
+      xs.push(sp.x)
+      ys.push(sp.y)
+    }
+    const left = Math.min(...xs)
+    const top = Math.min(...ys)
+    const right = Math.max(...xs)
+    const bottom = Math.max(...ys)
+    const w = right - left
+    const h = bottom - top
+    if (w < 0.25 && h < 0.25) return r.width >= 0.5 || r.height >= 0.5 ? r : null
+    return new DOMRect(left, top, Math.max(1, w), Math.max(1, h))
+  } catch {
+    return null
+  }
+}
+
+function considerDropTargetCandidate(
+  layerRoot: Element,
+  g: SVGGraphicsElement,
+  dragged: SVGGraphicsElement | null,
+  best: { el: Element; depth: number; area: number } | null,
+): { el: Element; depth: number; area: number } | null {
+  const id = g.getAttribute('id')
+  if (!id || isTopLevelLayerDomId(id) || id === LAYER_SIBLING_DOM_ID) return best
+  if (dragged) {
+    if (g === dragged) return best
+    if (dragged.contains(g) && g !== dragged) return best
+  }
+  const depth = depthUnderLayerRoot(layerRoot, g)
+  if (depth < 0) return best
+  const r = objectRootGScreenRectForHitTest(g)
+  const area = r ? Math.max(1, r.width * r.height) : 1
+  if (!best || depth > best.depth || (depth === best.depth && area > best.area)) {
+    return { el: g, depth, area }
+  }
+  return best
+}
+
+/**
+ * 用 `elementsFromPoint` 沿堆叠顺序收集指针下的 `g[id]`，再取相对 `#layer-root` 最深者。
+ * **仅适用于无 `dragged` 的场景（如组件库拖入）**：拖动已有控件时，栈顶几乎总是拖动对象本身，
+ * 其祖先链上不会出现「被遮挡的兄弟容器」（如 Form 在 Panel 下面），会误判或漏判。
+ */
+function findDropTargetContainerByElementsFromPoint(
+  layerRoot: Element,
+  clientX: number,
+  clientY: number,
+  dragged: SVGGraphicsElement | null,
+): Element | null {
+  const doc = layerRoot.ownerDocument
+  if (!doc || typeof doc.elementsFromPoint !== 'function') return null
+
+  let best: { el: Element; depth: number; area: number } | null = null
+  const stack = doc.elementsFromPoint(clientX, clientY)
+  for (let s = 0; s < stack.length; s++) {
+    const raw = stack[s]
+    if (!(raw instanceof Element)) continue
+    let n: Element | null = raw
+    while (n && n !== layerRoot) {
+      if (layerRoot.contains(n) && n.tagName.toLowerCase() === 'g' && n.getAttribute('id')) {
+        best = considerDropTargetCandidate(layerRoot, n as SVGGraphicsElement, dragged, best)
+      }
+      n = n.parentElement
+    }
+  }
+  return best?.el ?? null
+}
+
+/**
+ * 后备：用屏幕矩形扫描所有 `g[id]`（含 getBBox 回退盒）。
  * @param dragged 库拖入新控件时传 `null`，不做「自身/后代」排除。
  */
-function findDropTargetContainer(
+function findDropTargetContainerByRectScan(
   layerRoot: Element,
   clientX: number,
   clientY: number,
@@ -96,36 +229,92 @@ function findDropTargetContainer(
       if (dragged.contains(g) && g !== dragged) continue
     }
 
-    let r: DOMRect
-    try {
-      r = g.getBoundingClientRect()
-    } catch {
-      continue
+    let inside = clientPointInObjectRootLocalBBox(g, clientX, clientY)
+    if (!inside) {
+      const r = objectRootGScreenRectForHitTest(g)
+      inside = !!(r && pointInClientRect(clientX, clientY, r))
     }
-    if (r.width < 1 && r.height < 1) continue
-    if (!pointInClientRect(clientX, clientY, r)) continue
+    if (!inside) continue
 
-    const depth = depthUnderLayerRoot(layerRoot, g)
-    if (depth < 0) continue
-
-    const area = Math.max(1, r.width * r.height)
-
-    if (!best) {
-      best = { el: g, depth, area }
-      continue
-    }
-    if (depth > best.depth) {
-      best = { el: g, depth, area }
-    } else if (depth === best.depth && area > best.area) {
-      best = { el: g, depth, area }
-    }
+    best = considerDropTargetCandidate(layerRoot, g, dragged, best)
   }
 
   return best?.el ?? null
 }
 
+function findDropTargetContainer(
+  layerRoot: Element,
+  clientX: number,
+  clientY: number,
+  dragged: SVGGraphicsElement | null,
+): Element | null {
+  if (!dragged) {
+    return (
+      findDropTargetContainerByElementsFromPoint(layerRoot, clientX, clientY, null) ??
+      findDropTargetContainerByRectScan(layerRoot, clientX, clientY, null)
+    )
+  }
+  /**
+   * 拖动物体时几何盒扫描在「外层 div 带 CSS transform」等环境下仍可能漏检；
+   * 临时让被拖对象根 `pointer-events: none`，使 `elementsFromPoint` 能穿透到下面的 Form 等兄弟容器，
+   * 与常见设计器做法一致；最后再回退矩形扫描。
+   */
+  const prevPe = dragged.style.pointerEvents
+  dragged.style.pointerEvents = 'none'
+  try {
+    void dragged.getBoundingClientRect()
+    const hit = findDropTargetContainerByElementsFromPoint(layerRoot, clientX, clientY, null)
+    if (hit && hit !== dragged && !dragged.contains(hit)) return hit
+  } finally {
+    if (prevPe) dragged.style.pointerEvents = prevPe
+    else dragged.style.removeProperty('pointer-events')
+  }
+  return findDropTargetContainerByRectScan(layerRoot, clientX, clientY, dragged)
+}
+
 function winContainerIdFromBundle(b: { uisvgLocalName: string }): string {
   return b.uisvgLocalName.replace(/^win\./, '')
+}
+
+/** 容器对象根 `<g>` 下「客户区」在屏幕像素中的外包矩形（与 `getInnerClientBoundsForContainer` 一致） */
+function screenBoundingRectForInnerClientOfContainer(
+  containerG: SVGGraphicsElement,
+  controlId: string,
+): DOMRect | null {
+  try {
+    const inner = getInnerClientBoundsForContainer(controlId, containerG)
+    const m = containerG.getScreenCTM()
+    if (!m) return null
+    const xs: number[] = []
+    const ys: number[] = []
+    for (const [x, y] of [
+      [inner.x, inner.y],
+      [inner.x + inner.width, inner.y],
+      [inner.x + inner.width, inner.y + inner.height],
+      [inner.x, inner.y + inner.height],
+    ] as const) {
+      const sp = new DOMPoint(x, y).matrixTransform(m)
+      xs.push(sp.x)
+      ys.push(sp.y)
+    }
+    const left = Math.min(...xs)
+    const top = Math.min(...ys)
+    const right = Math.max(...xs)
+    const bottom = Math.max(...ys)
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return null
+    return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top))
+  } catch {
+    return null
+  }
+}
+
+function clientPointInsideScreenRect(clientX: number, clientY: number, r: DOMRect, inset = 2): boolean {
+  return (
+    clientX >= r.left - inset &&
+    clientX <= r.right + inset &&
+    clientY >= r.top - inset &&
+    clientY <= r.bottom + inset
+  )
 }
 
 /**
@@ -139,7 +328,36 @@ function resolveWinContainerDropTarget(
   dragged: SVGGraphicsElement | null,
 ): Element {
   const inner = findDropTargetContainer(layerRoot, clientX, clientY, dragged)
-  if (!inner) return layerRoot
+  /**
+   * 命中对象根 `g` 的 bbox 含全部子控件，拖子控件「出容器」时松手点常仍落在父容器盒内，
+   * `inner` 即父级 → 会误判为留在父级。若当前父即命中根且指针不在其 **Win 客户区**（如 Form 标题栏/外框），
+   * 则视为挂到 `#layer-root`。
+   */
+  if (inner && dragged) {
+    const dragParent = dragged.parentElement
+    if (
+      dragParent &&
+      dragParent === inner &&
+      dragParent.tagName.toLowerCase() === 'g' &&
+      isUisvgObjectRootG(dragParent)
+    ) {
+      const b = readUisvgBundleFromObjectRoot(dragParent)
+      const cid = winContainerIdFromBundle(b)
+      /** 仅对 `Form` 收紧：其 bbox 含整块窗体，子控件松手常仍命中本 `g`；其它容器嵌套在 Form 下时不在此误抬到根。 */
+      if (cid === 'Form') {
+        const innerClientScreen = screenBoundingRectForInnerClientOfContainer(
+          dragParent as SVGGraphicsElement,
+          cid,
+        )
+        if (innerClientScreen && !clientPointInsideScreenRect(clientX, clientY, innerClientScreen)) {
+          return layerRoot
+        }
+      }
+    }
+  }
+  if (!inner) {
+    return layerRoot
+  }
   let n: Element | null = inner
   while (n && n !== layerRoot) {
     if (n.tagName.toLowerCase() === 'g') {
@@ -155,6 +373,44 @@ function resolveWinContainerDropTarget(
     n = n.parentElement
   }
   return layerRoot
+}
+
+/**
+ * 与松手改父级相同的落点解析，供拖拽中高亮当前指针下的目标父级。
+ */
+export function resolveCanvasReparentDropTarget(
+  layerRoot: Element,
+  clientX: number,
+  clientY: number,
+  dragged: SVGGraphicsElement | null,
+): Element {
+  return resolveWinContainerDropTarget(layerRoot, clientX, clientY, dragged)
+}
+
+/**
+ * 单选拖拽时可作为「新父级」的 WinForms 容器对象根（不含 `#layer-root`；不含拖动对象自身及其后代）。
+ */
+export function collectReparentDropHighlightElements(
+  layerRoot: Element,
+  dragged: SVGGraphicsElement,
+): Element[] {
+  const out: Element[] = []
+  if (!layerRoot.contains(dragged)) return out
+
+  const groups = layerRoot.querySelectorAll('g[id]')
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i] as Element
+    const id = g.getAttribute('id')?.trim()
+    if (!id || isTopLevelLayerDomId(id) || id === LAYER_SIBLING_DOM_ID) continue
+    if (g === dragged) continue
+    if (dragged.contains(g)) continue
+    if (g.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(g)) continue
+    const b = readUisvgBundleFromObjectRoot(g)
+    const cid = winContainerIdFromBundle(b)
+    if (!WIN_CONTAINER_CONTROL_IDS.has(cid)) continue
+    out.push(g)
+  }
+  return out
 }
 
 /**
@@ -189,20 +445,28 @@ export function reparentCanvasObjectAfterDrag(
   dropClientY: number,
 ): boolean {
   const doc = svg.ownerDocument
-  if (!doc) return false
+  if (!doc) {
+    return false
+  }
 
   /** 内联于 HTML 页时 `ownerDocument` 为 HTML，`getGraphicsElementByDomId` 必须用根 `svg` 作查找上下文 */
   const el = getGraphicsElementByDomId(svg, childDomId) as SVGGraphicsElement | null
-  if (!el || !canReparentElement(el)) return false
+  if (!el || !canReparentElement(el)) {
+    return false
+  }
 
   const layerRoot = findLayerRoot(doc)
-  if (!layerRoot.contains(el)) return false
+  if (!layerRoot.contains(el)) {
+    return false
+  }
 
   const parent = el.parentElement
   if (!parent) return false
 
   const layerRootEl = getGraphicsElementByDomId(svg, 'layer-root')
-  if (!layerRootEl) return false
+  if (!layerRootEl) {
+    return false
+  }
 
   const targetParent = resolveWinContainerDropTarget(layerRoot, dropClientX, dropClientY, el)
 
