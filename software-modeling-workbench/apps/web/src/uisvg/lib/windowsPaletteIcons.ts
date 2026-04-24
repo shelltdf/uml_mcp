@@ -65,6 +65,8 @@ export const WINDOWS_PALETTE_ICON_INNER: Record<string, string> = {
     '<rect x="2" y="5" width="12" height="6" fill="#fff" stroke="#a0a0a0"/><rect x="2.2" y="5.2" width="2.4" height="5.6" fill="#f4f4f4"/><line x1="5" y1="5.2" x2="13.8" y2="5.2" stroke="#ececec" stroke-width="0.5"/><rect x="5" y="6" width="8.2" height="4" fill="#e8f2ff" stroke="#c6dcff" stroke-width="0.4"/><path d="M2.8 8 L3.5 8.8 L4.8 7.1" fill="none" stroke="#2a63bf" stroke-width="0.7"/><line x1="9" y1="8" x2="10.4" y2="8" stroke="#7a7a7a" stroke-width="0.5"/>',
   ToolStrip:
     '<rect x="2" y="5" width="12" height="6" fill="#f0f0f0" stroke="#a0a0a0"/><rect x="4" y="6.5" width="3" height="3" fill="#e0e0e0" stroke="#888"/><rect x="8.5" y="6.5" width="3" height="3" fill="#e0e0e0" stroke="#888"/>',
+  ToolButton:
+    '<rect x="2" y="4.5" width="12" height="7" rx="1" fill="#e8ecf0" stroke="#6b6b6b"/><text x="5.5" y="9.7" text-anchor="middle" font-size="4.8" font-family="Segoe UI,sans-serif" fill="#404040">⚙</text><line x1="8" y1="8.2" x2="12.5" y2="8.2" stroke="#404040" stroke-width="0.8"/>',
   StatusStrip:
     '<rect x="2" y="6" width="12" height="5" fill="#e8e8e8" stroke="#888"/><line x1="4" y1="8.5" x2="8" y2="8.5" stroke="#505050"/>',
   ContextMenuStrip:

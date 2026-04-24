@@ -208,6 +208,7 @@ export type MessageKey =
   | 'uiLib.win.Menu'
   | 'uiLib.win.MenuItem'
   | 'uiLib.win.ToolStrip'
+  | 'uiLib.win.ToolButton'
   | 'uiLib.win.StatusStrip'
   | 'uiLib.win.ContextMenuStrip'
   | 'uiLib.win.GroupBox'
@@ -496,12 +497,13 @@ export const zh: Record<MessageKey, string> = {
   'uiLib.group.listAndTree': '列表与树',
   'uiLib.group.graphicsAndOther': '图形与其他',
   'uiLib.win.Form': '主窗口',
-  'uiLib.win.MenuStrip': '菜单栏',
+  'uiLib.win.MenuStrip': 'MenuBar',
   'uiLib.win.Menu': '菜单',
   'uiLib.win.MenuItem': '菜单项',
-  'uiLib.win.ToolStrip': '工具栏',
-  'uiLib.win.StatusStrip': '状态栏',
-  'uiLib.win.ContextMenuStrip': '快捷菜单',
+  'uiLib.win.ToolStrip': 'ToolBar',
+  'uiLib.win.ToolButton': '工具按钮',
+  'uiLib.win.StatusStrip': 'StatusBar',
+  'uiLib.win.ContextMenuStrip': 'ContextMenu',
   'uiLib.win.GroupBox': '分组框',
   'uiLib.win.Panel': '面板',
   'uiLib.win.TabControl': '选项卡',
@@ -791,12 +793,13 @@ export const en: Record<MessageKey, string> = {
   'uiLib.group.listAndTree': 'List & tree',
   'uiLib.group.graphicsAndOther': 'Graphics & other',
   'uiLib.win.Form': 'Main window',
-  'uiLib.win.MenuStrip': 'Menu bar',
+  'uiLib.win.MenuStrip': 'MenuBar',
   'uiLib.win.Menu': 'Menu',
   'uiLib.win.MenuItem': 'Menu item',
-  'uiLib.win.ToolStrip': 'Tool bar',
-  'uiLib.win.StatusStrip': 'Status bar',
-  'uiLib.win.ContextMenuStrip': 'Context menu',
+  'uiLib.win.ToolStrip': 'ToolBar',
+  'uiLib.win.ToolButton': 'Tool button',
+  'uiLib.win.StatusStrip': 'StatusBar',
+  'uiLib.win.ContextMenuStrip': 'ContextMenu',
   'uiLib.win.GroupBox': 'Group box',
   'uiLib.win.Panel': 'Panel',
   'uiLib.win.TabControl': 'Tab control',

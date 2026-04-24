@@ -56,7 +56,7 @@ import {
   relayoutFormBars,
   updateToolStripDockByPointerAndRelayout,
 } from '../lib/formBarLayout'
-import { relayoutMenuHierarchy } from '../lib/windowsUiControls'
+import { relayoutMenuHierarchy, relayoutToolStripChildren } from '../lib/windowsUiControls'
 import {
   dataTransferAllowsCanvasPaletteWinDrop,
   isUisvgPaletteDropDebugEnabled,
@@ -1478,6 +1478,19 @@ function applyMenuLayoutAfterPointer(svg: SVGSVGElement, finishedIds: string[]) 
   }
 }
 
+function applyToolStripLayoutAfterPointer(svg: SVGSVGElement, finishedIds: string[]) {
+  for (const id of finishedIds) {
+    const el = svgElById(svg, id) as SVGGElement | null
+    if (!el) continue
+    const local = uisvgLocalNameOfObjectRoot(el)
+    if (local !== 'ToolButton') continue
+    const p = el.parentElement
+    if (p && p.tagName.toLowerCase() === 'g' && uisvgLocalNameOfObjectRoot(p) === 'ToolStrip') {
+      relayoutToolStripChildren(p)
+    }
+  }
+}
+
 function refreshMenuSnapPreviewFromDrag(svg: SVGSVGElement) {
   if (!objectDragging || objectDragIds.length !== 1) {
     clearMenuSnapPreview()
@@ -1545,6 +1558,7 @@ function endObjectDrag(skipEndSnap = false) {
   if (svg && finishedIds.length) {
     applyFormBarLayoutAfterPointer(svg, finishedIds)
     applyMenuLayoutAfterPointer(svg, finishedIds)
+    applyToolStripLayoutAfterPointer(svg, finishedIds)
   }
 
   commitSvgFromDom()

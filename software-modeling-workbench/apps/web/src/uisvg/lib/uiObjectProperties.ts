@@ -223,6 +223,12 @@ const WIN_MENU_ITEM_ROWS: UiSemanticRow[] = [
   sem('Visible / Enabled', '可见与可用状态。', 'text'),
 ]
 
+const WIN_TOOLBUTTON_ROWS: UiSemanticRow[] = [
+  sem('Text', '按钮名称。', 'text', { defaultValue: 'Tool' }),
+  sem('IconUtf8', 'UTF-8 图标字符（为空则不显示）。', 'text', { defaultValue: '⚙' }),
+  sem('Visible / Enabled', '可见与可用状态。', 'text'),
+]
+
 const WIN_TOOLSTRIP_ROWS: UiSemanticRow[] = [
   ...WIN_MENUSTRIP_ROWS,
   sem('Dock', 'Top / Bottom / Left / Right；None 为 Float。', 'enum', {
@@ -273,6 +279,7 @@ export function rowsForWinControl(controlId: string): UiSemanticRow[] {
   if (id === 'GroupBox' || id === 'Panel' || id === 'SplitContainer' || id === 'FlowLayoutPanel' || id === 'TableLayoutPanel')
     return FRAME_ROWS
   if (id === 'ToolStrip') return WIN_TOOLSTRIP_ROWS
+  if (id === 'ToolButton') return WIN_TOOLBUTTON_ROWS
   if (id === 'MenuStrip') return WIN_MENUSTRIP_ROWS
   if (id === 'Menu') return WIN_MENU_NODE_ROWS
   if (id === 'MenuItem') return WIN_MENU_ITEM_ROWS
@@ -289,6 +296,7 @@ const WIN_PRIMARY_TEXT: Partial<Record<string, string>> = {
   LinkLabel: 'LinkLabel',
   CheckBox: 'CheckBox',
   RadioButton: 'RadioButton',
+  ToolButton: 'Tool',
 }
 
 /**

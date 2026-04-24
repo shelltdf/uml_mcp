@@ -50,12 +50,13 @@ export const WINDOWS_UI_GROUPS: { titleKey: MessageKey; items: WindowsPaletteIte
   {
     titleKey: 'uiLib.group.menusAndBars',
     items: [
-      { id: 'MenuStrip', label: 'MenuStrip', win32: '#32768 (HMENU+rebar)', qt: 'QMenuBar' },
+      { id: 'MenuStrip', label: 'MenuBar', win32: '#32768 (HMENU+rebar)', qt: 'QMenuBar' },
       { id: 'Menu', label: 'Menu', win32: '#32768 (menu)', qt: 'QMenu' },
       { id: 'MenuItem', label: 'MenuItem', win32: 'MENUITEMINFO', qt: 'QAction' },
-      { id: 'ToolStrip', label: 'ToolStrip', win32: 'ToolbarWindow32', qt: 'QToolBar' },
-      { id: 'StatusStrip', label: 'StatusStrip', win32: 'msctls_statusbar32', qt: 'QStatusBar' },
-      { id: 'ContextMenuStrip', label: 'ContextMenuStrip', win32: '#32768 (popup)', qt: 'QMenu' },
+      { id: 'ToolStrip', label: 'ToolBar', win32: 'ToolbarWindow32', qt: 'QToolBar' },
+      { id: 'ToolButton', label: 'ToolButton', win32: 'ToolbarWindow32 button', qt: 'QToolButton / QAction' },
+      { id: 'StatusStrip', label: 'StatusBar', win32: 'msctls_statusbar32', qt: 'QStatusBar' },
+      { id: 'ContextMenuStrip', label: 'ContextMenu', win32: '#32768 (popup)', qt: 'QMenu' },
     ],
   },
   {
@@ -152,6 +153,7 @@ export function uisvgPaletteTagForBasicShape(id: 'rect' | 'text' | 'frame'): str
 }
 
 function canParentAcceptWindowsChild(parent: Element, parentId: string, childId: string): boolean {
+  if (childId === 'ToolButton') return parentId === 'ToolStrip'
   if (parentId === 'MenuStrip') return childId === 'Menu'
   if (parentId === 'Menu') return childId === 'Menu' || childId === 'MenuItem'
   if (parentId === 'ContextMenuStrip') {
@@ -228,6 +230,51 @@ function contextMenuOwnTitle(g: Element): string {
   const caption = g.querySelector(':scope > text[data-uisvg-part="contextmenu-item"]')?.textContent?.trim()
   if (caption) return caption
   return (b.label || 'ContextMenu').trim() || 'ContextMenu'
+}
+
+function relayoutToolButtonVisual(g: Element): void {
+  if (!isUisvgObjectRootG(g)) return
+  const local = localNameOfObjectRoot(g)
+  if (local !== 'ToolButton') return
+  const b = readUisvgBundleFromObjectRoot(g)
+  const text = (b.uiProps?.Text ?? '').trim() || 'Tool'
+  const icon = (b.uiProps?.IconUtf8 ?? '').trim()
+  const iconEl = g.querySelector(':scope > text[data-uisvg-part="toolbutton-icon"]') as SVGTextElement | null
+  if (iconEl) {
+    iconEl.textContent = icon
+    iconEl.setAttribute('opacity', icon ? '1' : '0')
+  }
+  const cap = g.querySelector(':scope > text[data-uisvg-part="toolbutton-caption"]') as SVGTextElement | null
+  if (cap) {
+    cap.textContent = text
+    cap.setAttribute('x', icon ? '24' : '8')
+    cap.setAttribute('y', '16')
+  }
+}
+
+export function relayoutToolStripChildren(toolStripG: Element): void {
+  if (!isUisvgObjectRootG(toolStripG)) return
+  if (localNameOfObjectRoot(toolStripG) !== 'ToolStrip') return
+  let x = 4
+  const y = 1
+  const gap = 4
+  for (let i = 0; i < toolStripG.children.length; i++) {
+    const ch = toolStripG.children[i] as Element
+    if (ch.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(ch)) continue
+    const local = localNameOfObjectRoot(ch)
+    if (local !== 'ToolButton') continue
+    relayoutToolButtonVisual(ch)
+    const sz = WINDOWS_CONTROL_PLACEMENT_SIZE.ToolButton ?? { w: 96, h: 24 }
+    ch.setAttribute('transform', `translate(${x},${y})`)
+    x += sz.w + gap
+  }
+  const face = toolStripG.querySelector(':scope > rect[data-uisvg-part="toolstrip-face"]') as SVGRectElement | null
+  if (face) {
+    const minW = WINDOWS_CONTROL_PLACEMENT_SIZE.ToolStrip.w
+    const nextW = x > 4 ? x : minW
+    face.setAttribute('width', String(Math.max(minW, nextW)))
+    face.setAttribute('height', String(WINDOWS_CONTROL_PLACEMENT_SIZE.ToolStrip.h))
+  }
 }
 
 function estimateMenuRowWidth(label: string, withArrow: boolean): number {
@@ -1209,6 +1256,25 @@ const builders: Record<string, Builder> = {
     g.appendChild(shortcut)
     // MenuItem 默认按 Normal 状态预览，不渲染右侧子菜单箭头。
   },
+  ToolButton(doc, g) {
+    g.appendChild(
+      E(doc, 'rect', {
+        'data-uisvg-part': 'toolbutton-face',
+        width: '96',
+        height: '24',
+        rx: '2',
+        fill: WIN_BTN,
+        stroke: WIN_BORDER,
+      }),
+    )
+    const icon = T(doc, '12', '16', '⚙', '12')
+    icon.setAttribute('data-uisvg-part', 'toolbutton-icon')
+    icon.setAttribute('text-anchor', 'middle')
+    g.appendChild(icon)
+    const cap = T(doc, '24', '16', 'Tool', '11')
+    cap.setAttribute('data-uisvg-part', 'toolbutton-caption')
+    g.appendChild(cap)
+  },
   ToolStrip(doc, g) {
     g.appendChild(
       E(doc, 'rect', {
@@ -1507,6 +1573,8 @@ export function appendWindowsControlUnderParent(
       const parentLocal = localNameOfObjectRoot(parent)
       if (parentLocal === 'MenuStrip' || parentLocal === 'Menu' || parentLocal === 'ContextMenuStrip') {
         relayoutMenuHierarchy(parent)
+      } else if (parentLocal === 'ToolStrip') {
+        relayoutToolStripChildren(parent)
       }
     }
     if (isUisvgObjectRootG(parent) && (controlId === 'MenuStrip' || controlId === 'ToolStrip' || controlId === 'StatusStrip')) {
@@ -1541,6 +1609,23 @@ export function relayoutMenuHierarchyInSvgString(svgXml: string, anchorDomId: st
     n = n.parentElement
   }
   return null
+}
+
+export function relayoutToolButtonInSvgString(svgXml: string, anchorDomId: string): string | null {
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(svgXml, 'image/svg+xml')
+  const anchor = doc.getElementById(anchorDomId)
+  if (!anchor || anchor.tagName.toLowerCase() !== 'g') return null
+  if (isUisvgObjectRootG(anchor) && localNameOfObjectRoot(anchor) === 'ToolStrip') {
+    relayoutToolStripChildren(anchor)
+    return new XMLSerializer().serializeToString(doc)
+  }
+  relayoutToolButtonVisual(anchor)
+  const p = anchor.parentElement
+  if (p && p.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(p) && localNameOfObjectRoot(p) === 'ToolStrip') {
+    relayoutToolStripChildren(p)
+  }
+  return new XMLSerializer().serializeToString(doc)
 }
 
 export function relayoutAllMenuHierarchiesInSvgString(svgXml: string): string | null {
