@@ -3556,15 +3556,6 @@ onUnmounted(() => {
                         <button
                           type="button"
                           class="dock-special-toggle"
-                          :title="rightDockMaximized === 'properties' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
-                          :aria-label="rightDockMaximized === 'properties' ? (locale === 'en' ? 'Restore Dock size' : '还原 Dock 尺寸') : (locale === 'en' ? 'Maximize this Dock' : '最大化此 Dock')"
-                          @click="toggleRightDockMaximize('properties')"
-                        >
-                          {{ rightDockMaximized === 'properties' ? '🗗' : '🗖' }}
-                        </button>
-                        <button
-                          type="button"
-                          class="dock-special-toggle"
                           :title="locale === 'en' ? 'Close Properties' : '关闭属性'"
                           :aria-label="locale === 'en' ? 'Close Properties' : '关闭属性'"
                           @click="propertiesDockCollapsed = true; if (rightDockMaximized === 'properties') rightDockMaximized = null"
