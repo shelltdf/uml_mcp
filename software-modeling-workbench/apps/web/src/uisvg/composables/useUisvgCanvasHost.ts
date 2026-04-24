@@ -157,6 +157,7 @@ export function useUisvgCanvasHost(opts: {
   }
 
   function onOutlineReparent(payload: { childId: string; parentId: string }) {
+    if (opts.canvasRef.value?.reparentFromOutline(payload.childId, payload.parentId)) return;
     const next = reparentUisvgObjectInSvgString(opts.svgMarkup.value, payload.childId, payload.parentId);
     if (next) opts.svgMarkup.value = next;
   }

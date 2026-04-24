@@ -50,3 +50,4 @@ coverage/
 # Optional tooling
 .cache/
 .turbo/
+/test

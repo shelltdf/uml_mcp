@@ -191,7 +191,8 @@ export function reparentCanvasObjectAfterDrag(
   const doc = svg.ownerDocument
   if (!doc) return false
 
-  const el = getGraphicsElementByDomId(doc, childDomId) as SVGGraphicsElement | null
+  /** 内联于 HTML 页时 `ownerDocument` 为 HTML，`getGraphicsElementByDomId` 必须用根 `svg` 作查找上下文 */
+  const el = getGraphicsElementByDomId(svg, childDomId) as SVGGraphicsElement | null
   if (!el || !canReparentElement(el)) return false
 
   const layerRoot = findLayerRoot(doc)
@@ -200,7 +201,7 @@ export function reparentCanvasObjectAfterDrag(
   const parent = el.parentElement
   if (!parent) return false
 
-  const layerRootEl = getGraphicsElementByDomId(doc, 'layer-root')
+  const layerRootEl = getGraphicsElementByDomId(svg, 'layer-root')
   if (!layerRootEl) return false
 
   const targetParent = resolveWinContainerDropTarget(layerRoot, dropClientX, dropClientY, el)
@@ -224,7 +225,62 @@ const OUTLINE_REPARENT_MIME = 'application/x-uisvg-outline-reparent'
 export { OUTLINE_REPARENT_MIME }
 
 /**
+ * 校验「对象根 → 新父级」是否合法；合法则返回待移动的 `g` 与目标父节点（尚未 `appendChild`）。
+ * @param lookupRoot 解析得到的仅 SVG 文档可传 `Document`；**挂载在 HTML 内时必须传根 `SVGSVGElement`**
+ */
+function resolveUisvgReparentPair(
+  lookupRoot: Document | SVGSVGElement,
+  childDomId: string,
+  newParentDomId: string,
+): { child: SVGGraphicsElement; newParent: Element } | null {
+  const child = getGraphicsElementByDomId(lookupRoot, childDomId)
+  const newParent = getGraphicsElementByDomId(lookupRoot, newParentDomId)
+  if (!child || !newParent) return null
+  if (child.tagName.toLowerCase() !== 'g' || newParent.tagName.toLowerCase() !== 'g') return null
+  if (!isUisvgObjectRootG(child)) return null
+
+  const cid = child.getAttribute('id')?.trim()
+  if (!cid || isTopLevelLayerDomId(cid) || cid === LAYER_SIBLING_DOM_ID) return null
+  if (childDomId === newParentDomId) return null
+  if (child.parentElement === newParent) return null
+
+  const doc =
+    lookupRoot instanceof SVGSVGElement ? lookupRoot.ownerDocument! : lookupRoot
+  const layerRoot = findLayerRoot(doc)
+  if (!layerRoot.contains(child) || !layerRoot.contains(newParent)) return null
+  if (child.contains(newParent)) return null
+
+  if (newParentDomId !== 'layer-root') {
+    if (!isUisvgObjectRootG(newParent)) return null
+    const b = readUisvgBundleFromObjectRoot(newParent)
+    const contId = winContainerIdFromBundle(b)
+    if (!WIN_CONTAINER_CONTROL_IDS.has(contId)) return null
+  }
+
+  return { child: child as SVGGraphicsElement, newParent }
+}
+
+/**
+ * 在**已挂载**的根 SVG 上改父子 DOM，并用屏幕盒迭代修正 `transform`，避免大纲拖放后画布上控件跳位。
+ * @returns 是否执行了重挂接（父级未变则 `false`）
+ */
+export function reparentUisvgObjectPreserveVisualOnSvg(
+  svg: SVGSVGElement,
+  childDomId: string,
+  newParentDomId: string,
+): boolean {
+  const doc = svg.ownerDocument
+  if (!doc) return false
+  const pair = resolveUisvgReparentPair(svg, childDomId, newParentDomId)
+  if (!pair) return false
+  preserveVisualAfterReparent(svg, pair.child, pair.newParent)
+  ensureAllObjectRootChildrenHaveIds(doc)
+  return true
+}
+
+/**
  * 将对象根 `childDomId` 挂到 `newParentDomId`（`layer-root` 或 WinForms 容器对象根）下；非法则返回 `null`。
+ * 纯字符串管线无法做屏幕坐标修正，故无「保持视觉位置」语义（用于画布未挂载等回退路径）。
  */
 export function reparentUisvgObjectInSvgString(
   svgXml: string,
@@ -237,29 +293,10 @@ export function reparentUisvgObjectInSvgString(
   migrateLegacyUisvgMetadata(doc)
   ensureUisvgXmlnsOnRootSvg(doc)
 
-  const child = getGraphicsElementByDomId(doc, childDomId)
-  const newParent = getGraphicsElementByDomId(doc, newParentDomId)
-  if (!child || !newParent) return null
-  if (child.tagName.toLowerCase() !== 'g' || newParent.tagName.toLowerCase() !== 'g') return null
-  if (!isUisvgObjectRootG(child)) return null
+  const pair = resolveUisvgReparentPair(doc, childDomId, newParentDomId)
+  if (!pair) return null
 
-  const cid = child.getAttribute('id')?.trim()
-  if (!cid || isTopLevelLayerDomId(cid) || cid === LAYER_SIBLING_DOM_ID) return null
-  if (childDomId === newParentDomId) return null
-  if (child.parentElement === newParent) return null
-
-  const layerRoot = findLayerRoot(doc)
-  if (!layerRoot.contains(child) || !layerRoot.contains(newParent)) return null
-  if (child.contains(newParent)) return null
-
-  if (newParentDomId !== 'layer-root') {
-    if (!isUisvgObjectRootG(newParent)) return null
-    const b = readUisvgBundleFromObjectRoot(newParent)
-    const contId = winContainerIdFromBundle(b)
-    if (!WIN_CONTAINER_CONTROL_IDS.has(contId)) return null
-  }
-
-  newParent.appendChild(child)
+  pair.newParent.appendChild(pair.child)
   ensureAllObjectRootChildrenHaveIds(doc)
   removeEditorCanvasChrome(doc)
   return new XMLSerializer().serializeToString(doc)

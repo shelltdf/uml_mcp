@@ -39,6 +39,7 @@ import {
   canvasClientToSvgUser,
   findWinContainerParentForPaletteDrop,
   reparentCanvasObjectAfterDrag,
+  reparentUisvgObjectPreserveVisualOnSvg,
 } from '../lib/svgReparent'
 import {
   clampLocalPlacementToInner,
@@ -1507,6 +1508,16 @@ function frameOutlineIdInView(outlineOrDomId: string) {
   scheduleRefreshSelection()
 }
 
+/** 大纲拖放改父级：与画布拖拽松手改父级一致，用 `transform` 保持屏幕位置不跳变。 */
+function reparentFromOutline(childDomId: string, parentDomId: string): boolean {
+  const svg = rootSvgEl()
+  if (!svg) return false
+  if (!reparentUisvgObjectPreserveVisualOnSvg(svg, childDomId, parentDomId)) return false
+  commitSvgFromDom()
+  nextTick(() => refreshSelectionBox())
+  return true
+}
+
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', endObjectDragIfHidden)
   clearPendingDrag()
@@ -1521,7 +1532,7 @@ onUnmounted(() => {
   selectionResizeObserver = null
 })
 
-defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect })
+defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect, reparentFromOutline })
 </script>
 
 <template>

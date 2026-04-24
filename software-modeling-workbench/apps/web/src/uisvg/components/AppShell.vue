@@ -753,6 +753,10 @@ function onOutlineFrameInView(id: string) {
 }
 
 function onOutlineReparent(payload: { childId: string; parentId: string }) {
+  if (canvasRef.value?.reparentFromOutline(payload.childId, payload.parentId)) {
+    statusLeft.value = t('status.reparented')
+    return
+  }
   const next = reparentUisvgObjectInSvgString(
     svgMarkup.value,
     payload.childId,
