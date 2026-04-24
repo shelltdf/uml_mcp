@@ -174,7 +174,30 @@ function menuDisplayName(g: Element): string {
   const b = readUisvgBundleFromObjectRoot(g)
   const t = (b.uiProps?.Text ?? '').trim()
   if (t) return t
-  return (b.label || 'Menu').trim() || 'Menu'
+  const local = b.uisvgLocalName.replace(/^win\./, '')
+  const fallbackByType = local === 'MenuItem' ? 'Menu Item' : local === 'MenuStrip' ? 'MenuBar' : 'Menu'
+  const label = (b.label || '').trim()
+  // 过滤自动生成 id 风格标签（如 uisvg-Menu-1），避免误当成可见标题。
+  if (!label || /^uisvg-[\w-]+-\d+$/i.test(label)) return fallbackByType
+  return label
+}
+
+function menuItemShortcutText(g: Element): string {
+  const b = readUisvgBundleFromObjectRoot(g)
+  return (b.uiProps?.ShortcutText ?? '').trim()
+}
+
+function menuItemToggleChecked(g: Element): boolean {
+  const b = readUisvgBundleFromObjectRoot(g)
+  const raw = (b.uiProps?.Toggle ?? '').trim().toLowerCase()
+  return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on'
+}
+
+function menuStripOwnTitle(g: Element): string {
+  const b = readUisvgBundleFromObjectRoot(g)
+  const t = (b.uiProps?.Text ?? '').trim()
+  if (t) return t
+  return (b.label || 'MenuBar').trim() || 'MenuBar'
 }
 
 function estimateMenuRowWidth(label: string, withArrow: boolean): number {
@@ -249,13 +272,26 @@ function relayoutMenuNode(
     caption.setAttribute('y', '16')
   }
   const shortcut = menuG.querySelector(':scope > text[data-uisvg-part="menuitem-shortcut"]') as SVGTextElement | null
-  if (shortcut) shortcut.setAttribute('x', String(Math.max(48, totalW - 22)))
+  if (shortcut) {
+    const s = menuItemShortcutText(menuG)
+    shortcut.textContent = s
+    shortcut.setAttribute('x', String(Math.max(48, totalW - 22)))
+    shortcut.setAttribute('opacity', s ? '1' : '0')
+  }
+  const check = menuG.querySelector(':scope > path[data-uisvg-part="menuitem-check"]') as SVGPathElement | null
+  if (check) {
+    check.setAttribute('opacity', menuItemToggleChecked(menuG) ? '1' : '0')
+  }
   const arrow = menuG.querySelector(':scope > path[data-uisvg-part="menu-arrow"], :scope > path[data-uisvg-part="menuitem-arrow"]') as SVGPathElement | null
   if (arrow) {
-    if (arrow.getAttribute('data-uisvg-part') === 'menu-arrow') {
+    const part = arrow.getAttribute('data-uisvg-part')
+    if (part === 'menu-arrow') {
+      arrow.setAttribute('opacity', '1')
       const cx = totalW - 19
       arrow.setAttribute('d', `M${cx} 9 L${cx + 6} 9 L${cx + 3} 13 Z`)
-    } else {
+    } else if (part === 'menuitem-arrow') {
+      // MenuItem 默认按 Normal 预览，不显示子菜单箭头。
+      arrow.setAttribute('opacity', '0')
       const cx = totalW - 14
       arrow.setAttribute('d', `M${cx} 8 L${cx + 4} 11 L${cx} 14`)
     }
@@ -273,11 +309,21 @@ function relayoutMenuNode(
       resizeMenuLikeNode(ch, Math.max(panelW, rowW), rowH)
       const t = ch.querySelector(':scope > text[data-uisvg-part="menuitem-caption"]') as SVGTextElement | null
       if (t) {
+        t.textContent = menuDisplayName(ch)
         t.setAttribute('x', '31')
         t.setAttribute('y', '16')
       }
       const st = ch.querySelector(':scope > text[data-uisvg-part="menuitem-shortcut"]') as SVGTextElement | null
-      if (st) st.setAttribute('x', String(Math.max(48, Math.max(panelW, rowW) - 22)))
+      if (st) {
+        const s = menuItemShortcutText(ch)
+        st.textContent = s
+        st.setAttribute('x', String(Math.max(48, Math.max(panelW, rowW) - 22)))
+        st.setAttribute('opacity', s ? '1' : '0')
+      }
+      const ck = ch.querySelector(':scope > path[data-uisvg-part="menuitem-check"]') as SVGPathElement | null
+      if (ck) {
+        ck.setAttribute('opacity', menuItemToggleChecked(ch) ? '1' : '0')
+      }
       const arr = ch.querySelector(':scope > path[data-uisvg-part="menuitem-arrow"]') as SVGPathElement | null
       if (arr) {
         const cx = Math.max(panelW, rowW) - 14
@@ -295,6 +341,10 @@ function relayoutMenuNode(
 export function relayoutMenuHierarchy(parent: Element): void {
   if (parent.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(parent)) return
   const parentLocal = localNameOfObjectRoot(parent)
+  if (parentLocal === 'MenuItem') {
+    relayoutMenuNode(parent, false, false)
+    return
+  }
   if (parentLocal === 'MenuStrip') {
     const menus = objectChildrenByLocal(parent, new Set(['Menu']))
     let x = 0
@@ -314,9 +364,15 @@ export function relayoutMenuHierarchy(parent: Element): void {
     }
     const caption = parent.querySelector(':scope > text[data-uisvg-part="win-bar-caption"]') as SVGTextElement | null
     if (caption) {
-      // 保留汇总标题用于语义同步；视觉由子 Menu 标签承担，避免重影。
-      caption.textContent = names.length ? names.join('  ') : 'MenuBar'
-      caption.setAttribute('opacity', '0')
+      if (names.length) {
+        // 有子菜单时由子 Menu 标签承担可视标题。
+        caption.textContent = names.join('  ')
+        caption.setAttribute('opacity', '0')
+      } else {
+        // 无子节点时显示自身标题（来自 UI semantics.Text）。
+        caption.textContent = menuStripOwnTitle(parent)
+        caption.setAttribute('opacity', '1')
+      }
     }
     return
   }
@@ -992,7 +1048,7 @@ const builders: Record<string, Builder> = {
         stroke: WIN_BORDER,
       }),
     )
-    const t = T(doc, '6', '16', 'File  Edit  View', '11')
+    const t = T(doc, '6', '16', 'MenuBar', '11')
     t.setAttribute('data-uisvg-part', 'win-bar-caption')
     g.appendChild(t)
   },
@@ -1081,20 +1137,12 @@ const builders: Record<string, Builder> = {
     t.setAttribute('data-uisvg-part', 'menuitem-caption')
     t.setAttribute('x', '31')
     g.appendChild(t)
-    const shortcut = T(doc, '118', '16', 'Ctrl+M', '10')
+    const shortcut = T(doc, '118', '16', '', '10')
     shortcut.setAttribute('data-uisvg-part', 'menuitem-shortcut')
     shortcut.setAttribute('fill', '#6a6a6a')
     shortcut.setAttribute('text-anchor', 'end')
     g.appendChild(shortcut)
-    g.appendChild(
-      E(doc, 'path', {
-        'data-uisvg-part': 'menuitem-arrow',
-        d: 'M126 8 L130 11 L126 14',
-        fill: 'none',
-        stroke: '#505050',
-        'stroke-width': '1.2',
-      }),
-    )
+    // MenuItem 默认按 Normal 状态预览，不渲染右侧子菜单箭头。
   },
   ToolStrip(doc, g) {
     g.appendChild(
@@ -1418,7 +1466,7 @@ export function relayoutMenuHierarchyInSvgString(svgXml: string, anchorDomId: st
   for (let i = 0; i < 64 && n; i++) {
     if (n.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(n)) {
       const local = localNameOfObjectRoot(n)
-      if (local === 'MenuStrip' || local === 'Menu' || local === 'ContextMenuStrip') {
+      if (local === 'MenuStrip' || local === 'Menu' || local === 'ContextMenuStrip' || local === 'MenuItem') {
         relayoutMenuHierarchy(n)
         if (local === 'Menu' && n.parentElement && isUisvgObjectRootG(n.parentElement)) {
           const pl = localNameOfObjectRoot(n.parentElement)

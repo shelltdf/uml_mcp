@@ -2718,6 +2718,10 @@ export function canResizeSvgElement(el: SVGElement | null): boolean {
   if (!el) return false
   const id = el.getAttribute('id')
   if (id && isTopLevelLayerDomId(id)) return false
+  if (el.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(el)) {
+    const local = readUisvgBundleFromObjectRoot(el).uisvgLocalName.replace(/^win\./, '')
+    if (local === 'MenuStrip' || local === 'Menu' || local === 'MenuItem') return false
+  }
   return !!getResizeTargetElement(el)
 }
 

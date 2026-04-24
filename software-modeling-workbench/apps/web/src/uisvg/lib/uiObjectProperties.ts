@@ -195,13 +195,30 @@ const WIN_TAB_ROWS: UiSemanticRow[] = [
   sem('SelectedIndex', '当前页索引。', 'number'),
 ]
 
-const WIN_MENU_ROWS: UiSemanticRow[] = [
+const WIN_MENUSTRIP_ROWS: UiSemanticRow[] = [
+  sem('Text', '菜单栏标题（无子菜单时显示）。', 'text', { defaultValue: 'MenuBar' }),
   sem('Items', '菜单项树（标题、快捷键、子菜单）。', 'text'),
   sem('Visible / Enabled', '可见与可用状态。', 'text'),
 ]
 
+const WIN_MENU_NODE_ROWS: UiSemanticRow[] = [
+  sem('Text', '菜单标题（用于顶栏项或弹出项标题）。', 'text', { defaultValue: 'Menu' }),
+  sem('Visible / Enabled', '可见与可用状态。', 'text'),
+]
+
+const WIN_MENU_ITEM_ROWS: UiSemanticRow[] = [
+  sem('Text', '菜单项标题。', 'text', { defaultValue: 'Menu Item' }),
+  sem('ShortcutText', '快捷键文字（如 Ctrl+S；为空则不显示）。', 'text', { defaultValue: '' }),
+  sem('Toggle', '是否显示对勾（仅当该项为可切换项时）。', 'switch', { defaultValue: 'false' }),
+  sem('DisplayState', '显示状态（语义属性；画布按 Normal 预览）。', 'enum', {
+    defaultValue: 'Normal',
+    enumOptions: ['Normal', 'Disabled', 'Hidden'],
+  }),
+  sem('Visible / Enabled', '可见与可用状态。', 'text'),
+]
+
 const WIN_TOOLSTRIP_ROWS: UiSemanticRow[] = [
-  ...WIN_MENU_ROWS,
+  ...WIN_MENUSTRIP_ROWS,
   sem('Dock', 'Top / Bottom / Left / Right；None 为 Float。', 'enum', {
     nameEn: 'Dock',
     defaultValue: 'Top',
@@ -250,8 +267,10 @@ export function rowsForWinControl(controlId: string): UiSemanticRow[] {
   if (id === 'GroupBox' || id === 'Panel' || id === 'SplitContainer' || id === 'FlowLayoutPanel' || id === 'TableLayoutPanel')
     return FRAME_ROWS
   if (id === 'ToolStrip') return WIN_TOOLSTRIP_ROWS
-  if (id === 'MenuStrip' || id === 'Menu' || id === 'MenuItem' || id === 'StatusStrip' || id === 'ContextMenuStrip')
-    return WIN_MENU_ROWS
+  if (id === 'MenuStrip') return WIN_MENUSTRIP_ROWS
+  if (id === 'Menu') return WIN_MENU_NODE_ROWS
+  if (id === 'MenuItem') return WIN_MENU_ITEM_ROWS
+  if (id === 'StatusStrip' || id === 'ContextMenuStrip') return WIN_MENUSTRIP_ROWS
   if (id === 'PictureBox' || id === 'PropertyGrid' || id === 'DateTimePicker' || id === 'MonthCalendar' || id === 'NumericUpDown')
     return WIN_GENERIC_ROWS
   return WIN_GENERIC_ROWS
