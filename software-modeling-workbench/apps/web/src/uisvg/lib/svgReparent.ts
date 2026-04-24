@@ -641,9 +641,13 @@ export function reparentUisvgObjectPreserveVisualOnSvg(
   const pair = resolveUisvgReparentPair(svg, childDomId, newParentDomId)
   if (!pair) return false
   const oldParent = pair.child.parentElement
+  const movedLocal = localNameFromObjectRoot(pair.child)
   preserveVisualAfterReparent(svg, pair.child, pair.newParent)
   if (oldParent && isUisvgObjectRootG(oldParent)) relayoutMenuHierarchy(oldParent)
   if (isUisvgObjectRootG(pair.newParent)) relayoutMenuHierarchy(pair.newParent)
+  if (!isUisvgObjectRootG(pair.newParent) && (movedLocal === 'Menu' || movedLocal === 'ContextMenuStrip')) {
+    relayoutMenuHierarchy(pair.child)
+  }
   ensureAllObjectRootChildrenHaveIds(doc)
   return true
 }
@@ -667,9 +671,13 @@ export function reparentUisvgObjectInSvgString(
   if (!pair) return null
 
   const oldParent = pair.child.parentElement
+  const movedLocal = localNameFromObjectRoot(pair.child)
   pair.newParent.appendChild(pair.child)
   if (oldParent && isUisvgObjectRootG(oldParent)) relayoutMenuHierarchy(oldParent)
   if (isUisvgObjectRootG(pair.newParent)) relayoutMenuHierarchy(pair.newParent)
+  if (!isUisvgObjectRootG(pair.newParent) && (movedLocal === 'Menu' || movedLocal === 'ContextMenuStrip')) {
+    relayoutMenuHierarchy(pair.child)
+  }
   ensureAllObjectRootChildrenHaveIds(doc)
   removeEditorCanvasChrome(doc)
   return new XMLSerializer().serializeToString(doc)

@@ -1454,12 +1454,14 @@ function applyMenuLayoutAfterPointer(svg: SVGSVGElement, finishedIds: string[]) 
     if (!el) continue
     const local = uisvgLocalNameOfObjectRoot(el)
     if (local !== 'Menu' && local !== 'MenuItem') continue
+    let applied = false
     let n: Element | null = el.parentElement
     for (let i = 0; i < 64 && n; i++) {
       if (n.tagName.toLowerCase() === 'g') {
         const pid = uisvgLocalNameOfObjectRoot(n)
         if (pid === 'Menu' || pid === 'MenuStrip' || pid === 'ContextMenuStrip') {
           relayoutMenuHierarchy(n)
+          applied = true
           if (pid === 'Menu' && n.parentElement && n.parentElement.tagName.toLowerCase() === 'g') {
             const pp = uisvgLocalNameOfObjectRoot(n.parentElement)
             if (pp === 'Menu' || pp === 'MenuStrip' || pp === 'ContextMenuStrip') relayoutMenuHierarchy(n.parentElement)
@@ -1468,6 +1470,10 @@ function applyMenuLayoutAfterPointer(svg: SVGSVGElement, finishedIds: string[]) 
         }
       }
       n = n.parentElement
+    }
+    // 脱离菜单容器（如拖到 layer-root）后，强制恢复为独立菜单样式。
+    if (!applied && local === 'Menu') {
+      relayoutMenuHierarchy(el)
     }
   }
 }

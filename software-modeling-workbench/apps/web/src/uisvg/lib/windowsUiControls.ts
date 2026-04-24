@@ -204,7 +204,11 @@ function resizeMenuLikeNode(g: Element, width: number, height: number): void {
   }
 }
 
-function relayoutMenuNode(menuG: Element, inMenuBar = false): { rowW: number; totalW: number; totalH: number; name: string } {
+function relayoutMenuNode(
+  menuG: Element,
+  inMenuBar = false,
+  submenuRight = false,
+): { rowW: number; totalW: number; totalH: number; name: string } {
   const name = menuDisplayName(menuG)
   const childMenus = objectChildrenByLocal(menuG, new Set(['Menu', 'MenuItem']))
   const hasChildren = childMenus.length > 0
@@ -222,9 +226,22 @@ function relayoutMenuNode(menuG: Element, inMenuBar = false): { rowW: number; to
     panelW = Math.max(panelW, childRowW)
     panelH += rowH
   }
-  const totalW = hasChildren ? (inMenuBar ? Math.max(rowW, panelW) : rowW + panelW) : rowW
-  const totalH = hasChildren ? (inMenuBar ? rowH + panelH : Math.max(rowH, panelH)) : rowH
+  const panelAtRight = !inMenuBar && submenuRight
+  const totalW = hasChildren ? (panelAtRight ? rowW + panelW : Math.max(rowW, panelW)) : rowW
+  const totalH = hasChildren ? (panelAtRight ? Math.max(rowH, panelH) : rowH + panelH) : rowH
   resizeMenuLikeNode(menuG, totalW, rowH)
+  const menuFace = menuG.querySelector(':scope > rect[data-uisvg-part="menu-face"]') as SVGRectElement | null
+  if (menuFace) {
+    if (inMenuBar) {
+      menuFace.setAttribute('fill', 'transparent')
+      menuFace.setAttribute('stroke', 'none')
+    } else {
+      menuFace.setAttribute('fill', WIN_FACE)
+      menuFace.setAttribute('stroke', WIN_BORDER)
+    }
+  }
+  const menuBottom = menuG.querySelector(':scope > line[data-uisvg-part="menu-bottom-border"]') as SVGLineElement | null
+  if (menuBottom) menuBottom.setAttribute('stroke', inMenuBar ? 'none' : '#c8c8c8')
   const caption = menuG.querySelector(':scope > text[data-uisvg-part="menu-caption"], :scope > text[data-uisvg-part="menuitem-caption"]') as SVGTextElement | null
   if (caption) {
     caption.textContent = name
@@ -247,9 +264,9 @@ function relayoutMenuNode(menuG: Element, inMenuBar = false): { rowW: number; to
   for (const ch of childMenus) {
     const childLocal = localNameOfObjectRoot(ch)
     if (childLocal === 'Menu') {
-      relayoutMenuNode(ch, false)
-      const childX = inMenuBar ? 0 : rowW
-      const childY = inMenuBar ? rowH + rowY : rowY
+      relayoutMenuNode(ch, false, true)
+      const childX = panelAtRight ? rowW : 0
+      const childY = inMenuBar || !panelAtRight ? rowH + rowY : rowY
       ch.setAttribute('transform', `translate(${childX},${childY})`)
       rowY += rowH
     } else {
@@ -266,8 +283,8 @@ function relayoutMenuNode(menuG: Element, inMenuBar = false): { rowW: number; to
         const cx = Math.max(panelW, rowW) - 14
         arr.setAttribute('d', `M${cx} 8 L${cx + 4} 11 L${cx} 14`)
       }
-      const childX = inMenuBar ? 0 : rowW
-      const childY = inMenuBar ? rowH + rowY : rowY
+      const childX = panelAtRight ? rowW : 0
+      const childY = inMenuBar || !panelAtRight ? rowH + rowY : rowY
       ch.setAttribute('transform', `translate(${childX},${childY})`)
       rowY += rowH
     }
@@ -283,15 +300,7 @@ export function relayoutMenuHierarchy(parent: Element): void {
     let x = 0
     const names: string[] = []
     for (const m of menus) {
-      const info = relayoutMenuNode(m, true)
-      const face = m.querySelector(':scope > rect[data-uisvg-part="menu-face"]') as SVGRectElement | null
-      if (face) {
-        // 顶栏菜单做成 Windows 菜单栏标签样式（非弹出菜单面板样式）。
-        face.setAttribute('fill', 'transparent')
-        face.setAttribute('stroke', 'none')
-      }
-      const bottom = m.querySelector(':scope > line[data-uisvg-part="menu-bottom-border"]') as SVGLineElement | null
-      if (bottom) bottom.setAttribute('stroke', 'none')
+      const info = relayoutMenuNode(m, true, false)
       m.setAttribute('transform', `translate(${x},0)`)
       x += info.rowW
       names.push(info.name)
@@ -313,14 +322,20 @@ export function relayoutMenuHierarchy(parent: Element): void {
   }
   if (parentLocal === 'Menu' || parentLocal === 'ContextMenuStrip') {
     if (parentLocal === 'Menu') {
-      relayoutMenuNode(parent)
+      const parentObj = parent.parentElement
+      const parentLocal2 =
+        parentObj && parentObj.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(parentObj)
+          ? localNameOfObjectRoot(parentObj)
+          : ''
+      const isSubmenu = parentLocal2 === 'Menu'
+      relayoutMenuNode(parent, false, isSubmenu)
       return
     }
     const menus = objectChildrenByLocal(parent, new Set(['Menu']))
     let y = 0
     let maxW = WINDOWS_CONTROL_PLACEMENT_SIZE.ContextMenuStrip.w
     for (const m of menus) {
-      const info = relayoutMenuNode(m)
+      const info = relayoutMenuNode(m, false, false)
       m.setAttribute('transform', `translate(0,${y})`)
       y += info.totalH
       maxW = Math.max(maxW, info.totalW)
