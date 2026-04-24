@@ -56,6 +56,7 @@ import {
   relayoutFormBars,
   updateToolStripDockByPointerAndRelayout,
 } from '../lib/formBarLayout'
+import { relayoutMenuHierarchy } from '../lib/windowsUiControls'
 import {
   dataTransferAllowsCanvasPaletteWinDrop,
   isUisvgPaletteDropDebugEnabled,
@@ -384,9 +385,13 @@ const reparentDropHighlights = ref<ReparentDropHighlight[]>([])
 const formBarSnapPreview = ref<{ left: number; top: number; width: number; height: number; illegal: boolean } | null>(
   null,
 )
+const menuSnapPreview = ref<{ left: number; top: number; width: number; height: number } | null>(null)
 
 function clearFormBarSnapPreview() {
   formBarSnapPreview.value = null
+}
+function clearMenuSnapPreview() {
+  menuSnapPreview.value = null
 }
 
 function findFormParentG(el: Element | null): SVGGElement | null {
@@ -405,6 +410,7 @@ function clearReparentDropUi() {
   reparentDropTargetElsCache = []
   reparentDropHighlights.value = []
   clearFormBarSnapPreview()
+  clearMenuSnapPreview()
 }
 
 function refreshReparentDropUi(clientX: number, clientY: number) {
@@ -503,7 +509,7 @@ function refreshFormBarPaletteSnapFromDragOver(
     return
   }
   const layerRoot = findLayerRoot(root.ownerDocument!)
-  const parentEl = findWinContainerParentForPaletteDrop(layerRoot, clientX, clientY)
+  const parentEl = findWinContainerParentForPaletteDrop(layerRoot, clientX, clientY, controlId)
   if (!isFormObjectRootG(parentEl) || uisvgLocalNameOfObjectRoot(parentEl) !== 'Form') {
     clearFormBarSnapPreview()
     return
@@ -1442,6 +1448,75 @@ function applyFormBarLayoutAfterPointer(svg: SVGSVGElement, finishedIds: string[
   }
 }
 
+function applyMenuLayoutAfterPointer(svg: SVGSVGElement, finishedIds: string[]) {
+  for (const id of finishedIds) {
+    const el = svgElById(svg, id) as SVGGElement | null
+    if (!el) continue
+    const local = uisvgLocalNameOfObjectRoot(el)
+    if (local !== 'Menu' && local !== 'MenuItem') continue
+    let n: Element | null = el.parentElement
+    for (let i = 0; i < 64 && n; i++) {
+      if (n.tagName.toLowerCase() === 'g') {
+        const pid = uisvgLocalNameOfObjectRoot(n)
+        if (pid === 'Menu' || pid === 'MenuStrip' || pid === 'ContextMenuStrip') {
+          relayoutMenuHierarchy(n)
+          if (pid === 'Menu' && n.parentElement && n.parentElement.tagName.toLowerCase() === 'g') {
+            const pp = uisvgLocalNameOfObjectRoot(n.parentElement)
+            if (pp === 'Menu' || pp === 'MenuStrip' || pp === 'ContextMenuStrip') relayoutMenuHierarchy(n.parentElement)
+          }
+          break
+        }
+      }
+      n = n.parentElement
+    }
+  }
+}
+
+function refreshMenuSnapPreviewFromDrag(svg: SVGSVGElement) {
+  if (!objectDragging || objectDragIds.length !== 1) {
+    clearMenuSnapPreview()
+    return
+  }
+  const el = svgElById(svg, objectDragIds[0]!) as SVGGElement | null
+  if (!el) {
+    clearMenuSnapPreview()
+    return
+  }
+  const local = uisvgLocalNameOfObjectRoot(el)
+  if (local !== 'Menu' && local !== 'MenuItem') {
+    clearMenuSnapPreview()
+    return
+  }
+  let anchor: Element | null = el
+  for (let i = 0; i < 64 && anchor; i++) {
+    const k = uisvgLocalNameOfObjectRoot(anchor)
+    if (k === 'MenuStrip' || k === 'Menu' || k === 'ContextMenuStrip') break
+    anchor = anchor.parentElement
+  }
+  if (!anchor || anchor.tagName.toLowerCase() !== 'g') {
+    clearMenuSnapPreview()
+    return
+  }
+  const parent = anchor.parentElement
+  if (!parent) {
+    clearMenuSnapPreview()
+    return
+  }
+  const backup = anchor.cloneNode(true) as Element
+  relayoutMenuHierarchy(anchor)
+  const s = scale.value
+  const cw = meta.value.width
+  const ch = meta.value.height
+  const predicted = svgElById(svg, objectDragIds[0]!) as SVGGElement | null
+  const rect = predicted ? selectionInCanvasStack(predicted as Element, svg, s, cw, ch) : null
+  parent.replaceChild(backup, anchor)
+  if (!rect) {
+    clearMenuSnapPreview()
+    return
+  }
+  menuSnapPreview.value = rect
+}
+
 function endObjectDrag(skipEndSnap = false) {
   if (!objectDragging) return
   clearReparentDropUi()
@@ -1462,6 +1537,7 @@ function endObjectDrag(skipEndSnap = false) {
   }
   if (svg && finishedIds.length) {
     applyFormBarLayoutAfterPointer(svg, finishedIds)
+    applyMenuLayoutAfterPointer(svg, finishedIds)
   }
 
   commitSvgFromDom()
@@ -1489,6 +1565,12 @@ function onObjectMove(e: MouseEvent) {
     const el = svgElById(root, id) as SVGElement | null
     if (!el) continue
     applyTranslateToSVGElement(el, dxUser, dyUser)
+  }
+
+  if (objectDragIds.length === 1) {
+    refreshMenuSnapPreviewFromDrag(root)
+  } else {
+    clearMenuSnapPreview()
   }
 
   /** 吸附改为松手时一次完成；拖拽中不再画参考线，避免与蓝色选区虚线叠在一起时误判 */
@@ -1675,7 +1757,7 @@ function onCanvasDrop(e: DragEvent) {
   const doc = root.ownerDocument
   if (!doc) return
   const layerRoot = findLayerRoot(doc)
-  const parentEl = findWinContainerParentForPaletteDrop(layerRoot, e.clientX, e.clientY)
+  const parentEl = findWinContainerParentForPaletteDrop(layerRoot, e.clientX, e.clientY, controlId)
   const pt = canvasClientToSvgUser(root, e.clientX, e.clientY)
   const gw = pt.x
   const gh = pt.y
@@ -2067,6 +2149,17 @@ defineExpose({
           aria-hidden="true"
         />
         <div
+          v-if="menuSnapPreview"
+          class="canvas-menu-snap-preview"
+          :style="{
+            left: `${menuSnapPreview.left}px`,
+            top: `${menuSnapPreview.top}px`,
+            width: `${menuSnapPreview.width}px`,
+            height: `${menuSnapPreview.height}px`,
+          }"
+          aria-hidden="true"
+        />
+        <div
           v-if="selectionCanvasRect"
           class="canvas-selection-frame"
           :title="selectionFrameTitle()"
@@ -2454,6 +2547,16 @@ defineExpose({
 .canvas-form-bar-snap-preview--illegal {
   border-color: rgba(200, 50, 50, 0.75);
   background: rgba(200, 50, 50, 0.1);
+}
+
+.canvas-menu-snap-preview {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px dashed rgba(0, 120, 212, 0.95);
+  border-radius: 2px;
+  background: rgba(0, 120, 212, 0.1);
+  z-index: 6;
 }
 
 .canvas-marquee {

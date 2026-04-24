@@ -28,6 +28,7 @@ import {
 } from '../lib/uiObjectProperties'
 import { formatSvgFragmentIndented } from '../lib/formatSvgXml'
 import { findEnclosingFormDomId, relayoutFormBarsInSvgString } from '../lib/formBarLayout'
+import { relayoutMenuHierarchyInSvgString } from '../lib/windowsUiControls'
 
 const { t, locale } = useI18n()
 
@@ -357,6 +358,8 @@ function commitUi() {
     semanticValues: { ...uiSemanticValues.value },
   })
   if (markup) {
+    const menuRel = relayoutMenuHierarchyInSvgString(markup, domId)
+    if (menuRel) markup = menuRel
     const formId = findEnclosingFormDomId(markup, domId)
     if (formId) {
       const rel = relayoutFormBarsInSvgString(markup, formId)

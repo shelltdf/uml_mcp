@@ -151,6 +151,190 @@ export function uisvgPaletteTagForBasicShape(id: 'rect' | 'text' | 'frame'): str
   return uisvgLocalNameToQName(id)
 }
 
+function canParentAcceptWindowsChild(parent: Element, parentId: string, childId: string): boolean {
+  if (parentId === 'MenuStrip') return childId === 'Menu'
+  if (parentId === 'Menu') return childId === 'Menu' || childId === 'MenuItem'
+  if (parentId === 'ContextMenuStrip') {
+    if (childId !== 'Menu') return false
+    for (const ch of parent.children) {
+      if (ch.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(ch)) continue
+      const b = readUisvgBundleFromObjectRoot(ch as Element)
+      if (b.uisvgLocalName.replace(/^win\./, '') === 'Menu') return false
+    }
+    return true
+  }
+  return true
+}
+
+function localNameOfObjectRoot(g: Element): string {
+  return readUisvgBundleFromObjectRoot(g).uisvgLocalName.replace(/^win\./, '')
+}
+
+function menuDisplayName(g: Element): string {
+  const b = readUisvgBundleFromObjectRoot(g)
+  const t = (b.uiProps?.Text ?? '').trim()
+  if (t) return t
+  return (b.label || 'Menu').trim() || 'Menu'
+}
+
+function estimateMenuRowWidth(label: string, withArrow: boolean): number {
+  const textW = Math.max(24, label.length * 7 + 16)
+  const arrowW = withArrow ? 16 : 0
+  return Math.max(64, textW + arrowW + 8)
+}
+
+function objectChildrenByLocal(parent: Element, locals: Set<string>): Element[] {
+  const out: Element[] = []
+  for (let i = 0; i < parent.children.length; i++) {
+    const ch = parent.children[i] as Element
+    if (ch.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(ch)) continue
+    const local = localNameOfObjectRoot(ch)
+    if (locals.has(local)) out.push(ch)
+  }
+  return out
+}
+
+function resizeMenuLikeNode(g: Element, width: number, height: number): void {
+  const face = g.querySelector(':scope > rect[data-uisvg-part="menu-face"], :scope > rect[data-uisvg-part="menuitem-face"]') as SVGRectElement | null
+  if (face) {
+    face.setAttribute('x', '0')
+    face.setAttribute('y', '0')
+    face.setAttribute('width', String(width))
+    face.setAttribute('height', String(height))
+  }
+}
+
+function relayoutMenuNode(menuG: Element, inMenuBar = false): { rowW: number; totalW: number; totalH: number; name: string } {
+  const name = menuDisplayName(menuG)
+  const childMenus = objectChildrenByLocal(menuG, new Set(['Menu', 'MenuItem']))
+  const hasChildren = childMenus.length > 0
+  const rowH = WINDOWS_CONTROL_PLACEMENT_SIZE.Menu.h
+  const rowW = estimateMenuRowWidth(name, hasChildren)
+  let panelW = 0
+  let panelH = 0
+  for (const ch of childMenus) {
+    const childLocal = localNameOfObjectRoot(ch)
+    let childRowW = estimateMenuRowWidth(menuDisplayName(ch), childLocal === 'Menu')
+    if (childLocal === 'Menu') {
+      const childInfo = relayoutMenuNode(ch, false)
+      childRowW = Math.max(childRowW, childInfo.rowW)
+    }
+    panelW = Math.max(panelW, childRowW)
+    panelH += rowH
+  }
+  const totalW = hasChildren ? (inMenuBar ? Math.max(rowW, panelW) : rowW + panelW) : rowW
+  const totalH = hasChildren ? (inMenuBar ? rowH + panelH : Math.max(rowH, panelH)) : rowH
+  resizeMenuLikeNode(menuG, totalW, rowH)
+  const caption = menuG.querySelector(':scope > text[data-uisvg-part="menu-caption"], :scope > text[data-uisvg-part="menuitem-caption"]') as SVGTextElement | null
+  if (caption) {
+    caption.textContent = name
+    caption.setAttribute('x', '8')
+    caption.setAttribute('y', '16')
+  }
+  const shortcut = menuG.querySelector(':scope > text[data-uisvg-part="menuitem-shortcut"]') as SVGTextElement | null
+  if (shortcut) shortcut.setAttribute('x', String(Math.max(48, totalW - 22)))
+  const arrow = menuG.querySelector(':scope > path[data-uisvg-part="menu-arrow"], :scope > path[data-uisvg-part="menuitem-arrow"]') as SVGPathElement | null
+  if (arrow) {
+    if (arrow.getAttribute('data-uisvg-part') === 'menu-arrow') {
+      const cx = totalW - 19
+      arrow.setAttribute('d', `M${cx} 9 L${cx + 6} 9 L${cx + 3} 13 Z`)
+    } else {
+      const cx = totalW - 14
+      arrow.setAttribute('d', `M${cx} 8 L${cx + 4} 11 L${cx} 14`)
+    }
+  }
+  let rowY = 0
+  for (const ch of childMenus) {
+    const childLocal = localNameOfObjectRoot(ch)
+    if (childLocal === 'Menu') {
+      relayoutMenuNode(ch, false)
+      const childX = inMenuBar ? 0 : rowW
+      const childY = inMenuBar ? rowH + rowY : rowY
+      ch.setAttribute('transform', `translate(${childX},${childY})`)
+      rowY += rowH
+    } else {
+      resizeMenuLikeNode(ch, Math.max(panelW, rowW), rowH)
+      const t = ch.querySelector(':scope > text[data-uisvg-part="menuitem-caption"]') as SVGTextElement | null
+      if (t) {
+        t.setAttribute('x', '31')
+        t.setAttribute('y', '16')
+      }
+      const st = ch.querySelector(':scope > text[data-uisvg-part="menuitem-shortcut"]') as SVGTextElement | null
+      if (st) st.setAttribute('x', String(Math.max(48, Math.max(panelW, rowW) - 22)))
+      const arr = ch.querySelector(':scope > path[data-uisvg-part="menuitem-arrow"]') as SVGPathElement | null
+      if (arr) {
+        const cx = Math.max(panelW, rowW) - 14
+        arr.setAttribute('d', `M${cx} 8 L${cx + 4} 11 L${cx} 14`)
+      }
+      const childX = inMenuBar ? 0 : rowW
+      const childY = inMenuBar ? rowH + rowY : rowY
+      ch.setAttribute('transform', `translate(${childX},${childY})`)
+      rowY += rowH
+    }
+  }
+  return { rowW, totalW, totalH, name }
+}
+
+export function relayoutMenuHierarchy(parent: Element): void {
+  if (parent.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(parent)) return
+  const parentLocal = localNameOfObjectRoot(parent)
+  if (parentLocal === 'MenuStrip') {
+    const menus = objectChildrenByLocal(parent, new Set(['Menu']))
+    let x = 0
+    const names: string[] = []
+    for (const m of menus) {
+      const info = relayoutMenuNode(m, true)
+      const face = m.querySelector(':scope > rect[data-uisvg-part="menu-face"]') as SVGRectElement | null
+      if (face) {
+        // 顶栏菜单做成 Windows 菜单栏标签样式（非弹出菜单面板样式）。
+        face.setAttribute('fill', 'transparent')
+        face.setAttribute('stroke', 'none')
+      }
+      const bottom = m.querySelector(':scope > line[data-uisvg-part="menu-bottom-border"]') as SVGLineElement | null
+      if (bottom) bottom.setAttribute('stroke', 'none')
+      m.setAttribute('transform', `translate(${x},0)`)
+      x += info.rowW
+      names.push(info.name)
+    }
+    const face = parent.querySelector(':scope > rect[data-uisvg-part="win-bar-face"]') as SVGRectElement | null
+    if (face) {
+      face.setAttribute('x', '0')
+      face.setAttribute('y', '0')
+      face.setAttribute('height', String(WINDOWS_CONTROL_PLACEMENT_SIZE.MenuStrip.h))
+      face.setAttribute('width', String(Math.max(WINDOWS_CONTROL_PLACEMENT_SIZE.MenuStrip.w, x)))
+    }
+    const caption = parent.querySelector(':scope > text[data-uisvg-part="win-bar-caption"]') as SVGTextElement | null
+    if (caption) {
+      // 保留汇总标题用于语义同步；视觉由子 Menu 标签承担，避免重影。
+      caption.textContent = names.length ? names.join('  ') : 'MenuBar'
+      caption.setAttribute('opacity', '0')
+    }
+    return
+  }
+  if (parentLocal === 'Menu' || parentLocal === 'ContextMenuStrip') {
+    if (parentLocal === 'Menu') {
+      relayoutMenuNode(parent)
+      return
+    }
+    const menus = objectChildrenByLocal(parent, new Set(['Menu']))
+    let y = 0
+    let maxW = WINDOWS_CONTROL_PLACEMENT_SIZE.ContextMenuStrip.w
+    for (const m of menus) {
+      const info = relayoutMenuNode(m)
+      m.setAttribute('transform', `translate(0,${y})`)
+      y += info.totalH
+      maxW = Math.max(maxW, info.totalW)
+    }
+    const face = parent.querySelector(':scope > rect[data-uisvg-part="contextmenu-face"]') as SVGRectElement | null
+    if (face) {
+      face.setAttribute('x', '0')
+      face.setAttribute('y', '0')
+      face.setAttribute('width', String(maxW))
+      face.setAttribute('height', String(Math.max(22, y)))
+    }
+  }
+}
+
 function E(doc: Document, name: string, attrs: Record<string, string> = {}) {
   const e = doc.createElementNS(SVG_NS, name)
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v)
@@ -807,6 +991,16 @@ const builders: Record<string, Builder> = {
         stroke: WIN_BORDER,
       }),
     )
+    g.appendChild(
+      E(doc, 'line', {
+        'data-uisvg-part': 'menu-bottom-border',
+        x1: '0',
+        y1: '21.5',
+        x2: '120',
+        y2: '21.5',
+        stroke: '#c8c8c8',
+      }),
+    )
     const t = T(doc, '8', '16', 'Menu', '11')
     t.setAttribute('data-uisvg-part', 'menu-caption')
     g.appendChild(t)
@@ -828,9 +1022,55 @@ const builders: Record<string, Builder> = {
         stroke: WIN_BORDER,
       }),
     )
+    g.appendChild(
+      E(doc, 'rect', {
+        'data-uisvg-part': 'menuitem-gutter',
+        x: '0',
+        y: '0',
+        width: '24',
+        height: '22',
+        fill: '#f6f6f6',
+      }),
+    )
+    g.appendChild(
+      E(doc, 'rect', {
+        'data-uisvg-part': 'menuitem-highlight',
+        x: '25',
+        y: '2',
+        width: '112',
+        height: '18',
+        fill: '#e8f2ff',
+        stroke: '#c6dcff',
+      }),
+    )
+    g.appendChild(
+      E(doc, 'line', {
+        'data-uisvg-part': 'menuitem-separator',
+        x1: '25',
+        y1: '0.5',
+        x2: '139',
+        y2: '0.5',
+        stroke: '#ececec',
+      }),
+    )
+    g.appendChild(
+      E(doc, 'path', {
+        'data-uisvg-part': 'menuitem-check',
+        d: 'M7 11 L10 14 L16 7',
+        fill: 'none',
+        stroke: '#2a63bf',
+        'stroke-width': '1.4',
+      }),
+    )
     const t = T(doc, '8', '16', 'Menu Item', '11')
     t.setAttribute('data-uisvg-part', 'menuitem-caption')
+    t.setAttribute('x', '31')
     g.appendChild(t)
+    const shortcut = T(doc, '118', '16', 'Ctrl+M', '10')
+    shortcut.setAttribute('data-uisvg-part', 'menuitem-shortcut')
+    shortcut.setAttribute('fill', '#6a6a6a')
+    shortcut.setAttribute('text-anchor', 'end')
+    g.appendChild(shortcut)
     g.appendChild(
       E(doc, 'path', {
         'data-uisvg-part': 'menuitem-arrow',
@@ -1105,6 +1345,11 @@ export function appendWindowsControlUnderParent(
   const svg = appendSvgShape(svgXml, (doc) => {
     const parent = doc.getElementById(parentDomId)
     if (!parent || parent.tagName.toLowerCase() !== 'g') return
+    if (isUisvgObjectRootG(parent)) {
+      const pb = readUisvgBundleFromObjectRoot(parent)
+      const parentLocal = pb.uisvgLocalName.replace(/^win\./, '') || 'Panel'
+      if (!canParentAcceptWindowsChild(parent, parentLocal, controlId)) return
+    }
     if (controlId === 'StatusStrip' && isUisvgObjectRootG(parent)) {
       for (const ch of parent.children) {
         if (ch.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(ch)) continue
@@ -1133,6 +1378,12 @@ export function appendWindowsControlUnderParent(
     }
     writeUisvgBundleToObjectRoot(g, b)
     parent.appendChild(g)
+    if (isUisvgObjectRootG(parent)) {
+      const parentLocal = localNameOfObjectRoot(parent)
+      if (parentLocal === 'MenuStrip' || parentLocal === 'Menu' || parentLocal === 'ContextMenuStrip') {
+        relayoutMenuHierarchy(parent)
+      }
+    }
     if (isUisvgObjectRootG(parent) && (controlId === 'MenuStrip' || controlId === 'ToolStrip' || controlId === 'StatusStrip')) {
       const pb = readUisvgBundleFromObjectRoot(parent)
       if (pb.uisvgLocalName.replace(/^win\./, '') === 'Form') {
@@ -1141,4 +1392,27 @@ export function appendWindowsControlUnderParent(
     }
   })
   return { svg, createdDomId }
+}
+
+export function relayoutMenuHierarchyInSvgString(svgXml: string, anchorDomId: string): string | null {
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(svgXml, 'image/svg+xml')
+  const anchor = doc.getElementById(anchorDomId)
+  if (!anchor) return null
+  let n: Element | null = anchor
+  for (let i = 0; i < 64 && n; i++) {
+    if (n.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(n)) {
+      const local = localNameOfObjectRoot(n)
+      if (local === 'MenuStrip' || local === 'Menu' || local === 'ContextMenuStrip') {
+        relayoutMenuHierarchy(n)
+        if (local === 'Menu' && n.parentElement && isUisvgObjectRootG(n.parentElement)) {
+          const pl = localNameOfObjectRoot(n.parentElement)
+          if (pl === 'Menu' || pl === 'MenuStrip' || pl === 'ContextMenuStrip') relayoutMenuHierarchy(n.parentElement)
+        }
+        return new XMLSerializer().serializeToString(doc)
+      }
+    }
+    n = n.parentElement
+  }
+  return null
 }

@@ -15,7 +15,8 @@ import {
   removeEditorCanvasChrome,
 } from './uisvgDocument'
 import { ensureAllObjectRootChildrenHaveIds } from './uisvgMetaNode'
-import { getInnerClientBoundsForContainer } from './libraryPlacement'
+import { getInnerClientBoundsForContainer, getWindowsControlPlacementSize } from './libraryPlacement'
+import { relayoutMenuHierarchy } from './windowsUiControls'
 
 /** 可接受子控件的 WinForms 类（与 `libraryPlacement.innerClientBoundsForContainerKind` 一致） */
 const WIN_CONTAINER_CONTROL_IDS = new Set([
@@ -27,6 +28,47 @@ const WIN_CONTAINER_CONTROL_IDS = new Set([
   'FlowLayoutPanel',
   'TableLayoutPanel',
 ])
+
+/** 允许作为父级的对象：通用容器 + 菜单层级容器。 */
+const WIN_PARENT_CONTROL_IDS = new Set([...WIN_CONTAINER_CONTROL_IDS, 'MenuStrip', 'Menu', 'ContextMenuStrip'])
+
+function localNameFromObjectRoot(g: Element): string {
+  const b = readUisvgBundleFromObjectRoot(g)
+  return b.uisvgLocalName.replace(/^win\./, '')
+}
+
+/**
+ * WinForms 语义父子约束：
+ * - MenuStrip(MenuBar) -> Menu*
+ * - Menu -> Menu* / MenuItem*
+ * - 其余容器保持现状（可接收通用子控件）
+ */
+function countChildObjectRootsByLocalName(parent: Element, childLocalName: string, ignoreChildId = ''): number {
+  let n = 0
+  for (let i = 0; i < parent.children.length; i++) {
+    const ch = parent.children[i] as Element
+    if (ch.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(ch)) continue
+    const id = ch.getAttribute('id')?.trim() || ''
+    if (ignoreChildId && id === ignoreChildId) continue
+    if (localNameFromObjectRoot(ch) === childLocalName) n++
+  }
+  return n
+}
+
+function canParentAcceptChild(parentId: string, childId: string, parentEl?: Element, movingChildId = ''): boolean {
+  if (parentId === 'MenuStrip') return childId === 'Menu'
+  if (parentId === 'Menu') return childId === 'Menu' || childId === 'MenuItem'
+  if (parentId === 'ContextMenuStrip') {
+    if (childId !== 'Menu') return false
+    if (!parentEl) return true
+    return countChildObjectRootsByLocalName(parentEl, 'Menu', movingChildId) < 1
+  }
+  return WIN_CONTAINER_CONTROL_IDS.has(parentId)
+}
+
+function isMenuHierarchyChild(controlId: string): boolean {
+  return controlId === 'Menu' || controlId === 'MenuItem'
+}
 
 function clientToSvgUser(svg: SVGSVGElement, clientX: number, clientY: number): DOMPoint {
   const pt = svg.createSVGPoint()
@@ -317,6 +359,40 @@ function clientPointInsideScreenRect(clientX: number, clientY: number, r: DOMRec
   )
 }
 
+/** 控件自身外框（不含子对象）在屏幕中的矩形，用于判定“是否已拖出当前父级自身区域”。 */
+function screenBoundingRectForControlOwnBox(
+  parentG: SVGGraphicsElement,
+  controlId: string,
+): DOMRect | null {
+  try {
+    const m = parentG.getScreenCTM()
+    if (!m) return null
+    const sz = getWindowsControlPlacementSize(controlId)
+    const xs: number[] = []
+    const ys: number[] = []
+    for (const [x, y] of [
+      [0, 0],
+      [sz.w, 0],
+      [sz.w, sz.h],
+      [0, sz.h],
+    ] as const) {
+      const sp = new DOMPoint(x, y).matrixTransform(m)
+      xs.push(sp.x)
+      ys.push(sp.y)
+    }
+    const left = Math.min(...xs)
+    const top = Math.min(...ys)
+    const right = Math.max(...xs)
+    const bottom = Math.max(...ys)
+    if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
+      return null
+    }
+    return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top))
+  } catch {
+    return null
+  }
+}
+
 /**
  * 从指针下命中对象根起向上找第一个可接受子控件的 WinForms 容器；否则返回 `layerRoot`。
  * @param dragged 画布上拖拽已有对象时传入，用于命中检测排除自身与后代。
@@ -326,6 +402,7 @@ function resolveWinContainerDropTarget(
   clientX: number,
   clientY: number,
   dragged: SVGGraphicsElement | null,
+  childControlId?: string,
 ): Element {
   const inner = findDropTargetContainer(layerRoot, clientX, clientY, dragged)
   /**
@@ -343,7 +420,10 @@ function resolveWinContainerDropTarget(
     ) {
       const b = readUisvgBundleFromObjectRoot(dragParent)
       const cid = winContainerIdFromBundle(b)
-      /** 仅对 `Form` 收紧：其 bbox 含整块窗体，子控件松手常仍命中本 `g`；其它容器嵌套在 Form 下时不在此误抬到根。 */
+      /**
+       * `g` 命中框会包含子对象；对子菜单层级（MenuStrip/Menu/ContextMenuStrip）会造成“已拖出仍粘住父级”。
+       * 这里改为按“父级自身区域”判定：Form 用客户区，菜单类用控件自身外框。
+       */
       if (cid === 'Form') {
         const innerClientScreen = screenBoundingRectForInnerClientOfContainer(
           dragParent as SVGGraphicsElement,
@@ -352,20 +432,37 @@ function resolveWinContainerDropTarget(
         if (innerClientScreen && !clientPointInsideScreenRect(clientX, clientY, innerClientScreen)) {
           return layerRoot
         }
+      } else if (cid === 'MenuStrip' || cid === 'Menu' || cid === 'ContextMenuStrip') {
+        const ownScreen = screenBoundingRectForControlOwnBox(dragParent as SVGGraphicsElement, cid)
+        if (ownScreen && !clientPointInsideScreenRect(clientX, clientY, ownScreen)) {
+          return layerRoot
+        }
       }
     }
   }
   if (!inner) {
     return layerRoot
   }
+  const draggedLocal =
+    childControlId ??
+    (dragged && isUisvgObjectRootG(dragged) ? localNameFromObjectRoot(dragged) : '')
+  const menuChild = isMenuHierarchyChild(draggedLocal)
   let n: Element | null = inner
   while (n && n !== layerRoot) {
     if (n.tagName.toLowerCase() === 'g') {
       const gid = n.getAttribute('id')?.trim()
       if (gid && isUisvgObjectRootG(n)) {
-        const b = readUisvgBundleFromObjectRoot(n)
-        const cid = winContainerIdFromBundle(b)
-        if (WIN_CONTAINER_CONTROL_IDS.has(cid)) {
+        const cid = localNameFromObjectRoot(n)
+        if (!WIN_PARENT_CONTROL_IDS.has(cid)) {
+          n = n.parentElement
+          continue
+        }
+        if (menuChild && cid !== 'MenuStrip' && cid !== 'Menu' && cid !== 'ContextMenuStrip') {
+          n = n.parentElement
+          continue
+        }
+        const movingId = dragged?.getAttribute('id')?.trim() || ''
+        if (!draggedLocal || canParentAcceptChild(cid, draggedLocal, n, movingId)) {
           return n
         }
       }
@@ -396,6 +493,7 @@ export function collectReparentDropHighlightElements(
 ): Element[] {
   const out: Element[] = []
   if (!layerRoot.contains(dragged)) return out
+  const draggedLocal = isUisvgObjectRootG(dragged) ? localNameFromObjectRoot(dragged) : ''
 
   const groups = layerRoot.querySelectorAll('g[id]')
   for (let i = 0; i < groups.length; i++) {
@@ -405,9 +503,10 @@ export function collectReparentDropHighlightElements(
     if (g === dragged) continue
     if (dragged.contains(g)) continue
     if (g.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(g)) continue
-    const b = readUisvgBundleFromObjectRoot(g)
-    const cid = winContainerIdFromBundle(b)
-    if (!WIN_CONTAINER_CONTROL_IDS.has(cid)) continue
+    const cid = localNameFromObjectRoot(g)
+    if (!WIN_PARENT_CONTROL_IDS.has(cid)) continue
+    const movingId = dragged.getAttribute('id')?.trim() || ''
+    if (draggedLocal && !canParentAcceptChild(cid, draggedLocal, g, movingId)) continue
     out.push(g)
   }
   return out
@@ -421,8 +520,9 @@ export function findWinContainerParentForPaletteDrop(
   layerRoot: Element,
   clientX: number,
   clientY: number,
+  childControlId?: string,
 ): Element {
-  return resolveWinContainerDropTarget(layerRoot, clientX, clientY, null)
+  return resolveWinContainerDropTarget(layerRoot, clientX, clientY, null, childControlId)
 }
 
 function canReparentElement(el: SVGGraphicsElement): boolean {
@@ -518,7 +618,10 @@ function resolveUisvgReparentPair(
     if (!isUisvgObjectRootG(newParent)) return null
     const b = readUisvgBundleFromObjectRoot(newParent)
     const contId = winContainerIdFromBundle(b)
-    if (!WIN_CONTAINER_CONTROL_IDS.has(contId)) return null
+    if (!WIN_PARENT_CONTROL_IDS.has(contId)) return null
+    const childId = localNameFromObjectRoot(child)
+    const movingId = child.getAttribute('id')?.trim() || ''
+    if (!canParentAcceptChild(contId, childId, newParent, movingId)) return null
   }
 
   return { child: child as SVGGraphicsElement, newParent }
@@ -537,7 +640,10 @@ export function reparentUisvgObjectPreserveVisualOnSvg(
   if (!doc) return false
   const pair = resolveUisvgReparentPair(svg, childDomId, newParentDomId)
   if (!pair) return false
+  const oldParent = pair.child.parentElement
   preserveVisualAfterReparent(svg, pair.child, pair.newParent)
+  if (oldParent && isUisvgObjectRootG(oldParent)) relayoutMenuHierarchy(oldParent)
+  if (isUisvgObjectRootG(pair.newParent)) relayoutMenuHierarchy(pair.newParent)
   ensureAllObjectRootChildrenHaveIds(doc)
   return true
 }
@@ -560,7 +666,10 @@ export function reparentUisvgObjectInSvgString(
   const pair = resolveUisvgReparentPair(doc, childDomId, newParentDomId)
   if (!pair) return null
 
+  const oldParent = pair.child.parentElement
   pair.newParent.appendChild(pair.child)
+  if (oldParent && isUisvgObjectRootG(oldParent)) relayoutMenuHierarchy(oldParent)
+  if (isUisvgObjectRootG(pair.newParent)) relayoutMenuHierarchy(pair.newParent)
   ensureAllObjectRootChildrenHaveIds(doc)
   removeEditorCanvasChrome(doc)
   return new XMLSerializer().serializeToString(doc)
