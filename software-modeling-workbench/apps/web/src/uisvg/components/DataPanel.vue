@@ -775,6 +775,7 @@ defineExpose({ expandAllRails })
 :deep(section.dock-section.dock-uisvg-design-dock) .ui-props-body {
   flex: 0 1 auto;
   overflow: visible;
+  padding: 2px 3px 4px;
 }
 :deep(section.dock-section.dock-uisvg-design-dock) .tree-scroll {
   flex: 0 1 auto;

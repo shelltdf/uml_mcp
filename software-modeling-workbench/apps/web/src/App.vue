@@ -5673,8 +5673,8 @@ onUnmounted(() => {
  */
 .dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench {
   margin-top: 0;
-  border: 1px solid #c5c9d4;
-  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
   background: #f8fafc;
   overflow: hidden;
 }
@@ -5682,11 +5682,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 6px;
+  padding: 4px 6px;
   background: linear-gradient(to bottom, #e2e8f0, #d8dee9);
-  border-bottom: 1px solid #c5c9d4;
-  border-radius: 6px 6px 0 0;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 4px 4px 0 0;
 }
 .dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench .dock-subh.dock-subh--special {
   margin: 0;
@@ -5695,8 +5695,12 @@ onUnmounted(() => {
   font-weight: 700;
   letter-spacing: 0.02em;
 }
-.dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench > .dock-fold-workbench__body {
-  padding: 8px 10px 10px;
+.dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench.ui-props-section > .dock-fold-workbench__body {
+  padding: 0;
+}
+.dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench.tree-block > .dock-fold-workbench__body,
+.dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench.svg-props-section > .dock-fold-workbench__body {
+  padding: 2px 3px 4px;
 }
 .dock-uisvg-embed--right.dock-special-panel.dock-fold-workbench .dock-special-toggle {
   border: 1px solid #cbd5e1;

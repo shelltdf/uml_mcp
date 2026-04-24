@@ -306,7 +306,10 @@ export function getUisvgTreeElement(doc: Document): Element | null {
 /** 大纲中虚拟根「uisvg::root」的逻辑 id（对应 DOM `#layer-root`） */
 export const UISVG_OUTLINE_ROOT_LOGICAL_ID = 'uisvg-root'
 
-/** 仅列出 uisvg 对象根 `<g id>`；不列出 uisvg 命名空间语义子节点（`Frame`/`Form` 等），由父 `g` 代表。 */
+/**
+ * 仅列出某容器下 uisvg 对象根 `<g id>`；不列出 uisvg 语义子节点，由父 `g` 代表。
+ * `parseUisvgOutline` 会对 `#layer-root` 与 `#layer-sibling` 各调用一次并合并子节点。
+ */
 function buildUisvgOutlineChildren(container: Element): OutlineNode[] {
   const out: OutlineNode[] = []
   for (let i = 0; i < container.children.length; i++) {
@@ -479,7 +482,11 @@ export function parseUisvgOutline(svgXml: string): OutlineNode[] {
   if (!layerRoot) {
     return [{ id: 'svg', uisvgLocalName: 'svg', label: 'Document', ref: '' }]
   }
-  const children = buildUisvgOutlineChildren(layerRoot)
+  const fromRoot = buildUisvgOutlineChildren(layerRoot)
+  const layerSibling = doc.getElementById(LAYER_SIBLING_DOM_ID)
+  const fromSibling = layerSibling ? buildUisvgOutlineChildren(layerSibling) : []
+  /** 与 `collectMarqueeCandidateDomIds` 一致：`#layer-root` 与可选 `#layer-sibling` 下的对象根均进入大纲。 */
+  const children = [...fromRoot, ...fromSibling]
   return [
     {
       id: UISVG_OUTLINE_ROOT_LOGICAL_ID,

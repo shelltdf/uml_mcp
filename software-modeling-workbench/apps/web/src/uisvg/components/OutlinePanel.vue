@@ -250,9 +250,10 @@ function onColResizeStart(e: MouseEvent) {
   padding: 2px 0 4px;
   list-style: none;
   overflow: auto;
-  flex: 1;
-  /* 与 OutlineTreeItem .outline-row min-height: 22px 对齐，滚动区至少可视 10 行对象 */
-  min-height: calc(22px * 10);
+  overflow-x: hidden;
+  /** 在分栏给大纲的高度可能仅百余像素；勿设大于父级的 min-height，否则 flex 无法收缩，`overflow: auto` 的滚动口高度会算错。 */
+  flex: 1 1 0%;
+  min-height: 0;
 }
 
 </style>
