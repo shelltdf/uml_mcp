@@ -5048,7 +5048,6 @@ onUnmounted(() => {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-gutter: stable;
   padding: 0;
   display: flex;
   flex-direction: column;
