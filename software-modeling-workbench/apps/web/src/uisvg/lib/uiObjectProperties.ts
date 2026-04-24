@@ -226,6 +226,10 @@ const WIN_MENU_ITEM_ROWS: UiSemanticRow[] = [
 const WIN_TOOLBUTTON_ROWS: UiSemanticRow[] = [
   sem('Text', '按钮名称。', 'text', { defaultValue: 'Tool' }),
   sem('IconUtf8', 'UTF-8 图标字符（为空则不显示）。', 'text', { defaultValue: '⚙' }),
+  sem('DisplayMode', '显示方式。', 'enum', {
+    defaultValue: 'Both',
+    enumOptions: ['Text', 'Icon', 'Both'],
+  }),
   sem('Visible / Enabled', '可见与可用状态。', 'text'),
 ]
 

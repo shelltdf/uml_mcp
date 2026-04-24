@@ -238,16 +238,35 @@ function relayoutToolButtonVisual(g: Element): void {
   if (local !== 'ToolButton') return
   const b = readUisvgBundleFromObjectRoot(g)
   const text = (b.uiProps?.Text ?? '').trim() || 'Tool'
-  const icon = (b.uiProps?.IconUtf8 ?? '').trim()
+  const iconEl0 = g.querySelector(':scope > text[data-uisvg-part="toolbutton-icon"]') as SVGTextElement | null
+  const hasIconProp = Object.prototype.hasOwnProperty.call(b.uiProps ?? {}, 'IconUtf8')
+  const iconProp = hasIconProp ? (b.uiProps?.IconUtf8 ?? '').trim() : ''
+  const displayModeRaw = (b.uiProps?.DisplayMode ?? 'Both').trim()
+  const displayMode = displayModeRaw === 'Text' || displayModeRaw === 'Icon' ? displayModeRaw : 'Both'
+  const showText = displayMode === 'Text' || displayMode === 'Both'
+  const showIcon = displayMode === 'Icon' || displayMode === 'Both'
+  const icon = showIcon ? iconProp || (iconEl0?.textContent ?? '').trim() || '⚙' : iconProp
+  const textW = showText ? Math.max(16, text.length * 7) : 0
+  const iconW = showIcon && icon ? 16 : 0
+  const gap = showText && showIcon && icon ? 4 : 0
+  const totalW = Math.max(28, iconW + gap + textW + 12)
+  const face = g.querySelector(':scope > rect[data-uisvg-part="toolbutton-face"]') as SVGRectElement | null
+  if (face) {
+    face.setAttribute('width', String(totalW))
+    face.setAttribute('height', '24')
+  }
   const iconEl = g.querySelector(':scope > text[data-uisvg-part="toolbutton-icon"]') as SVGTextElement | null
   if (iconEl) {
     iconEl.textContent = icon
-    iconEl.setAttribute('opacity', icon ? '1' : '0')
+    iconEl.setAttribute('opacity', showIcon && icon ? '1' : '0')
+    iconEl.setAttribute('x', '12')
+    iconEl.setAttribute('y', '16')
   }
   const cap = g.querySelector(':scope > text[data-uisvg-part="toolbutton-caption"]') as SVGTextElement | null
   if (cap) {
     cap.textContent = text
-    cap.setAttribute('x', icon ? '24' : '8')
+    cap.setAttribute('opacity', showText ? '1' : '0')
+    cap.setAttribute('x', showIcon && icon ? '24' : '8')
     cap.setAttribute('y', '16')
   }
 }
@@ -264,9 +283,10 @@ export function relayoutToolStripChildren(toolStripG: Element): void {
     const local = localNameOfObjectRoot(ch)
     if (local !== 'ToolButton') continue
     relayoutToolButtonVisual(ch)
-    const sz = WINDOWS_CONTROL_PLACEMENT_SIZE.ToolButton ?? { w: 96, h: 24 }
+    const face = ch.querySelector(':scope > rect[data-uisvg-part="toolbutton-face"]') as SVGRectElement | null
+    const w = Math.max(28, Number(face?.getAttribute('width') || '0') || WINDOWS_CONTROL_PLACEMENT_SIZE.ToolButton.w)
     ch.setAttribute('transform', `translate(${x},${y})`)
-    x += sz.w + gap
+    x += w + gap
   }
   const face = toolStripG.querySelector(':scope > rect[data-uisvg-part="toolstrip-face"]') as SVGRectElement | null
   if (face) {
@@ -1260,7 +1280,7 @@ const builders: Record<string, Builder> = {
     g.appendChild(
       E(doc, 'rect', {
         'data-uisvg-part': 'toolbutton-face',
-        width: '96',
+        width: '56',
         height: '24',
         rx: '2',
         fill: WIN_BTN,
@@ -1274,6 +1294,7 @@ const builders: Record<string, Builder> = {
     const cap = T(doc, '24', '16', 'Tool', '11')
     cap.setAttribute('data-uisvg-part', 'toolbutton-caption')
     g.appendChild(cap)
+    relayoutToolButtonVisual(g)
   },
   ToolStrip(doc, g) {
     g.appendChild(
@@ -1282,28 +1303,6 @@ const builders: Record<string, Builder> = {
         width: '160',
         height: '26',
         fill: WIN_FACE,
-        stroke: WIN_BORDER,
-      }),
-    )
-    g.appendChild(
-      E(doc, 'rect', {
-        'data-uisvg-part': 'toolstrip-item',
-        x: '6',
-        y: '4',
-        width: '22',
-        height: '18',
-        fill: WIN_BTN,
-        stroke: WIN_BORDER,
-      }),
-    )
-    g.appendChild(
-      E(doc, 'rect', {
-        'data-uisvg-part': 'toolstrip-item',
-        x: '32',
-        y: '4',
-        width: '22',
-        height: '18',
-        fill: WIN_BTN,
         stroke: WIN_BORDER,
       }),
     )
