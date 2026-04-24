@@ -206,6 +206,11 @@ const WIN_MENU_NODE_ROWS: UiSemanticRow[] = [
   sem('Visible / Enabled', '可见与可用状态。', 'text'),
 ]
 
+const WIN_CONTEXT_MENU_ROWS: UiSemanticRow[] = [
+  sem('Text', '上下文菜单标题（默认显示）。', 'text', { defaultValue: 'ContextMenu' }),
+  sem('Visible / Enabled', '可见与可用状态。', 'text'),
+]
+
 const WIN_MENU_ITEM_ROWS: UiSemanticRow[] = [
   sem('Text', '菜单项标题。', 'text', { defaultValue: 'Menu Item' }),
   sem('ShortcutText', '快捷键文字（如 Ctrl+S；为空则不显示）。', 'text', { defaultValue: '' }),
@@ -271,7 +276,8 @@ export function rowsForWinControl(controlId: string): UiSemanticRow[] {
   if (id === 'MenuStrip') return WIN_MENUSTRIP_ROWS
   if (id === 'Menu') return WIN_MENU_NODE_ROWS
   if (id === 'MenuItem') return WIN_MENU_ITEM_ROWS
-  if (id === 'StatusStrip' || id === 'ContextMenuStrip') return WIN_MENUSTRIP_ROWS
+  if (id === 'StatusStrip') return WIN_MENUSTRIP_ROWS
+  if (id === 'ContextMenuStrip') return WIN_CONTEXT_MENU_ROWS
   if (id === 'PictureBox' || id === 'PropertyGrid' || id === 'DateTimePicker' || id === 'MonthCalendar' || id === 'NumericUpDown')
     return WIN_GENERIC_ROWS
   return WIN_GENERIC_ROWS

@@ -170,6 +170,15 @@ function localNameOfObjectRoot(g: Element): string {
   return readUisvgBundleFromObjectRoot(g).uisvgLocalName.replace(/^win\./, '')
 }
 
+function normalizeMenuLocalName(local: string): string {
+  const k = local.trim().toLowerCase()
+  if (k === 'menustrip' || k === 'menubar') return 'MenuStrip'
+  if (k === 'menu') return 'Menu'
+  if (k === 'menuitem') return 'MenuItem'
+  if (k === 'contextmenu' || k === 'contextmenustrip') return 'ContextMenuStrip'
+  return local
+}
+
 function menuDisplayName(g: Element): string {
   const b = readUisvgBundleFromObjectRoot(g)
   const t = (b.uiProps?.Text ?? b.uiProps?.text ?? '').trim()
@@ -212,6 +221,15 @@ function menuStripOwnTitle(g: Element): string {
   return (b.label || 'MenuBar').trim() || 'MenuBar'
 }
 
+function contextMenuOwnTitle(g: Element): string {
+  const b = readUisvgBundleFromObjectRoot(g)
+  const t = (b.uiProps?.Text ?? b.uiProps?.text ?? '').trim()
+  if (t) return t
+  const caption = g.querySelector(':scope > text[data-uisvg-part="contextmenu-item"]')?.textContent?.trim()
+  if (caption) return caption
+  return (b.label || 'ContextMenu').trim() || 'ContextMenu'
+}
+
 function estimateMenuRowWidth(label: string, withArrow: boolean): number {
   const textW = Math.max(24, label.length * 7 + 16)
   const arrowW = withArrow ? 16 : 0
@@ -223,7 +241,7 @@ function objectChildrenByLocal(parent: Element, locals: Set<string>): Element[] 
   for (let i = 0; i < parent.children.length; i++) {
     const ch = parent.children[i] as Element
     if (ch.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(ch)) continue
-    const local = localNameOfObjectRoot(ch)
+    const local = normalizeMenuLocalName(localNameOfObjectRoot(ch))
     if (locals.has(local)) out.push(ch)
   }
   return out
@@ -382,7 +400,7 @@ function relayoutMenuNode(
 
 export function relayoutMenuHierarchy(parent: Element): void {
   if (parent.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(parent)) return
-  const parentLocal = localNameOfObjectRoot(parent)
+  const parentLocal = normalizeMenuLocalName(localNameOfObjectRoot(parent))
   if (parentLocal === 'MenuItem') {
     relayoutMenuNode(parent, false, false)
     return
@@ -423,7 +441,7 @@ export function relayoutMenuHierarchy(parent: Element): void {
       const parentObj = parent.parentElement
       const parentLocal2 =
         parentObj && parentObj.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(parentObj)
-          ? localNameOfObjectRoot(parentObj)
+          ? normalizeMenuLocalName(localNameOfObjectRoot(parentObj))
           : ''
       const isSubmenu = parentLocal2 === 'Menu'
       relayoutMenuNode(parent, false, isSubmenu)
@@ -431,19 +449,51 @@ export function relayoutMenuHierarchy(parent: Element): void {
     }
     const menus = objectChildrenByLocal(parent, new Set(['Menu']))
     let y = 0
-    let maxW = WINDOWS_CONTROL_PLACEMENT_SIZE.ContextMenuStrip.w
+    const titleText = contextMenuOwnTitle(parent)
+    const defaultW = Math.max(120, estimateMenuRowWidth(titleText, false))
+    let maxW = defaultW
     for (const m of menus) {
       const info = relayoutMenuNode(m, false, false)
       m.setAttribute('transform', `translate(0,${y})`)
       y += info.totalH
       maxW = Math.max(maxW, info.totalW)
     }
-    const face = parent.querySelector(':scope > rect[data-uisvg-part="contextmenu-face"]') as SVGRectElement | null
+    const doc = parent.ownerDocument
+    let title = parent.querySelector(':scope > text[data-uisvg-part="contextmenu-item"]') as SVGTextElement | null
+    if (!title && doc) {
+      title = doc.createElementNS(SVG_NS, 'text') as SVGTextElement
+      title.setAttribute('data-uisvg-part', 'contextmenu-item')
+      title.setAttribute('fill', '#1a1a1a')
+      title.setAttribute('font-family', 'Segoe UI, Microsoft YaHei UI, sans-serif')
+      title.setAttribute('font-size', '11')
+      parent.appendChild(title)
+    }
+    if (title) {
+      title.textContent = titleText
+      title.setAttribute('x', '8')
+      title.setAttribute('y', '16')
+      title.setAttribute('opacity', menus.length ? '0' : '1')
+    }
+    let face = parent.querySelector(':scope > rect[data-uisvg-part="contextmenu-face"]') as SVGRectElement | null
+    if (!face && doc) {
+      face = doc.createElementNS(SVG_NS, 'rect') as SVGRectElement
+      face.setAttribute('data-uisvg-part', 'contextmenu-face')
+      face.setAttribute('fill', '#ffffff')
+      face.setAttribute('stroke', WIN_BORDER)
+      face.setAttribute('filter', 'drop-shadow(1px 1px 2px rgba(0,0,0,.2))')
+      parent.insertBefore(face, parent.firstChild)
+    }
     if (face) {
       face.setAttribute('x', '0')
       face.setAttribute('y', '0')
-      face.setAttribute('width', String(maxW))
-      face.setAttribute('height', String(Math.max(22, y)))
+      if (menus.length) {
+        face.setAttribute('width', String(maxW))
+        face.setAttribute('height', String(Math.max(22, y)))
+      } else {
+        // 无子节点时回到单标题默认尺寸与显示。
+        face.setAttribute('width', String(defaultW))
+        face.setAttribute('height', '22')
+      }
     }
   }
 }
@@ -1210,19 +1260,16 @@ const builders: Record<string, Builder> = {
     g.appendChild(
       E(doc, 'rect', {
         'data-uisvg-part': 'contextmenu-face',
-        width: '100',
-        height: '56',
+        width: '120',
+        height: '22',
         fill: '#ffffff',
         stroke: WIN_BORDER,
         filter: 'drop-shadow(1px 1px 2px rgba(0,0,0,.2))',
       }),
     )
-    const tOpen = T(doc, '8', '16', 'Open', '11')
-    tOpen.setAttribute('data-uisvg-part', 'contextmenu-item')
-    g.appendChild(tOpen)
-    const tExit = T(doc, '8', '32', 'Exit', '11')
-    tExit.setAttribute('data-uisvg-part', 'contextmenu-item')
-    g.appendChild(tExit)
+    const tTitle = T(doc, '8', '16', 'ContextMenu', '11')
+    tTitle.setAttribute('data-uisvg-part', 'contextmenu-item')
+    g.appendChild(tTitle)
   },
   PictureBox(doc, g) {
     g.appendChild(
@@ -1481,10 +1528,11 @@ export function relayoutMenuHierarchyInSvgString(svgXml: string, anchorDomId: st
   for (let i = 0; i < 64 && n; i++) {
     if (n.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(n)) {
       const local = localNameOfObjectRoot(n)
-      if (local === 'MenuStrip' || local === 'Menu' || local === 'ContextMenuStrip' || local === 'MenuItem') {
+      const norm = normalizeMenuLocalName(local)
+      if (norm === 'MenuStrip' || norm === 'Menu' || norm === 'ContextMenuStrip' || norm === 'MenuItem') {
         relayoutMenuHierarchy(n)
-        if (local === 'Menu' && n.parentElement && isUisvgObjectRootG(n.parentElement)) {
-          const pl = localNameOfObjectRoot(n.parentElement)
+        if (norm === 'Menu' && n.parentElement && isUisvgObjectRootG(n.parentElement)) {
+          const pl = normalizeMenuLocalName(localNameOfObjectRoot(n.parentElement))
           if (pl === 'Menu' || pl === 'MenuStrip' || pl === 'ContextMenuStrip') relayoutMenuHierarchy(n.parentElement)
         }
         return new XMLSerializer().serializeToString(doc)
@@ -1493,4 +1541,23 @@ export function relayoutMenuHierarchyInSvgString(svgXml: string, anchorDomId: st
     n = n.parentElement
   }
   return null
+}
+
+export function relayoutAllMenuHierarchiesInSvgString(svgXml: string): string | null {
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(svgXml, 'image/svg+xml')
+  let changed = false
+  let hitCount = 0
+  const groups = doc.querySelectorAll('g[id]')
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i] as Element
+    if (!isUisvgObjectRootG(g)) continue
+    const local = normalizeMenuLocalName(localNameOfObjectRoot(g))
+    if (local !== 'MenuStrip' && local !== 'Menu' && local !== 'ContextMenuStrip' && local !== 'MenuItem') continue
+    hitCount++
+    relayoutMenuHierarchy(g)
+    changed = true
+  }
+  if (!changed) return null
+  return new XMLSerializer().serializeToString(doc)
 }

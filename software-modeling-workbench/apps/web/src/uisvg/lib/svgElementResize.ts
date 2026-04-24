@@ -2720,7 +2720,7 @@ export function canResizeSvgElement(el: SVGElement | null): boolean {
   if (id && isTopLevelLayerDomId(id)) return false
   if (el.tagName.toLowerCase() === 'g' && isUisvgObjectRootG(el)) {
     const local = readUisvgBundleFromObjectRoot(el).uisvgLocalName.replace(/^win\./, '')
-    if (local === 'MenuStrip' || local === 'Menu' || local === 'MenuItem') return false
+    if (local === 'MenuStrip' || local === 'Menu' || local === 'MenuItem' || local === 'ContextMenuStrip') return false
   }
   return !!getResizeTargetElement(el)
 }

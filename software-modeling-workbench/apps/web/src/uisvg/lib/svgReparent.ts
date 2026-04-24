@@ -580,7 +580,14 @@ export function reparentCanvasObjectAfterDrag(
     return false
   }
 
+  const oldParent = el.parentElement
+  const movedLocal = localNameFromObjectRoot(el)
   preserveVisualAfterReparent(svg, el, targetParent)
+  if (oldParent && isUisvgObjectRootG(oldParent)) relayoutMenuHierarchy(oldParent)
+  if (isUisvgObjectRootG(targetParent)) relayoutMenuHierarchy(targetParent)
+  if (!isUisvgObjectRootG(targetParent) && (movedLocal === 'Menu' || movedLocal === 'ContextMenuStrip')) {
+    relayoutMenuHierarchy(el)
+  }
 
   return true
 }

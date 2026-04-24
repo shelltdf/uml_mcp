@@ -44,7 +44,11 @@ import {
 } from '../lib/libraryPlacement'
 import { getDefaultUiPropsRecordForWinControl } from '../lib/uiObjectProperties'
 import { reparentUisvgObjectInSvgString } from '../lib/svgReparent'
-import { appendWindowsControl, appendWindowsControlUnderParent } from '../lib/windowsUiControls'
+import {
+  appendWindowsControl,
+  appendWindowsControlUnderParent,
+  relayoutAllMenuHierarchiesInSvgString,
+} from '../lib/windowsUiControls'
 import { openUisvgPreviewWindow } from '../lib/previewWindow'
 import { useI18n } from '../composables/useI18n'
 import { useTheme } from '../composables/useTheme'
@@ -688,7 +692,8 @@ function onCanvasCommand(cmd: CanvasViewCommand) {
     if (!ids.length) return
     const next = removeUisvgObjectRootsByLogicalIds(svgMarkup.value, ids)
     if (next !== null) {
-      svgMarkup.value = next
+      const relaid = relayoutAllMenuHierarchiesInSvgString(next)
+      svgMarkup.value = relaid ?? next
       selectedIds.value = []
       statusLeft.value = t('status.deleted')
     }

@@ -27,7 +27,11 @@ import type { UiDesignDockCommand } from '../uiDesignDockTypes';
 import { BASIC_PLACEMENT_SIZE, findPlacementForNewItemWithDebug, getWindowsControlPlacementSize } from '../lib/libraryPlacement';
 import { getDefaultUiPropsRecordForWinControl } from '../lib/uiObjectProperties';
 import { reparentUisvgObjectInSvgString } from '../lib/svgReparent';
-import { appendWindowsControl, appendWindowsControlUnderParent } from '../lib/windowsUiControls';
+import {
+  appendWindowsControl,
+  appendWindowsControlUnderParent,
+  relayoutAllMenuHierarchiesInSvgString,
+} from '../lib/windowsUiControls';
 import { isCanvasViewCommandName } from '../uiDesignDockTypes';
 
 const ALIGN_FROM_CMD: Partial<Record<CanvasViewCommand, CanvasAlignMode>> = {
@@ -109,7 +113,8 @@ export function useUisvgCanvasHost(opts: {
       if (!ids.length) return;
       const next = removeUisvgObjectRootsByLogicalIds(opts.svgMarkup.value, ids);
       if (next !== null) {
-        opts.svgMarkup.value = next;
+        const relaid = relayoutAllMenuHierarchiesInSvgString(next);
+        opts.svgMarkup.value = relaid ?? next;
         opts.selectedIds.value = [];
       }
       return;

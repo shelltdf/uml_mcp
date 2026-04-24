@@ -1539,7 +1539,8 @@ function endObjectDrag(skipEndSnap = false) {
     }
   }
   if (svg && finishedIds.length === 1) {
-    reparentCanvasObjectAfterDrag(svg, finishedIds[0]!, lastClientX, lastClientY)
+    const childId = finishedIds[0]!
+    reparentCanvasObjectAfterDrag(svg, childId, lastClientX, lastClientY)
   }
   if (svg && finishedIds.length) {
     applyFormBarLayoutAfterPointer(svg, finishedIds)
