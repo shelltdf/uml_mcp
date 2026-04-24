@@ -172,8 +172,12 @@ function localNameOfObjectRoot(g: Element): string {
 
 function menuDisplayName(g: Element): string {
   const b = readUisvgBundleFromObjectRoot(g)
-  const t = (b.uiProps?.Text ?? '').trim()
+  const t = (b.uiProps?.Text ?? b.uiProps?.text ?? '').trim()
   if (t) return t
+  const caption = g.querySelector(':scope > text[data-uisvg-part="menu-caption"], :scope > text[data-uisvg-part="menuitem-caption"]')
+    ?.textContent
+    ?.trim()
+  if (caption) return caption
   const local = b.uisvgLocalName.replace(/^win\./, '')
   const fallbackByType = local === 'MenuItem' ? 'Menu Item' : local === 'MenuStrip' ? 'MenuBar' : 'Menu'
   const label = (b.label || '').trim()
@@ -187,16 +191,24 @@ function menuItemShortcutText(g: Element): string {
   return (b.uiProps?.ShortcutText ?? '').trim()
 }
 
-function menuItemToggleChecked(g: Element): boolean {
+function menuItemToggleEnabled(g: Element): boolean {
   const b = readUisvgBundleFromObjectRoot(g)
   const raw = (b.uiProps?.Toggle ?? '').trim().toLowerCase()
   return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on'
 }
 
+function menuItemChecked(g: Element): boolean {
+  const b = readUisvgBundleFromObjectRoot(g)
+  const raw = (b.uiProps?.Checked ?? '').trim().toLowerCase()
+  return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on'
+}
+
 function menuStripOwnTitle(g: Element): string {
   const b = readUisvgBundleFromObjectRoot(g)
-  const t = (b.uiProps?.Text ?? '').trim()
+  const t = (b.uiProps?.Text ?? b.uiProps?.text ?? '').trim()
   if (t) return t
+  const caption = g.querySelector(':scope > text[data-uisvg-part="win-bar-caption"]')?.textContent?.trim()
+  if (caption) return caption
   return (b.label || 'MenuBar').trim() || 'MenuBar'
 }
 
@@ -264,7 +276,12 @@ function relayoutMenuNode(
     }
   }
   const menuBottom = menuG.querySelector(':scope > line[data-uisvg-part="menu-bottom-border"]') as SVGLineElement | null
-  if (menuBottom) menuBottom.setAttribute('stroke', inMenuBar ? 'none' : '#c8c8c8')
+  if (menuBottom) {
+    menuBottom.setAttribute('x1', '0')
+    menuBottom.setAttribute('x2', String(totalW))
+    menuBottom.setAttribute('stroke', 'none')
+    menuBottom.setAttribute('opacity', '0')
+  }
   const caption = menuG.querySelector(':scope > text[data-uisvg-part="menu-caption"], :scope > text[data-uisvg-part="menuitem-caption"]') as SVGTextElement | null
   if (caption) {
     caption.textContent = name
@@ -280,13 +297,30 @@ function relayoutMenuNode(
   }
   const check = menuG.querySelector(':scope > path[data-uisvg-part="menuitem-check"]') as SVGPathElement | null
   if (check) {
-    check.setAttribute('opacity', menuItemToggleChecked(menuG) ? '1' : '0')
+    check.setAttribute('opacity', menuItemToggleEnabled(menuG) && menuItemChecked(menuG) ? '1' : '0')
+  }
+  const toggleOn = menuItemToggleEnabled(menuG)
+  const gutter = menuG.querySelector(':scope > rect[data-uisvg-part="menuitem-gutter"]') as SVGRectElement | null
+  if (gutter) gutter.setAttribute('opacity', toggleOn ? '1' : '0')
+  const sep = menuG.querySelector(':scope > line[data-uisvg-part="menuitem-separator"]') as SVGLineElement | null
+  if (sep) {
+    const x1 = toggleOn ? '25' : '0'
+    sep.setAttribute('x1', x1)
+    sep.setAttribute('x2', String(totalW - 1))
+  }
+  const captionItem = menuG.querySelector(':scope > text[data-uisvg-part="menuitem-caption"]') as SVGTextElement | null
+  if (captionItem) captionItem.setAttribute('x', toggleOn ? '31' : '8')
+  const hl = menuG.querySelector(':scope > rect[data-uisvg-part="menuitem-highlight"]') as SVGRectElement | null
+  if (hl) {
+    // MenuItem 默认仅展示 Normal 状态，不显示蓝色高亮底。
+    hl.setAttribute('opacity', '0')
   }
   const arrow = menuG.querySelector(':scope > path[data-uisvg-part="menu-arrow"], :scope > path[data-uisvg-part="menuitem-arrow"]') as SVGPathElement | null
   if (arrow) {
     const part = arrow.getAttribute('data-uisvg-part')
     if (part === 'menu-arrow') {
-      arrow.setAttribute('opacity', '1')
+      // Menu 标题默认不显示下拉三角（避免与 MenuItem 语义混淆）。
+      arrow.setAttribute('opacity', '0')
       const cx = totalW - 19
       arrow.setAttribute('d', `M${cx} 9 L${cx + 6} 9 L${cx + 3} 13 Z`)
     } else if (part === 'menuitem-arrow') {
@@ -310,7 +344,7 @@ function relayoutMenuNode(
       const t = ch.querySelector(':scope > text[data-uisvg-part="menuitem-caption"]') as SVGTextElement | null
       if (t) {
         t.textContent = menuDisplayName(ch)
-        t.setAttribute('x', '31')
+        t.setAttribute('x', menuItemToggleEnabled(ch) ? '31' : '8')
         t.setAttribute('y', '16')
       }
       const st = ch.querySelector(':scope > text[data-uisvg-part="menuitem-shortcut"]') as SVGTextElement | null
@@ -322,7 +356,15 @@ function relayoutMenuNode(
       }
       const ck = ch.querySelector(':scope > path[data-uisvg-part="menuitem-check"]') as SVGPathElement | null
       if (ck) {
-        ck.setAttribute('opacity', menuItemToggleChecked(ch) ? '1' : '0')
+        ck.setAttribute('opacity', menuItemToggleEnabled(ch) && menuItemChecked(ch) ? '1' : '0')
+      }
+      const gt = ch.querySelector(':scope > rect[data-uisvg-part="menuitem-gutter"]') as SVGRectElement | null
+      if (gt) gt.setAttribute('opacity', menuItemToggleEnabled(ch) ? '1' : '0')
+      const sp = ch.querySelector(':scope > line[data-uisvg-part="menuitem-separator"]') as SVGLineElement | null
+      if (sp) {
+        const x1 = menuItemToggleEnabled(ch) ? '25' : '0'
+        sp.setAttribute('x1', x1)
+        sp.setAttribute('x2', String(Math.max(panelW, rowW) - 1))
       }
       const arr = ch.querySelector(':scope > path[data-uisvg-part="menuitem-arrow"]') as SVGPathElement | null
       if (arr) {
@@ -1062,26 +1104,9 @@ const builders: Record<string, Builder> = {
         stroke: WIN_BORDER,
       }),
     )
-    g.appendChild(
-      E(doc, 'line', {
-        'data-uisvg-part': 'menu-bottom-border',
-        x1: '0',
-        y1: '21.5',
-        x2: '120',
-        y2: '21.5',
-        stroke: '#c8c8c8',
-      }),
-    )
     const t = T(doc, '8', '16', 'Menu', '11')
     t.setAttribute('data-uisvg-part', 'menu-caption')
     g.appendChild(t)
-    g.appendChild(
-      E(doc, 'path', {
-        'data-uisvg-part': 'menu-arrow',
-        d: 'M98 9 L104 9 L101 13 Z',
-        fill: '#505050',
-      }),
-    )
   },
   MenuItem(doc, g) {
     g.appendChild(
@@ -1101,23 +1126,13 @@ const builders: Record<string, Builder> = {
         width: '24',
         height: '22',
         fill: '#f6f6f6',
-      }),
-    )
-    g.appendChild(
-      E(doc, 'rect', {
-        'data-uisvg-part': 'menuitem-highlight',
-        x: '25',
-        y: '2',
-        width: '112',
-        height: '18',
-        fill: '#e8f2ff',
-        stroke: '#c6dcff',
+        opacity: '0',
       }),
     )
     g.appendChild(
       E(doc, 'line', {
         'data-uisvg-part': 'menuitem-separator',
-        x1: '25',
+        x1: '0',
         y1: '0.5',
         x2: '139',
         y2: '0.5',
@@ -1131,11 +1146,11 @@ const builders: Record<string, Builder> = {
         fill: 'none',
         stroke: '#2a63bf',
         'stroke-width': '1.4',
+        opacity: '0',
       }),
     )
     const t = T(doc, '8', '16', 'Menu Item', '11')
     t.setAttribute('data-uisvg-part', 'menuitem-caption')
-    t.setAttribute('x', '31')
     g.appendChild(t)
     const shortcut = T(doc, '118', '16', '', '10')
     shortcut.setAttribute('data-uisvg-part', 'menuitem-shortcut')

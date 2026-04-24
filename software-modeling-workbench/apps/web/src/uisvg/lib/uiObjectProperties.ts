@@ -209,7 +209,8 @@ const WIN_MENU_NODE_ROWS: UiSemanticRow[] = [
 const WIN_MENU_ITEM_ROWS: UiSemanticRow[] = [
   sem('Text', '菜单项标题。', 'text', { defaultValue: 'Menu Item' }),
   sem('ShortcutText', '快捷键文字（如 Ctrl+S；为空则不显示）。', 'text', { defaultValue: '' }),
-  sem('Toggle', '是否显示对勾（仅当该项为可切换项时）。', 'switch', { defaultValue: 'false' }),
+  sem('Toggle', '是否为可切换项（Toggle Button / checkable）。', 'switch', { defaultValue: 'false' }),
+  sem('Checked', '当前是否选中（仅 Toggle=true 时生效）。', 'switch', { defaultValue: 'false' }),
   sem('DisplayState', '显示状态（语义属性；画布按 Normal 预览）。', 'enum', {
     defaultValue: 'Normal',
     enumOptions: ['Normal', 'Disabled', 'Hidden'],
