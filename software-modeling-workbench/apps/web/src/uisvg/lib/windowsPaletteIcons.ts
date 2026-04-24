@@ -59,6 +59,10 @@ export const WINDOWS_PALETTE_ICON_INNER: Record<string, string> = {
     '<rect x="2" y="4" width="12" height="9" fill="#fff" stroke="#888"/><line x1="8" y1="4" x2="8" y2="13" stroke="#d0d0d0"/><line x1="2" y1="8.5" x2="14" y2="8.5" stroke="#d0d0d0"/>',
   MenuStrip:
     '<rect x="2" y="4" width="12" height="4" fill="#f0f0f0" stroke="#a0a0a0"/><line x1="4" y1="6.5" x2="6" y2="6.5" stroke="#404040"/><line x1="8" y1="6.5" x2="10" y2="6.5" stroke="#404040"/>',
+  Menu:
+    '<rect x="2" y="4.5" width="12" height="5" fill="#f0f0f0" stroke="#a0a0a0"/><line x1="4" y1="7" x2="8.5" y2="7" stroke="#404040"/><path d="M11 6 L12.5 6 L11.75 7.5 Z" fill="#505050"/>',
+  MenuItem:
+    '<rect x="2" y="5" width="12" height="6" fill="#fff" stroke="#a0a0a0"/><line x1="4" y1="8" x2="9.5" y2="8" stroke="#404040"/><path d="M11 7 L12.5 8 L11 9" fill="none" stroke="#505050" stroke-width="0.8"/>',
   ToolStrip:
     '<rect x="2" y="5" width="12" height="6" fill="#f0f0f0" stroke="#a0a0a0"/><rect x="4" y="6.5" width="3" height="3" fill="#e0e0e0" stroke="#888"/><rect x="8.5" y="6.5" width="3" height="3" fill="#e0e0e0" stroke="#888"/>',
   StatusStrip:

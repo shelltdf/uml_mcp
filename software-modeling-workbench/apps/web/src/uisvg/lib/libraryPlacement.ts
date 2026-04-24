@@ -325,6 +325,8 @@ export const WINDOWS_CONTROL_PLACEMENT_SIZE: Record<string, { w: number; h: numb
   FlowLayoutPanel: { w: 120, h: 56 },
   TableLayoutPanel: { w: 120, h: 56 },
   MenuStrip: { w: 160, h: 22 },
+  Menu: { w: 120, h: 22 },
+  MenuItem: { w: 140, h: 22 },
   ToolStrip: { w: 160, h: 26 },
   StatusStrip: { w: 160, h: 22 },
   ContextMenuStrip: { w: 100, h: 56 },

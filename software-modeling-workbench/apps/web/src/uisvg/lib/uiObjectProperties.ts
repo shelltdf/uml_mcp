@@ -250,7 +250,8 @@ export function rowsForWinControl(controlId: string): UiSemanticRow[] {
   if (id === 'GroupBox' || id === 'Panel' || id === 'SplitContainer' || id === 'FlowLayoutPanel' || id === 'TableLayoutPanel')
     return FRAME_ROWS
   if (id === 'ToolStrip') return WIN_TOOLSTRIP_ROWS
-  if (id === 'MenuStrip' || id === 'StatusStrip' || id === 'ContextMenuStrip') return WIN_MENU_ROWS
+  if (id === 'MenuStrip' || id === 'Menu' || id === 'MenuItem' || id === 'StatusStrip' || id === 'ContextMenuStrip')
+    return WIN_MENU_ROWS
   if (id === 'PictureBox' || id === 'PropertyGrid' || id === 'DateTimePicker' || id === 'MonthCalendar' || id === 'NumericUpDown')
     return WIN_GENERIC_ROWS
   return WIN_GENERIC_ROWS

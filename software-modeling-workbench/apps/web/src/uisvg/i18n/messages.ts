@@ -205,6 +205,8 @@ export type MessageKey =
   | 'uiLib.group.graphicsAndOther'
   | 'uiLib.win.Form'
   | 'uiLib.win.MenuStrip'
+  | 'uiLib.win.Menu'
+  | 'uiLib.win.MenuItem'
   | 'uiLib.win.ToolStrip'
   | 'uiLib.win.StatusStrip'
   | 'uiLib.win.ContextMenuStrip'
@@ -495,6 +497,8 @@ export const zh: Record<MessageKey, string> = {
   'uiLib.group.graphicsAndOther': '图形与其他',
   'uiLib.win.Form': '主窗口',
   'uiLib.win.MenuStrip': '菜单栏',
+  'uiLib.win.Menu': '菜单',
+  'uiLib.win.MenuItem': '菜单项',
   'uiLib.win.ToolStrip': '工具栏',
   'uiLib.win.StatusStrip': '状态栏',
   'uiLib.win.ContextMenuStrip': '快捷菜单',
@@ -788,6 +792,8 @@ export const en: Record<MessageKey, string> = {
   'uiLib.group.graphicsAndOther': 'Graphics & other',
   'uiLib.win.Form': 'Main window',
   'uiLib.win.MenuStrip': 'Menu bar',
+  'uiLib.win.Menu': 'Menu',
+  'uiLib.win.MenuItem': 'Menu item',
   'uiLib.win.ToolStrip': 'Tool bar',
   'uiLib.win.StatusStrip': 'Status bar',
   'uiLib.win.ContextMenuStrip': 'Context menu',

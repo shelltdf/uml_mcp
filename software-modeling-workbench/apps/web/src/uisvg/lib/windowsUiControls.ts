@@ -51,6 +51,8 @@ export const WINDOWS_UI_GROUPS: { titleKey: MessageKey; items: WindowsPaletteIte
     titleKey: 'uiLib.group.menusAndBars',
     items: [
       { id: 'MenuStrip', label: 'MenuStrip', win32: '#32768 (HMENU+rebar)', qt: 'QMenuBar' },
+      { id: 'Menu', label: 'Menu', win32: '#32768 (menu)', qt: 'QMenu' },
+      { id: 'MenuItem', label: 'MenuItem', win32: 'MENUITEMINFO', qt: 'QAction' },
       { id: 'ToolStrip', label: 'ToolStrip', win32: 'ToolbarWindow32', qt: 'QToolBar' },
       { id: 'StatusStrip', label: 'StatusStrip', win32: 'msctls_statusbar32', qt: 'QStatusBar' },
       { id: 'ContextMenuStrip', label: 'ContextMenuStrip', win32: '#32768 (popup)', qt: 'QMenu' },
@@ -794,6 +796,50 @@ const builders: Record<string, Builder> = {
     const t = T(doc, '6', '16', 'File  Edit  View', '11')
     t.setAttribute('data-uisvg-part', 'win-bar-caption')
     g.appendChild(t)
+  },
+  Menu(doc, g) {
+    g.appendChild(
+      E(doc, 'rect', {
+        'data-uisvg-part': 'menu-face',
+        width: '120',
+        height: '22',
+        fill: WIN_FACE,
+        stroke: WIN_BORDER,
+      }),
+    )
+    const t = T(doc, '8', '16', 'Menu', '11')
+    t.setAttribute('data-uisvg-part', 'menu-caption')
+    g.appendChild(t)
+    g.appendChild(
+      E(doc, 'path', {
+        'data-uisvg-part': 'menu-arrow',
+        d: 'M98 9 L104 9 L101 13 Z',
+        fill: '#505050',
+      }),
+    )
+  },
+  MenuItem(doc, g) {
+    g.appendChild(
+      E(doc, 'rect', {
+        'data-uisvg-part': 'menuitem-face',
+        width: '140',
+        height: '22',
+        fill: '#ffffff',
+        stroke: WIN_BORDER,
+      }),
+    )
+    const t = T(doc, '8', '16', 'Menu Item', '11')
+    t.setAttribute('data-uisvg-part', 'menuitem-caption')
+    g.appendChild(t)
+    g.appendChild(
+      E(doc, 'path', {
+        'data-uisvg-part': 'menuitem-arrow',
+        d: 'M126 8 L130 11 L126 14',
+        fill: 'none',
+        stroke: '#505050',
+        'stroke-width': '1.2',
+      }),
+    )
   },
   ToolStrip(doc, g) {
     g.appendChild(
