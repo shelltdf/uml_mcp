@@ -27,6 +27,7 @@ import {
   type UiPropertiesPanelModel,
 } from '../lib/uiObjectProperties'
 import { formatSvgFragmentIndented } from '../lib/formatSvgXml'
+import { findEnclosingFormDomId, relayoutFormBarsInSvgString } from '../lib/formBarLayout'
 
 const { t, locale } = useI18n()
 
@@ -200,6 +201,7 @@ function onRightDockSplit(which: 1 | 2, e: MouseEvent) {
   const start2 = rightPane2H.value
   const el = splitHostEl()
   if (!el) return
+  const host = el
   const SPLIT = 5
   const min1 = 72
   const min2 = 80
@@ -207,7 +209,7 @@ function onRightDockSplit(which: 1 | 2, e: MouseEvent) {
 
   function move(ev: MouseEvent) {
     const dy = ev.clientY - startY
-    const total = el.clientHeight
+    const total = host.clientHeight
     if (which === 1) {
       /** p1 + 5 + p2 + 5 + p3 = total，拖拽第 1 条时 p2 不变，p3 ≥ min3 */
       const max1 = total - SPLIT * 2 - start2 - min3
@@ -348,10 +350,17 @@ function commit() {
 function commitUi() {
   const domId = resolveDomElementId(props.svgMarkup, props.selectedId)
   if (!domId || !uiModel.value) return
-  const markup = applyUiPanelEdits(props.svgMarkup, domId, {
+  let markup = applyUiPanelEdits(props.svgMarkup, domId, {
     semanticValues: { ...uiSemanticValues.value },
   })
-  if (markup) emit('update:svg', markup)
+  if (markup) {
+    const formId = findEnclosingFormDomId(markup, domId)
+    if (formId) {
+      const rel = relayoutFormBarsInSvgString(markup, formId)
+      if (rel) markup = rel
+    }
+    emit('update:svg', markup)
+  }
 }
 
 function semanticSwitchChecked(name: string): boolean {

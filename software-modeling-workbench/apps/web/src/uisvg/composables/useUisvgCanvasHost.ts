@@ -84,6 +84,9 @@ export function useUisvgCanvasHost(opts: {
       getDefaultUiPropsRecordForWinControl(payload.controlId),
     );
     if (!createdDomId) {
+      if (payload.parentDomId !== 'layer-root' && payload.controlId === 'StatusStrip') {
+        return;
+      }
       const sz = getWindowsControlPlacementSize(payload.controlId);
       const fallback = appendWindowsControl(
         opts.svgMarkup.value,

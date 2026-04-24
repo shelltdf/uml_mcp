@@ -648,6 +648,10 @@ function onPaletteDropWin(payload: {
     getDefaultUiPropsRecordForWinControl(payload.controlId),
   )
   if (!createdDomId) {
+    if (payload.parentDomId !== 'layer-root' && payload.controlId === 'StatusStrip') {
+      statusLeft.value = t('status.formStatusStripExists')
+      return
+    }
     const sz = getWindowsControlPlacementSize(payload.controlId)
     const fallback = appendWindowsControl(
       svgMarkup.value,
@@ -778,6 +782,7 @@ function onDataPanelSelectedId(id: string | null) {
   selectedIds.value = id ? [id] : []
 }
 
+/** 画布 DOM 回写：仅更新字符串，不调用 fitView/resetView，保持当前 pan/scale。 */
 function onCanvasUpdateSvg(s: string) {
   svgMarkup.value = stripEditorCanvasChromeFromMarkup(s)
 }

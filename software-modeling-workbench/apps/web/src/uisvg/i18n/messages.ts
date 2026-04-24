@@ -142,6 +142,7 @@ export type MessageKey =
   | 'status.addedText'
   | 'status.addedFrame'
   | 'status.addedWin'
+  | 'status.formStatusStripExists'
   | 'saveAs.prompt'
   | 'canvasSettings.title'
   | 'canvasSettings.hint'
@@ -426,6 +427,7 @@ export const zh: Record<MessageKey, string> = {
   'status.addedText': '已添加文本',
   'status.addedFrame': '已添加容器',
   'status.addedWin': '已添加 Windows 控件: {id}',
+  'status.formStatusStripExists': '该 Form 已有状态栏（StatusStrip），每个窗体仅允许一个。',
   'saveAs.prompt': '另存为文件名（含扩展名，例如 design.ui.svg）',
   'canvasSettings.title': '画布设置',
   'canvasSettings.hint':
@@ -717,6 +719,7 @@ export const en: Record<MessageKey, string> = {
   'status.addedText': 'Text added',
   'status.addedFrame': 'Frame added',
   'status.addedWin': 'Windows control added: {id}',
+  'status.formStatusStripExists': 'This Form already has a status bar (StatusStrip); only one is allowed per form.',
   'saveAs.prompt': 'File name (with extension, e.g. design.ui.svg)',
   'canvasSettings.title': 'Canvas settings',
   'canvasSettings.hint':

@@ -50,6 +50,13 @@ import {
 } from '../lib/libraryPlacement'
 import { readUisvgBundleFromObjectRoot } from '../lib/uisvgMetaNode'
 import {
+  computeFormBarSnapPreview,
+  isFormBarControlId,
+  isFormObjectRootG,
+  relayoutFormBars,
+  updateToolStripDockByPointerAndRelayout,
+} from '../lib/formBarLayout'
+import {
   dataTransferAllowsCanvasPaletteWinDrop,
   isUisvgPaletteDropDebugEnabled,
   readPaletteWinControlIdFromDataTransfer,
@@ -373,9 +380,31 @@ type ReparentDropHighlight = {
 
 const reparentDropHighlights = ref<ReparentDropHighlight[]>([])
 
+/** Form 条带吸附预测框（与用户坐标系一致，仅提示） */
+const formBarSnapPreview = ref<{ left: number; top: number; width: number; height: number; illegal: boolean } | null>(
+  null,
+)
+
+function clearFormBarSnapPreview() {
+  formBarSnapPreview.value = null
+}
+
+function findFormParentG(el: Element | null): SVGGElement | null {
+  for (let n: Element | null = el; n; n = n.parentElement) {
+    if (n.tagName.toLowerCase() === 'g' && isFormObjectRootG(n)) return n as SVGGElement
+  }
+  return null
+}
+
+function uisvgLocalNameOfObjectRoot(el: Element | null): string {
+  if (!el) return ''
+  return readUisvgBundleFromObjectRoot(el).uisvgLocalName.replace(/^win\./, '') || ''
+}
+
 function clearReparentDropUi() {
   reparentDropTargetElsCache = []
   reparentDropHighlights.value = []
+  clearFormBarSnapPreview()
 }
 
 function refreshReparentDropUi(clientX: number, clientY: number) {
@@ -407,6 +436,94 @@ function refreshReparentDropUi(clientX: number, clientY: number) {
     next.push({ ...r, id, active: el === target })
   }
   reparentDropHighlights.value = next
+}
+
+/**
+ * 条带白名单 + Form：平移/改父 目标为 Form 或当前已在 Form 下时，刷新与 commit 同算法的预测框。
+ */
+function refreshFormBarSnapPreviewFromClient(root: SVGSVGElement, clientX: number, clientY: number) {
+  if (!objectDragging || objectDragIds.length !== 1) {
+    clearFormBarSnapPreview()
+    return
+  }
+  const s = scale.value
+  const cw = meta.value.width
+  const ch = meta.value.height
+  const dragged = svgElById(root, objectDragIds[0]) as SVGGElement | null
+  if (!dragged) {
+    clearFormBarSnapPreview()
+    return
+  }
+  const localName = uisvgLocalNameOfObjectRoot(dragged)
+  if (!isFormBarControlId(localName)) {
+    clearFormBarSnapPreview()
+    return
+  }
+  const layerRoot = findLayerRoot(root.ownerDocument!)
+  const target = resolveCanvasReparentDropTarget(layerRoot, clientX, clientY, dragged)
+  const pt = canvasClientToSvgUser(root, clientX, clientY)
+
+  let formG: SVGGElement | null = null
+  if (isFormObjectRootG(target) && uisvgLocalNameOfObjectRoot(target) === 'Form') {
+    formG = target as SVGGElement
+  } else {
+    formG = findFormParentG(dragged)
+  }
+  if (!formG) {
+    clearFormBarSnapPreview()
+    return
+  }
+  const { lx, ly } = globalXYToParentLocal(formG, pt.x, pt.y)
+  const p = computeFormBarSnapPreview(formG, {
+    movingDomId: objectDragIds[0]!,
+    localName,
+    pointerLocalX: lx,
+    pointerLocalY: ly,
+  })
+  if (!p) {
+    formBarSnapPreview.value = null
+    return
+  }
+  const r = formLocalPlacedBoxToCanvasStack(formG, p.x, p.y, p.width, p.height, root, s, cw, ch)
+  formBarSnapPreview.value = r ? { ...r, illegal: p.illegal } : null
+}
+
+/** 组件库拖入：指针在 Form 上且为条控件时，显示与落点同算法的预览框。 */
+function refreshFormBarPaletteSnapFromDragOver(
+  root: SVGSVGElement,
+  clientX: number,
+  clientY: number,
+  controlId: string,
+) {
+  const s = scale.value
+  const cw = meta.value.width
+  const ch = meta.value.height
+  if (!isFormBarControlId(controlId)) {
+    clearFormBarSnapPreview()
+    return
+  }
+  const layerRoot = findLayerRoot(root.ownerDocument!)
+  const parentEl = findWinContainerParentForPaletteDrop(layerRoot, clientX, clientY)
+  if (!isFormObjectRootG(parentEl) || uisvgLocalNameOfObjectRoot(parentEl) !== 'Form') {
+    clearFormBarSnapPreview()
+    return
+  }
+  const formG = parentEl as SVGGElement
+  const pt = canvasClientToSvgUser(root, clientX, clientY)
+  const { lx, ly } = globalXYToParentLocal(formG, pt.x, pt.y)
+  const virtualId = `__uisvg-formbar-palette__${controlId}`
+  const p = computeFormBarSnapPreview(formG, {
+    movingDomId: virtualId,
+    localName: controlId,
+    pointerLocalX: lx,
+    pointerLocalY: ly,
+  })
+  if (!p) {
+    formBarSnapPreview.value = null
+    return
+  }
+  const r = formLocalPlacedBoxToCanvasStack(formG, p.x, p.y, p.width, p.height, root, s, cw, ch)
+  formBarSnapPreview.value = r ? { ...r, illegal: p.illegal } : null
 }
 
 /** 框选：在空白处按下左键拖拽 */
@@ -698,6 +815,53 @@ function intersectWithCanvasRect(
   const h = y2 - y1
   if (w <= 0.25 || h <= 0.25) return null
   return { left: x1, top: y1, width: w, height: h }
+}
+
+/** Form 对象根局部坐标下的条带矩形 → 与选中框一致的画布栈像素框 */
+function formLocalPlacedBoxToCanvasStack(
+  formG: SVGGraphicsElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  rootSvg: SVGSVGElement,
+  scaleVal: number,
+  cw: number,
+  ch: number,
+): { left: number; top: number; width: number; height: number } | null {
+  if (scaleVal <= 0) return null
+  const ctm = formG.getScreenCTM()
+  if (!ctm) return null
+  const svg = formG.ownerSVGElement
+  if (!svg) return null
+  const pt = svg.createSVGPoint()
+  const ref = rootSvg.getBoundingClientRect()
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const [px, py] of [
+    [x, y],
+    [x + w, y],
+    [x, y + h],
+    [x + w, y + h],
+  ] as const) {
+    pt.x = px
+    pt.y = py
+    const sc = pt.matrixTransform(ctm)
+    minX = Math.min(minX, sc.x)
+    maxX = Math.max(maxX, sc.x)
+    minY = Math.min(minY, sc.y)
+    maxY = Math.max(maxY, sc.y)
+  }
+  const local = {
+    left: (minX - ref.left) / scaleVal,
+    top: (minY - ref.top) / scaleVal,
+    width: (maxX - minX) / scaleVal,
+    height: (maxY - minY) / scaleVal,
+  }
+  if (![local.left, local.top, local.width, local.height].every(Number.isFinite)) return null
+  return intersectWithCanvasRect(local, cw, ch)
 }
 
 function fmtDomRect(r: DOMRect, label: string): string {
@@ -1251,6 +1415,33 @@ function onPendingDragUp() {
   clearPendingDrag()
 }
 
+function shouldSkipGridSnapForFormBarDrag(svg: SVGSVGElement, finishedIds: string[]): boolean {
+  if (finishedIds.length !== 1) return false
+  const el = svgElById(svg, finishedIds[0]!) as SVGGElement | null
+  if (!el) return false
+  const form = findFormParentG(el)
+  if (!form) return false
+  return isFormBarControlId(uisvgLocalNameOfObjectRoot(el))
+}
+
+function applyFormBarLayoutAfterPointer(svg: SVGSVGElement, finishedIds: string[]) {
+  for (const id of finishedIds) {
+    const el = svgElById(svg, id) as SVGGElement | null
+    if (!el) continue
+    const form = findFormParentG(el)
+    if (!form) continue
+    const name = uisvgLocalNameOfObjectRoot(el)
+    if (!isFormBarControlId(name)) continue
+    const pt = canvasClientToSvgUser(svg, lastClientX, lastClientY)
+    const { lx, ly } = globalXYToParentLocal(form, pt.x, pt.y)
+    if (name === 'ToolStrip') {
+      updateToolStripDockByPointerAndRelayout(form, id, lx, ly)
+    } else {
+      relayoutFormBars(form)
+    }
+  }
+}
+
 function endObjectDrag(skipEndSnap = false) {
   if (!objectDragging) return
   clearReparentDropUi()
@@ -1262,10 +1453,15 @@ function endObjectDrag(skipEndSnap = false) {
 
   const svg = rootSvgEl()
   if (svg && finishedIds.length && !skipEndSnap) {
-    applySnapAfterObjectDrag(svg, finishedIds)
+    if (!shouldSkipGridSnapForFormBarDrag(svg, finishedIds)) {
+      applySnapAfterObjectDrag(svg, finishedIds)
+    }
   }
   if (svg && finishedIds.length === 1) {
-    reparentCanvasObjectAfterDrag(svg, finishedIds[0], lastClientX, lastClientY)
+    reparentCanvasObjectAfterDrag(svg, finishedIds[0]!, lastClientX, lastClientY)
+  }
+  if (svg && finishedIds.length) {
+    applyFormBarLayoutAfterPointer(svg, finishedIds)
   }
 
   commitSvgFromDom()
@@ -1278,6 +1474,7 @@ function onObjectMove(e: MouseEvent) {
   if (!root) return
 
   refreshReparentDropUi(e.clientX, e.clientY)
+  refreshFormBarSnapPreviewFromClient(root, e.clientX, e.clientY)
 
   const dxUser = svgUserDeltaFromClient(e.clientX - lastClientX)
   const dyUser = svgUserDeltaFromClient(e.clientY - lastClientY)
@@ -1459,6 +1656,14 @@ function onCanvasDragOver(e: DragEvent) {
   if (!dataTransferAllowsCanvasPaletteWinDrop(e.dataTransfer)) return
   e.preventDefault()
   if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  const root = rootSvgEl()
+  if (!root) return
+  const controlId = readPaletteWinControlIdFromDataTransfer(e.dataTransfer)
+  if (controlId) {
+    refreshFormBarPaletteSnapFromDragOver(root, e.clientX, e.clientY, controlId)
+  } else {
+    clearFormBarSnapPreview()
+  }
 }
 
 function onCanvasDrop(e: DragEvent) {
@@ -1494,6 +1699,7 @@ function onCanvasDrop(e: DragEvent) {
     const x = Math.min(Math.max(0, gw - sz.w / 2), Math.max(0, cw - sz.w))
     const y = Math.min(Math.max(0, gh - sz.h / 2), Math.max(0, ch - sz.h))
     emit('palette-drop-win', { controlId, parentDomId: 'layer-root', placement: { x, y } })
+    clearFormBarSnapPreview()
     return
   }
 
@@ -1503,7 +1709,12 @@ function onCanvasDrop(e: DragEvent) {
   const lx = lx0 - sz.w / 2
   const ly = ly0 - sz.h / 2
   const c = clampLocalPlacementToInner(containerId, lx, ly, sz.w, sz.h, parentEl)
-  emit('palette-drop-win', { controlId, parentDomId, placement: { x: c.x, y: c.y } })
+  if (containerId === 'Form' && isFormBarControlId(controlId)) {
+    emit('palette-drop-win', { controlId, parentDomId, placement: { x: lx, y: ly } })
+  } else {
+    emit('palette-drop-win', { controlId, parentDomId, placement: { x: c.x, y: c.y } })
+  }
+  clearFormBarSnapPreview()
 }
 
 function onCanvasContextMenu(e: MouseEvent) {
@@ -1675,6 +1886,11 @@ function reparentFromOutline(childDomId: string, parentDomId: string): boolean {
   const svg = rootSvgEl()
   if (!svg) return false
   if (!reparentUisvgObjectPreserveVisualOnSvg(svg, childDomId, parentDomId)) return false
+  const el = svgElById(svg, childDomId) as SVGGElement | null
+  const form = findFormParentG(el)
+  if (form && el && isFormBarControlId(uisvgLocalNameOfObjectRoot(el))) {
+    relayoutFormBars(form)
+  }
   commitSvgFromDom()
   nextTick(() => refreshSelectionBox())
   return true
@@ -1777,6 +1993,18 @@ defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect, rep
         >
           <span v-if="h.active" class="canvas-reparent-drop-hint__label">{{ t('canvas.reparentDropActiveLabel') }}</span>
         </div>
+        <div
+          v-if="formBarSnapPreview"
+          class="canvas-form-bar-snap-preview"
+          :class="{ 'canvas-form-bar-snap-preview--illegal': formBarSnapPreview.illegal }"
+          :style="{
+            left: `${formBarSnapPreview.left}px`,
+            top: `${formBarSnapPreview.top}px`,
+            width: `${formBarSnapPreview.width}px`,
+            height: `${formBarSnapPreview.height}px`,
+          }"
+          aria-hidden="true"
+        />
         <div
           v-if="selectionCanvasRect"
           class="canvas-selection-frame"
@@ -2150,6 +2378,21 @@ defineExpose({ resetView, fitView, frameOutlineIdInView, getVisibleUserRect, rep
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.canvas-form-bar-snap-preview {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px solid rgba(16, 124, 16, 0.55);
+  border-radius: 2px;
+  background: rgba(16, 124, 16, 0.08);
+  z-index: 2;
+}
+
+.canvas-form-bar-snap-preview--illegal {
+  border-color: rgba(200, 50, 50, 0.75);
+  background: rgba(200, 50, 50, 0.1);
 }
 
 .canvas-marquee {

@@ -8,13 +8,15 @@ import {
   layoutFormCaptionSlots,
   WINDOWS_CONTROL_PLACEMENT_SIZE,
 } from './libraryPlacement'
+import { relayoutFormBars } from './formBarLayout'
+import { appendSvgShape, appendToDrawingLayer, nextWindowsControlDomId, type AppendObjectResult } from './uisvgDocument'
 import {
-  appendSvgShape,
-  appendToDrawingLayer,
-  nextWindowsControlDomId,
-  type AppendObjectResult,
-} from './uisvgDocument'
-import { uisvgLocalNameToQName, writeUisvgBundleToObjectRoot, type UisvgObjectBundleV1 } from './uisvgMetaNode'
+  isUisvgObjectRootG,
+  readUisvgBundleFromObjectRoot,
+  uisvgLocalNameToQName,
+  writeUisvgBundleToObjectRoot,
+  type UisvgObjectBundleV1,
+} from './uisvgMetaNode'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -1057,6 +1059,13 @@ export function appendWindowsControlUnderParent(
   const svg = appendSvgShape(svgXml, (doc) => {
     const parent = doc.getElementById(parentDomId)
     if (!parent || parent.tagName.toLowerCase() !== 'g') return
+    if (controlId === 'StatusStrip' && isUisvgObjectRootG(parent)) {
+      for (const ch of parent.children) {
+        if (ch.tagName.toLowerCase() !== 'g' || !isUisvgObjectRootG(ch)) continue
+        const b = readUisvgBundleFromObjectRoot(ch as Element)
+        if (b.uisvgLocalName.replace(/^win\./, '') === 'StatusStrip') return
+      }
+    }
     const { x, y } = placement
     const { id, index } = nextWindowsControlDomId(doc, controlId)
     createdDomId = id
@@ -1078,6 +1087,12 @@ export function appendWindowsControlUnderParent(
     }
     writeUisvgBundleToObjectRoot(g, b)
     parent.appendChild(g)
+    if (isUisvgObjectRootG(parent) && (controlId === 'MenuStrip' || controlId === 'ToolStrip' || controlId === 'StatusStrip')) {
+      const pb = readUisvgBundleFromObjectRoot(parent)
+      if (pb.uisvgLocalName.replace(/^win\./, '') === 'Form') {
+        relayoutFormBars(parent as unknown as SVGGElement)
+      }
+    }
   })
   return { svg, createdDomId }
 }

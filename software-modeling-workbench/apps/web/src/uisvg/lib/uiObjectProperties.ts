@@ -200,6 +200,15 @@ const WIN_MENU_ROWS: UiSemanticRow[] = [
   sem('Visible / Enabled', '可见与可用状态。', 'text'),
 ]
 
+const WIN_TOOLSTRIP_ROWS: UiSemanticRow[] = [
+  ...WIN_MENU_ROWS,
+  sem('Dock', 'Top / Bottom / Left / Right；None 为 Float。', 'enum', {
+    nameEn: 'Dock',
+    defaultValue: 'Top',
+    enumOptions: ['Top', 'Bottom', 'Left', 'Right', 'None'],
+  }),
+]
+
 const WIN_GENERIC_ROWS: UiSemanticRow[] = [
   sem('Name', '设计器中的对象名（与 id 可对应）。', 'text'),
   sem('Text / 主文案', '控件主显示文本（若该控件具备）。', 'text', { nameEn: 'Text / primary caption' }),
@@ -240,7 +249,8 @@ export function rowsForWinControl(controlId: string): UiSemanticRow[] {
   if (id === 'TabControl') return WIN_TAB_ROWS
   if (id === 'GroupBox' || id === 'Panel' || id === 'SplitContainer' || id === 'FlowLayoutPanel' || id === 'TableLayoutPanel')
     return FRAME_ROWS
-  if (id === 'MenuStrip' || id === 'ToolStrip' || id === 'StatusStrip' || id === 'ContextMenuStrip') return WIN_MENU_ROWS
+  if (id === 'ToolStrip') return WIN_TOOLSTRIP_ROWS
+  if (id === 'MenuStrip' || id === 'StatusStrip' || id === 'ContextMenuStrip') return WIN_MENU_ROWS
   if (id === 'PictureBox' || id === 'PropertyGrid' || id === 'DateTimePicker' || id === 'MonthCalendar' || id === 'NumericUpDown')
     return WIN_GENERIC_ROWS
   return WIN_GENERIC_ROWS
